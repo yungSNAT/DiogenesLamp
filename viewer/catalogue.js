@@ -12,12 +12,15 @@
 // Ordering lives in filters.js with the rest of the filter state; this file
 // only marks what the query hit and moves the cursor over the result.
 
+const MARK_WORDS = typeof module !== "undefined" ? require("./kinds.js") : { searchTerms, wordRanges };
+
 // Where the query hit the title, as [start, end) pairs over the original
 // string. The caller strikes those spans in the second ink, so a matched
 // title says which part of it matched rather than only that it did.
 //
-// The query is multi-term and order-free, exactly as matchSearch reads it, so
-// every term is marked wherever it lands. Matching is done on lowercased
+// The query is multi-term and order-free, exactly as compileCatalogueSearch
+// reads it, so every term is marked wherever it lands, and so is each
+// Chinese word kinds.js reads as one. Matching is done on lowercased
 // copies of both sides and the offsets are reported against the original, so
 // the marks fall on the real characters.
 /**
@@ -26,12 +29,14 @@
  * @returns {[number, number][]}
  */
 function matchRanges(title, query) {
-  const text = (title || "").toLowerCase();
-  const terms = (query || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+  // Full-width Latin (T恤 written as Ｔ恤) folds to ASCII one character for one, as
+  // search's NFKC folds it, so marks agree with search and keep their offsets.
+  const text = (title || "").toLowerCase().replace(/[\uFF01-\uFF5E]/g, c => c.normalize("NFKC"));
+  const terms = MARK_WORDS.searchTerms(query || "");
   if (!terms.length || !text) return [];
   /** @type {[number, number][]} */
   const hits = [];
-  for (const term of terms) {
+  for (const term of terms.flatMap(term => term.literals)) {
     let from = 0;
     for (;;) {
       const at = text.indexOf(term, from);
@@ -44,6 +49,8 @@ function matchRanges(title, query) {
     }
     if (hits.length >= 40) break;
   }
+  const words = new Set(terms.flatMap(term => term.words));
+  if (words.size) hits.push(...MARK_WORDS.wordRanges(text, words));
   return mergeRanges(hits);
 }
 

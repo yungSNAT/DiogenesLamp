@@ -58,10 +58,12 @@ viewer routinely loads a partially available catalogue.
   colour theme and the link and price preferences (agent, QC lookups, exchange
   rate) also persist locally, outside the backup. Storage failures are visible.
 - Search matches titles, seller IDs, exact album/item IDs, marketplace and
-  shopping-agent links, and stored descriptions where recorded.
+  shopping-agent links, and stored descriptions where recorded. Experimentally,
+  an English garment, colour, fit or material word also matches its Chinese
+  forms from a local table, and cards gloss those Chinese words in English.
   Filters include price bounds and unknown prices, seller, category, posting age,
   new since scrape or review, changed since review, favourites, collections,
-  tags and an experimental title-read kind. The index and viewer select the newest
+  tags and an experimental title-read kind, colour, fit and material. The index and viewer select the newest
   duplicate listing before filters, using marketplace items across sellers or
   specific titles within one seller. Saved fields carry forward only when the
   newest listing has no entry for that field.

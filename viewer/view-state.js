@@ -16,7 +16,7 @@
  *   & {seller: string, category: string, first_seen: string, published_ms: number,
  *      title_lc: string, is_new?: boolean, gone_since?: string, updated_at?: string,
  *      history?: {at: string}[], search_ids?: string[], search_keys?: string[],
- *      kind?: string}} CatalogueAlbum
+ *      kind?: string, gloss?: readonly string[], traits?: readonly string[]}} CatalogueAlbum
  */
 
 // Catalogue choices and transitions. app.js owns DOM, storage, scroll and focus.
@@ -104,6 +104,7 @@ function selectCatalogue(view, catalogue, now = Date.now()) {
       min <= max && (price ? price >= min && price <= max : filters.includeUnknown);
     const reviewed = /** @param {T} album */ album => Number(catalogue.reviews?.get(album.seller) || 0);
     const maxDays = Number.parseInt(filters.age, 10) || 0;
+    const traits = [filters.colour, filters.fit, filters.material].filter(Boolean);
     // The inclusive calendar cutoff is shared by every album in this pass.
     const oldestMs = maxDays ? VIEW_HELPERS.localDayMs(now) - maxDays * VIEW_HELPERS.DAY_MS : 0;
     // An album deleted on Yupoo leads to a dead page, so it drops out of
@@ -113,6 +114,7 @@ function selectCatalogue(view, catalogue, now = Date.now()) {
       (!filters.seller || album.seller === filters.seller) &&
       (!filters.category || album.category === filters.category) &&
       (!filters.kind || album.kind === filters.kind) &&
+      traits.every(trait => album.traits?.includes(trait)) &&
       (!filters.newOnly || album.is_new) &&
       (!filters.favsOnly || favorites.has(album.id)) &&
       (!maxDays || album.published_ms >= oldestMs) &&

@@ -45,6 +45,9 @@ const els = {
   unreviewed: document.getElementById("unreviewed"),
   changed: document.getElementById("changed"),
   kind: document.getElementById("kind-filter"),
+  colour: document.getElementById("colour-filter"),
+  fit: document.getElementById("fit-filter"),
+  material: document.getElementById("material-filter"),
   descriptionCoverage: document.getElementById("description-coverage"),
   search: document.getElementById("search"),
   seller: document.getElementById("seller-filter"),
@@ -92,6 +95,9 @@ function currentFilters() {
     unreviewed: els.unreviewed.checked,
     changed: els.changed.checked,
     kind: els.kind.value,
+    colour: els.colour.value,
+    fit: els.fit.value,
+    material: els.material.value,
   };
 }
 
@@ -128,11 +134,14 @@ function applyStoredFilters() {
   }
   setSelectIfPresent(els.seller, storedFilters.seller);
   setSelectIfPresent(els.category, storedFilters.category);
-  setSelectIfPresent(els.kind, storedFilters.kind);
+  for (const key of /** @type {const} */ (["kind", "colour", "fit", "material"])) setSelectIfPresent(els[key], storedFilters[key]);
 }
-// Kinds are a fixed table, so their options exist before any filter is restored.
+// Kinds and words are fixed tables, so their options exist before any filter is restored.
 for (const kind of KINDS) els.kind.add(new Option(kind.label, kind.id));
 els.kind.add(new Option("Unsorted: no kind found in the title", UNSORTED));
+for (const word of WORDS) {
+  if (word.facet !== "garment") els[word.facet].add(new Option(word.en[0].toUpperCase() + word.en.slice(1), word.en));
+}
 applyStoredFilters();
 state.view = createViewState(storedFilters, currentFilters());
 
@@ -582,6 +591,16 @@ function refreshCardTitle(card, album, query) {
   return true;
 }
 
+// A card leads with the first 2 gloss words, garments first, so the title
+// keeps most of its 2 lines. The title button's name replaces its visible
+// text, so it carries every word, as the preview does.
+const CARD_GLOSS_WORDS = 2;
+
+/** @param {{title: string, gloss?: readonly string[]}} album */
+function previewLabel(album) {
+  return `Preview: ${album.title}` + (album.gloss?.length ? `. Read from the title: ${album.gloss.join(", ")}` : "");
+}
+
 /** @param {import("./controller-types.js").ViewerAlbum} album */
 function makeCard(album) {
   const card = document.createElement("div");
@@ -648,7 +667,9 @@ function makeCard(album) {
     `<button class="fav-btn" type="button" aria-pressed="${isFav}" ` +
     `aria-label="${favLabel(isFav)}"></button>` +
     `</div>` +
-    `<button class="card-title preview-btn" type="button" aria-label="Preview: ${escapeAttr(album.title)}"><span></span></button>` +
+    `<button class="card-title preview-btn" type="button" aria-label="${escapeAttr(previewLabel(album))}">` +
+    `<span${album.gloss?.length ? ` data-gloss="${escapeAttr(album.gloss.slice(0, CARD_GLOSS_WORDS).join(" · "))}"` : ""}>` +
+    `</span></button>` +
     `<div class="card-meta">` +
     `<span class="seller-tag">${escapeHtml(album.seller)}</span>` +
     `<span class="card-links">${links}</span>` +
@@ -1102,7 +1123,7 @@ function restoreLateFilters() {
 function clearFilters() {
   state.view = nextViewState(state.view, { type: "clear-filters" });
   const filters = state.view.filters;
-  for (const key of /** @type {const} */ (["search", "seller", "category", "age", "sort", "priceMin", "priceMax", "collection", "tag", "kind"])) els[key].value = filters[key];
+  for (const key of /** @type {const} */ (["search", "seller", "category", "age", "sort", "priceMin", "priceMax", "collection", "tag", "kind", "colour", "fit", "material"])) els[key].value = filters[key];
   for (const key of /** @type {const} */ (["newOnly", "favsOnly", "hideDups", "includeUnknown", "unreviewed", "changed"])) els[key].checked = filters[key];
   writeFilters(window, filters);
   saveFilterURL();
@@ -1121,7 +1142,8 @@ els.search.addEventListener("input", () => {
 });
 for (const el of [els.seller, els.category, els.newOnly, els.favsOnly,
                   els.hideDups, els.age, els.sort, els.priceMin, els.priceMax, els.includeUnknown,
-                  els.collection, els.tag, els.unreviewed, els.changed, els.kind]) {
+                  els.collection, els.tag, els.unreviewed, els.changed, els.kind, els.colour, els.fit,
+                  els.material]) {
   el.addEventListener("change", userFilterChange);
 }
 
