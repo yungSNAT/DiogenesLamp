@@ -8,6 +8,7 @@ pub mod argparse;
 pub mod cli;
 pub mod covers;
 pub mod dedup;
+pub mod demo;
 pub mod errors;
 pub mod html;
 pub mod http;

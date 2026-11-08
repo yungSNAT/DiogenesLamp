@@ -1,5 +1,5 @@
 //! The slice of Python 3.15's argparse that `lamp` uses: long options with
-//! abbreviations, store and store_true actions, typed values, required
+//! abbreviations, store, store_true and version actions, typed values, required
 //! positionals and one level of subcommands. Errors, usage and help are
 //! formatted as argparse formats them (never coloured).
 
@@ -25,6 +25,8 @@ pub enum Value {
 #[derive(Clone)]
 pub enum Kind {
     Help,
+    /// `action="version"`: print the text and exit 0.
+    Version(String),
     StoreTrue,
     Store {
         convert: Convert,
@@ -114,6 +116,18 @@ impl Parser {
             metavar: None,
             default: Some(Value::Bool(false)),
             kind: Kind::StoreTrue,
+        });
+    }
+
+    /// `add_argument(option, action="version", version=text)`.
+    pub fn version(&mut self, option: &str, text: &str) {
+        self.actions.push(Action {
+            option_strings: vec![option.into()],
+            dest: "version".into(),
+            help: Some("show program's version number and exit".into()),
+            metavar: None,
+            default: None,
+            kind: Kind::Version(text.into()),
         });
     }
 
@@ -445,6 +459,13 @@ impl Parser {
                             stderr: String::new(),
                         });
                     }
+                    Kind::Version(text) => {
+                        return Err(Exit {
+                            code: 0,
+                            stdout: format!("{text}\n"),
+                            stderr: String::new(),
+                        });
+                    }
                     Kind::StoreTrue => {
                         namespace.insert(action.dest.clone(), Value::Bool(true));
                     }
@@ -529,7 +550,9 @@ impl Parser {
         match &action.kind {
             Kind::Subparsers { .. } => format!("{} ...", self.metavar(action)),
             Kind::Positional { .. } => self.metavar(action),
-            Kind::Help | Kind::StoreTrue => format!("[{}]", action.option_strings[0]),
+            Kind::Help | Kind::Version(_) | Kind::StoreTrue => {
+                format!("[{}]", action.option_strings[0])
+            }
             Kind::Store { .. } => {
                 format!("[{} {}]", action.option_strings[0], self.metavar(action))
             }
@@ -538,7 +561,7 @@ impl Parser {
 
     fn invocation(&self, action: &Action) -> String {
         match &action.kind {
-            Kind::Help | Kind::StoreTrue => action.option_strings.join(", "),
+            Kind::Help | Kind::Version(_) | Kind::StoreTrue => action.option_strings.join(", "),
             Kind::Store { .. } => action
                 .option_strings
                 .iter()

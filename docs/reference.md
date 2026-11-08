@@ -65,6 +65,7 @@ if the seller lists it again.
 ## Serve and browse
 
 `--port N` changes the port and `--no-browser` stops it opening one.
+`lamp demo` takes the same 2 flags and ignores `--data` and `--sources`.
 Global options go *before* the subcommand: `lamp --data other-dir serve`
 and `lamp --sources other.toml scrape`.
 

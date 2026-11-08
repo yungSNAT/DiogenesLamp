@@ -17,6 +17,24 @@ fn package_version() {
     assert_eq!(env!("CARGO_PKG_VERSION"), "0.1.0");
 }
 
+/// The release smoke test runs `lamp --version` and needs a first line that
+/// ends in the release version.
+#[test]
+fn version_flag_prints_the_package_version() {
+    for args in [&["--version"][..], &["--vers"], &["--version", "serve"]] {
+        let (code, out, err) = lamp(args, None);
+        assert_eq!(
+            (code, out.as_str(), err.as_str()),
+            (0, concat!("lamp ", env!("CARGO_PKG_VERSION"), "\n"), ""),
+            "{args:?}"
+        );
+    }
+    let (code, out, err) = lamp(&["--version=1"], None);
+    assert_eq!(code, 2);
+    assert!(out.is_empty());
+    assert!(err.ends_with("lamp: error: argument --version: ignored explicit argument '1'\n"));
+}
+
 #[test]
 fn import_creates_sources() {
     let dir = common::tmp();
@@ -240,8 +258,10 @@ fn nonsense_numeric_args_are_usage_errors() {
 fn help_and_usage_follow_argparse() {
     let (code, out, _) = lamp(&["-h"], None);
     assert_eq!(code, 0);
-    assert!(out.starts_with("usage: lamp [-h] [--sources SOURCES] [--data DATA]\n"));
+    assert!(out.starts_with("usage: lamp [-h] [--sources SOURCES] [--data DATA] [--version]\n"));
     assert!(out.contains("  -h, --help            show this help message and exit\n"));
+    assert!(out.contains("  --version             show program's version number and exit\n"));
+    assert!(out.contains("    demo                serve the viewer over synthetic data in a"));
     let (code, _, err) = lamp(&["bogus"], None);
     assert_eq!(code, 2);
     assert!(err.contains(
