@@ -18,10 +18,11 @@ updates:
         patterns:
           - "github/codeql-action*"
     ignore:
-      # The release-policy reusable workflow is pinned by SHA-256 in
+      # The release-policy reusable workflows are pinned in
       # tests/repo_policy.rs, so a bot bump can only fail CI.
-      # Bump it by hand and move the pin in the same commit.
+      # Bump them by hand and move the pins in the same commit.
       - dependency-name: ryanduguid/release-policy/.github/workflows/attribution-policy.yml
+      - dependency-name: ryanduguid/release-policy/.github/workflows/release-binary.yml
   - package-ecosystem: cargo
     directory: /
     schedule:

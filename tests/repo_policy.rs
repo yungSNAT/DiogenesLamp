@@ -102,6 +102,46 @@ jobs:
           fail_ci_if_error: true
 "#;
 
+const EXPECTED_RELEASE: &str = r#"name: Release
+
+# A v* tag on main's head publishes lamp through release-policy's binary
+# family: Linux (x86_64, static) and Windows (x86_64) executables, source
+# archives, SBOMs, SHA256SUMS and signed provenance in one immutable release.
+# The family builds no macOS target yet. VERSION, Cargo.toml and the first
+# line of RELEASE_NOTES.md must agree (tests/repo_policy.rs); release-policy
+# refuses a tag that names another version.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # A job that calls a reusable workflow accepts no timeout-minutes; every
+    # job in release-binary.yml sets its own.
+    permissions:
+      actions: read # Read this repository's own runs to require the mandatory checks.
+      attestations: write # Record provenance and SBOM attestations for release assets.
+      contents: write # Create the draft release, upload assets and publish it.
+      id-token: write # Obtain the OIDC identity required to sign attestations.
+    uses: ryanduguid/release-policy/.github/workflows/release-binary.yml@ca5492bd09693be9e1fd47d980e2740ef8daf023 # canaries.json current pin (#273)
+    with:
+      artifact-stem: diogenes-lamp
+      binary: lamp
+      # The job contexts branch protection requires on main.
+      required-checks: |
+        .github/workflows/ci.yml: test (ubuntu-latest)
+        .github/workflows/ci.yml: test (windows-latest)
+"#;
+
 const EXPECTED_DEPENDABOT: &str = r#"version: 2
 updates:
   - package-ecosystem: npm
@@ -122,10 +162,11 @@ updates:
         patterns:
           - "github/codeql-action*"
     ignore:
-      # The release-policy reusable workflow is pinned by SHA-256 in
+      # The release-policy reusable workflows are pinned in
       # tests/repo_policy.rs, so a bot bump can only fail CI.
-      # Bump it by hand and move the pin in the same commit.
+      # Bump them by hand and move the pins in the same commit.
       - dependency-name: ryanduguid/release-policy/.github/workflows/attribution-policy.yml
+      - dependency-name: ryanduguid/release-policy/.github/workflows/release-binary.yml
   - package-ecosystem: cargo
     directory: /
     schedule:
@@ -175,7 +216,7 @@ kept as a link-out directory and never fetched.
 "#;
 
 const EXPECTED_TOOLCHAIN: &str = r#"[toolchain]
-channel = "1.99"
+channel = "1.99.1"
 components = ["clippy", "rustfmt"]
 profile = "minimal"
 "#;
@@ -209,6 +250,7 @@ fn active_workflow_inventory_is_exact() {
             "codeql.yml",
             "no-ai-attribution.yml",
             "osv-scanner.yml",
+            "release.yml",
             "scorecard.yml"
         ]
     );
@@ -217,6 +259,30 @@ fn active_workflow_inventory_is_exact() {
 #[test]
 fn ci_workflow_is_exact() {
     assert_exact(&read(".github/workflows/ci.yml"), EXPECTED_CI, "ci.yml");
+}
+
+/// Release-time permissions, the release-policy pin and the checks the release
+/// requires on main.
+#[test]
+fn release_workflow_is_exact() {
+    assert_exact(
+        &read(".github/workflows/release.yml"),
+        EXPECTED_RELEASE,
+        "release.yml",
+    );
+}
+
+/// The release refuses a tag unless these agree with it, so check them before
+/// one is pushed.
+#[test]
+fn release_version_files_agree() {
+    let version = env!("CARGO_PKG_VERSION");
+    assert_eq!(read("VERSION"), format!("{version}\n"), "VERSION");
+    assert_eq!(
+        read("RELEASE_NOTES.md").lines().next(),
+        Some(format!("# v{version}").as_str()),
+        "RELEASE_NOTES.md must start with the tag's heading"
+    );
 }
 
 #[test]

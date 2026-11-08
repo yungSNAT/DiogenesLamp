@@ -13,7 +13,7 @@
 [![OpenSSF Scorecard](https://raw.githubusercontent.com/ryanduguid/.github/badges/EquityBot/DiogenesLamp.svg)](https://scorecard.dev/viewer/?uri=github.com/yungSNAT/DiogenesLamp) [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/16129/badge)](https://www.bestpractices.dev/projects/16129)<br>
 [![rust: 1.99+](.github/assets/badges/rust.svg)](https://www.rust-lang.org/) [![licence: Apache-2.0](.github/assets/badges/licence.svg)](LICENSE)
 
-[Install](#install) · [Use](#use) · [Data](#data) · [Diagnostics](#diagnostics-and-recovery) · [Covers](#cached-covers-and-visual-suggestions) · [Politeness](#politeness-and-scope) · [Development](#development) · [Credits](#credits) · [Licence](#licence)
+[Install](#install) · [Use](#use) · [Data](#data) · [Diagnostics](#diagnostics-and-recovery) · [Covers](#cached-covers-and-visual-suggestions) · [Politeness](#politeness-and-scope) · [Alternatives](#when-to-choose-something-else) · [Development](#development) · [Credits](#credits) · [Licence](#licence)
 
 </div>
 
@@ -33,18 +33,61 @@ original Yupoo album for the detail photos.
 
 ## Install
 
-Requires a Rust toolchain (the version is pinned in `rust-toolchain.toml`).
-`lamp` is a single binary with the viewer assets built in:
+`lamp` is a single executable with the viewer built in. Install it from
+source with a Rust toolchain (the version is pinned in `rust-toolchain.toml`):
 
     git clone https://github.com/yungSNAT/DiogenesLamp
     cd DiogenesLamp
     cargo install --locked --path .
 
-No tagged release is required to install from the clone, and the installed
-binary works outside the source tree. During development, `cargo run --` runs
-the current source; viewer edits take effect at the next build.
+The installed binary works outside the source tree. During development,
+`cargo run --` runs the current source; viewer edits take effect at the next
+build.
+
+### From a release
+
+From v0.1.0, each
+[release](https://github.com/yungSNAT/DiogenesLamp/releases) carries an
+executable for Linux (x86_64, statically linked) and one for Windows (x86_64),
+with a `SHA256SUMS` file and signed build provenance; if the page lists none
+yet, install from source as above. Check both before you run it; the
+commands below stop at the first failed check. With the
+[GitHub CLI](https://cli.github.com/) signed in (`gh auth login`), on Linux:
+
+    tag=v0.1.0
+    asset=diogenes-lamp-0.1.0-x86_64-unknown-linux-musl.tar.gz
+    gh release download "$tag" --repo yungSNAT/DiogenesLamp --pattern "$asset" --pattern SHA256SUMS &&
+      sha256sum --check --ignore-missing SHA256SUMS &&
+      gh attestation verify "$asset" --repo yungSNAT/DiogenesLamp \
+        --signer-workflow ryanduguid/release-policy/.github/workflows/release-binary.yml \
+        --source-ref "refs/tags/$tag" &&
+      mkdir -p ~/.local/bin && tar -xzf "$asset" -C ~/.local/bin lamp
+
+`~/.local/bin` must be on your `PATH`. On Windows, in PowerShell:
+
+    $tag = 'v0.1.0'
+    $asset = 'diogenes-lamp-0.1.0-x86_64-pc-windows-msvc.zip'
+    gh release download $tag --repo yungSNAT/DiogenesLamp --pattern $asset --pattern SHA256SUMS
+    if ($LASTEXITCODE) { throw 'download failed' }
+    $sum = (Select-String -Path SHA256SUMS -SimpleMatch $asset).Line.Split(' ')[0]
+    if ((Get-FileHash $asset -Algorithm SHA256).Hash -ne $sum) { throw 'checksum mismatch' }
+    gh attestation verify $asset --repo yungSNAT/DiogenesLamp --signer-workflow ryanduguid/release-policy/.github/workflows/release-binary.yml --source-ref "refs/tags/$tag"
+    if ($LASTEXITCODE) { throw 'provenance check failed' }
+    Expand-Archive $asset "$env:LOCALAPPDATA\Programs\lamp" -Force
+
+Then add that folder to your `PATH`, or run `lamp.exe` from it.
+[Verify a release](https://github.com/ryanduguid/release-policy/blob/main/docs/verify-a-release.md)
+explains these checks and what they prove. There is no macOS build yet.
 
 ## Use
+
+To see the viewer before you collect any links:
+
+    lamp demo
+
+It writes 5 synthetic sellers with 2,000 albums each to a new folder in your
+system's temporary directory, opens the viewer on them and deletes the folder
+when you press Ctrl+C. It never writes to `data/` or `sources.toml`.
 
 1. Put your Yupoo links in a text or CSV file, one URL per line (messy exports
    are fine: duplicates, page URLs and non-Yupoo links are handled). Rows
@@ -68,6 +111,74 @@ the current source; viewer edits take effect at the next build.
 
 Flags, scrape behaviour and the viewer's features are in
 [docs/reference.md](docs/reference.md).
+
+### Refresh on a schedule
+
+Re-runs fetch only what changed, so one scrape a day keeps a catalogue
+current. Schedule the same command with absolute paths, no more than once a
+day, at an odd minute rather than on the hour, and keep the default limits in
+[Politeness and scope](#politeness-and-scope): a scheduled run with a higher
+`--rps` or `--workers` adds that load to every seller, every day. A run that
+starts whilst another is still writing the same data directory exits without
+touching it. Each run's per-seller summary is saved in `data/runs/`.
+
+The examples keep `sources.toml` and `data/` in a `lamp` folder in your home
+directory and run at 03:47. Each names `lamp` where the release install puts
+it, or `~/.cargo/bin` on macOS; replace that with the path `command -v lamp`
+prints (`(Get-Command lamp).Source` in PowerShell).
+
+<details>
+<summary>Windows: Task Scheduler (PowerShell)</summary>
+
+    $dir = "$env:USERPROFILE\lamp"
+    $action = New-ScheduledTaskAction -Execute "$env:LOCALAPPDATA\Programs\lamp\lamp.exe" `
+      -Argument "--sources `"$dir\sources.toml`" --data `"$dir\data`" scrape" -WorkingDirectory $dir
+    Register-ScheduledTask -TaskName 'DiogenesLamp refresh' -Action $action `
+      -Trigger (New-ScheduledTaskTrigger -Daily -At '03:47')
+
+The task runs whilst you are signed in. Remove it with
+`Unregister-ScheduledTask -TaskName 'DiogenesLamp refresh'`.
+
+</details>
+
+<details>
+<summary>Linux: cron</summary>
+
+Run `crontab -e` and add:
+
+    47 3 * * * $HOME/.local/bin/lamp --sources $HOME/lamp/sources.toml --data $HOME/lamp/data scrape >> $HOME/lamp/refresh.log 2>&1
+
+</details>
+
+<details>
+<summary>macOS: launchd</summary>
+
+launchd expands neither `~` nor `$HOME`, so replace `you` with your user
+name. Save this as `~/Library/LaunchAgents/local.diogeneslamp.refresh.plist`:
+
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    <plist version="1.0">
+    <dict>
+      <key>Label</key><string>local.diogeneslamp.refresh</string>
+      <key>ProgramArguments</key>
+      <array>
+        <string>/Users/you/.cargo/bin/lamp</string>
+        <string>--sources</string><string>/Users/you/lamp/sources.toml</string>
+        <string>--data</string><string>/Users/you/lamp/data</string>
+        <string>scrape</string>
+      </array>
+      <key>StartCalendarInterval</key>
+      <dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>47</integer></dict>
+      <key>StandardOutPath</key><string>/Users/you/lamp/refresh.log</string>
+      <key>StandardErrorPath</key><string>/Users/you/lamp/refresh.log</string>
+    </dict>
+    </plist>
+
+Then load it with
+`launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.diogeneslamp.refresh.plist`.
+
+</details>
 
 ## Data
 
@@ -158,6 +269,22 @@ accuracy rate on real products.
   locally from item IDs, and the optional QC photo lookup is a plain link
   that reaches rep.tools only when you follow it.
 
+## When to choose something else
+
+DiogenesLamp suits you if you already know the sellers you follow and want
+their whole catalogues on one page on your own machine. Other tools fit other
+needs:
+
+- **Search sellers you have not collected, with nothing to install:**
+  [Yupa](https://joinyupa.com/en) is a hosted search across Yupoo stores
+  (220 stores on its home page on 8 November 2026), with sizes, prices in
+  euros and a delivered-price calculator.
+- **Search by photo, or Taobao, 1688 and Weidian as well as Yupoo:**
+  [OpenClothingSearch](https://github.com/SergeSerb2/OpenClothingSearch) runs
+  locally, ranks listings by how closely their photos match and translates
+  titles. It needs uv, Node.js and Chrome, and uses an AI provider you connect
+  for its photo checks and translation.
+
 ## Development
 
     cargo fmt --check
@@ -196,7 +323,8 @@ script loading path the same helper signatures as the Node test imports.
 Compiler checks cover saved-value reads, DOM access and controller calls;
 browser verification still checks focus, layout and keyboard behaviour.
 
-To work on the viewer without scraping anything, generate synthetic data:
+To work on the viewer without scraping anything, use `lamp demo`, or write
+the same synthetic data to a folder you keep:
 
     cargo run --example make_demo_data -- demo-data
     lamp --data demo-data serve
