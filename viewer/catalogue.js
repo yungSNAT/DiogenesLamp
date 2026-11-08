@@ -29,9 +29,14 @@ const MARK_WORDS = typeof module !== "undefined" ? require("./kinds.js") : { sea
  * @returns {[number, number][]}
  */
 function matchRanges(title, query) {
-  // Full-width Latin (T恤 written as Ｔ恤) folds to ASCII one character for one, as
-  // search's NFKC folds it, so marks agree with search and keep their offsets.
-  const text = (title || "").toLowerCase().replace(/[\uFF01-\uFF5E]/g, c => c.normalize("NFKC"));
+  // Characters search's NFKC folds, such as full-width Latin (Ｔ恤 for T恤) or
+  // a compatibility ideograph, fold here too where the folded form keeps
+  // their length, then lowercase as search does, so marks agree with search
+  // and keep their offsets.
+  const text = (title || "").replace(/[^\x00-\x7f]/gu, c => {
+    const folded = c.normalize("NFKC");
+    return folded.length === c.length ? folded : c;
+  }).toLowerCase();
   const terms = MARK_WORDS.searchTerms(query || "");
   if (!terms.length || !text) return [];
   /** @type {[number, number][]} */

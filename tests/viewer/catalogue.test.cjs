@@ -191,4 +191,8 @@ test("an English term marks the Chinese word it found", () => {
   // Full-width Latin reads as search reads it, and the marks keep their offsets.
   assert.deepEqual(matchRanges("Ｔ恤 黑色", "tee"), [[0, 2]]);
   assert.deepEqual(matchRanges("ＴＥＥ black", "tee"), [[0, 3]]);
+  // So does a compatibility ideograph: 羽 written as U+FA1E still reads 羽绒服 as down.
+  assert.deepEqual(matchRanges("\uFA1E绒服 白色", "down"), [[0, 3]]);
+  // A letter that folds to a capital (ℌ to H) is lowercased after folding, as search does.
+  assert.deepEqual(matchRanges("\u210Cat 卫衣", "hat"), [[0, 3]]);
 });
