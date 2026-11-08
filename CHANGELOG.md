@@ -104,3 +104,7 @@ unchanged apart from the fixes under Viewer.
   version and `rust-toolchain.toml` pins the exact compiler, 1.99.1.
 - The `fixture-transport` feature (differential testing only) answers HTTPS
   requests from a local fixture directory.
+- The opt-in browser qualification (`npm run test:browser` and
+  `bench:browser`) runs the Rust example `browser_catalogue`, which replaces
+  `tests/browser/catalogue.mjs`. It also writes `--output` when the overall
+  deadline is exceeded.
