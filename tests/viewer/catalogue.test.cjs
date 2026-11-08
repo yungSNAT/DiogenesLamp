@@ -195,7 +195,11 @@ test("an English term marks the Chinese word it found", () => {
   assert.deepEqual(matchRanges("\uFA1E绒服 白色", "down"), [[0, 3]]);
   // A letter that folds to a capital (ℌ to H) is lowercased after folding, as search does.
   assert.deepEqual(matchRanges("\u210Cat 卫衣", "hat"), [[0, 3]]);
-  // A query typed in those forms folds as search folds it.
+  // A query typed in those forms folds by the same rule.
   assert.deepEqual(matchRanges("\uFA1E绒服", "\uFA1E"), [[0, 1]]);
   assert.deepEqual(matchRanges("Ｔ恤 黑色", "Ｔ恤"), [[0, 2]]);
+  // A fold that changes length or splits a character is left out, so a mark never
+  // starts inside one: search reads 🄭 as CD, but marks keep it whole.
+  assert.deepEqual(matchRanges("\u{1F12D}own", "down"), []);
+  assert.deepEqual(matchRanges("\uFB01", "\uFB01"), [[0, 1]]);
 });

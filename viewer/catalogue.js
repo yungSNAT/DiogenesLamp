@@ -29,16 +29,18 @@ const MARK_WORDS = typeof module !== "undefined" ? require("./kinds.js") : { sea
  * @returns {[number, number][]}
  */
 function matchRanges(title, query) {
-  // Characters search's NFKC folds, such as full-width Latin (Ｔ恤 for T恤) or
-  // a compatibility ideograph, fold here too where the folded form keeps
-  // their length, then lowercase as search does, so marks agree with search
-  // and keep their offsets.
-  const text = (title || "").replace(/[^\x00-\x7f]/gu, c => {
+  // Search's NFKC folds, such as full-width Latin (Ｔ恤 for T恤) or a
+  // compatibility ideograph, apply here one character at a time, and only where
+  // the folded form is one character of the same length, so every offset stays
+  // on a character boundary of the title. Title and query fold alike, then
+  // lowercase as search does.
+  /** @param {string} text */
+  const fold = text => text.replace(/[^\x00-\x7f]/gu, c => {
     const folded = c.normalize("NFKC");
-    return folded.length === c.length ? folded : c;
-  }).toLowerCase();
-  // The query folds whole, as search folds it.
-  const terms = MARK_WORDS.searchTerms((query || "").normalize("NFKC"));
+    return folded.length === c.length && [...folded].length === 1 ? folded : c;
+  });
+  const text = fold(title || "").toLowerCase();
+  const terms = MARK_WORDS.searchTerms(fold(query || ""));
   if (!terms.length || !text) return [];
   /** @type {[number, number][]} */
   const hits = [];
