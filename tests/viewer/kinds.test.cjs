@@ -41,3 +41,41 @@ test("link removal preserves adjacent title words and handles long domain candid
   assert.equal(kindOf("a".repeat(50000) + "! watch"), "watches");
   assert.equal(kindOf("https://" + "a".repeat(50000) + ".com/watch"), UNSORTED);
 });
+
+test("T恤 reads as a tee: tokens are matched against the lowercased title", () => {
+  assert.equal(kindOf("T恤"), "tees");
+  for (const kind of KINDS) assert.ok(kind.cjk.every(token => token === token.toLowerCase()), kind.id);
+});
+
+const { WORDS, searchForms, readWords } = require("../../viewer/kinds.js");
+const read = title => readWords(title.normalize("NFKC").toLowerCase());
+
+test("the word table is well formed: unique English, lowercase forms, no single-character tokens", () => {
+  assert.equal(new Set(WORDS.map(word => word.en)).size, WORDS.length);
+  // A colour, fit or material form names one word, or a Latin title could read as either.
+  const traitForms = WORDS.filter(word => word.facet !== "garment").flatMap(word => [word.en, ...word.latin]);
+  assert.equal(new Set(traitForms).size, traitForms.length);
+  for (const word of WORDS) {
+    for (const form of [word.en, ...word.latin, ...word.cjk]) assert.equal(form, form.toLowerCase(), form);
+    // One character is too loose: 包 (bag) is also in 包邮, free postage.
+    assert.ok(word.cjk.length && word.cjk.every(token => [...token].length > 1), word.en);
+  }
+});
+
+test("a query word expands to Chinese tokens only, and an unknown word stays itself", () => {
+  assert.deepEqual(searchForms("hoodie"), ["hoodie", "卫衣", "连帽"]);
+  assert.deepEqual(searchForms("jacket"), ["jacket", "外套", "夹克"]);
+  assert.ok(searchForms("pants").includes("牛仔裤"));
+  assert.deepEqual(searchForms("sb"), ["sb"]);
+  assert.deepEqual(searchForms("卫衣"), ["卫衣"]);
+});
+
+test("titles are read longest token first, links ignored, Latin traits as whole words", () => {
+  assert.deepEqual(read("粉红色T恤"), {gloss: ["t-shirt", "pink"], traits: ["pink"]});
+  assert.deepEqual(read("深蓝色 米白色"), {gloss: ["navy", "beige"], traits: ["navy", "beige"]});
+  assert.deepEqual(read("牛仔裤"), {gloss: ["jeans", "denim"], traits: ["denim"]});
+  assert.deepEqual(read("Off-White hoodie"), {gloss: [], traits: []});
+  assert.deepEqual(read("Grey oversized hoodie, gray cuffs"), {gloss: [], traits: ["grey", "loose"]});
+  assert.deepEqual(read("卫衣 https://shop.example.com/black-黑色"), {gloss: ["sweatshirt"], traits: []});
+  assert.equal(read("Plain title").gloss, read("").traits, "titles with no words share one empty list");
+});

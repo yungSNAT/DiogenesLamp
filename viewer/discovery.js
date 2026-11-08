@@ -6,16 +6,18 @@
 /** @typedef {{id: string, title?: string, title_lc?: string, seller?: string,
  * description?: string, description_lc?: string,
  * links?: import("./dedup.js").PurchaseLink[], search_ids?: string[],
- * search_keys?: string[]}} SearchAlbum */
+ * search_keys?: string[], gloss?: readonly string[], traits?: readonly string[]}} SearchAlbum */
 const SEARCH_DEDUP = typeof module !== "undefined" ? require("./dedup.js")
   : { itemKeys, marketplaceItem, SHORTLINK_HOSTS };
 const SEARCH_AGENTS = typeof module !== "undefined" ? require("./agents.js")
   : { unwrapAgentLink, agentLink, agentFor };
+const SEARCH_WORDS = typeof module !== "undefined" ? require("./kinds.js") : { searchForms, readWords };
 
 /** @param {SearchAlbum} album */
 function prepareAlbumSearch(album) {
   const keys = [...SEARCH_DEDUP.itemKeys(album.links || [])];
   album.title_lc = (album.title || "").normalize("NFKC").toLowerCase();
+  ({ gloss: album.gloss, traits: album.traits } = SEARCH_WORDS.readWords(album.title_lc));
   album.description_lc = (album.description || "").normalize("NFKC").toLowerCase();
   album.search_keys = keys;
   album.search_ids = [album.id, ...keys.filter(key => !key.startsWith("url:"))
@@ -72,7 +74,10 @@ function compileCatalogueSearch(query) {
       exactKey = keyForUrl(url.href);
     }
   } catch { /* Ordinary text search. */ }
-  const terms = text.toLowerCase().split(/\s+/).filter(Boolean);
+  // Each term also finds the Chinese words kinds.js gives for it.
+  const terms = text.toLowerCase().split(/\s+/).filter(Boolean).map(term => SEARCH_WORDS.searchForms(term));
+  /** @param {string} within */
+  const hasEveryTerm = within => terms.every(forms => forms.some(form => within.includes(form)));
   /** @param {SearchAlbum} album */
   function reason(album) {
     if (!text) return "";
@@ -81,10 +86,10 @@ function compileCatalogueSearch(query) {
     if (isUrl) return null;
     const title = album.title_lc || (album.title || "").normalize("NFKC").toLowerCase();
     const seller = (album.seller || "").normalize("NFKC").toLowerCase();
-    if (terms.every(term => title.includes(term))) return "Title";
-    if (terms.every(term => (title + " " + seller).includes(term))) return "Title or seller";
+    if (hasEveryTerm(title)) return "Title";
+    if (hasEveryTerm(title + " " + seller)) return "Title or seller";
     const description = album.description_lc ?? (album.description || "").normalize("NFKC").toLowerCase();
-    if (description && terms.every(term => (title + "\n" + description).includes(term))) return "Description";
+    if (description && hasEveryTerm(title + "\n" + description)) return "Description";
     return null;
   }
   /** @param {SearchAlbum} album */

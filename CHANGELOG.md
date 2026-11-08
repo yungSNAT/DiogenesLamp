@@ -76,6 +76,14 @@ unchanged apart from the fixes under Viewer.
 - The collection, tag and saved-search filters, and the shops panel's
   platform groups, list in alphabetical order. They had used code-unit order,
   so 'Beta' came before 'alpha' and 'taobao global' before 'taobao'.
+- Experimental: an English garment, colour, fit or material word in a search
+  also finds the Chinese words sellers write for it ('hoodie' finds 卫衣), a
+  card prints a Chinese title's words in English before the title, and
+  Colour, Fit and Material filters read those words from English or Chinese
+  titles. The words are a fixed table in `viewer/kinds.js`, with no brand
+  names.
+- The kind filter reads T恤 as a tee. The token was stored in uppercase and
+  never matched a lowercased title.
 
 ### Development
 

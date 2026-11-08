@@ -49,7 +49,7 @@ test("script loading computes the calendar day once per age filter pass", () => 
     constructor(...args) { super(...args); dates++; }
   }
   const context = createContext({Date: CountingDate, URL, URLSearchParams});
-  for (const name of ["filters", "catalogue", "dedup", "agents", "age", "discovery", "view-state"]) {
+  for (const name of ["kinds", "filters", "catalogue", "dedup", "agents", "age", "discovery", "view-state"]) {
     runInContext(readFileSync(join(__dirname, "../../viewer", name + ".js"), "utf8"), context);
   }
   context.catalogue = catalogue;

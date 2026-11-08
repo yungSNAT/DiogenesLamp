@@ -101,3 +101,12 @@ test("fillTitle writes plain text when the query matches nothing", () => {
   assert.deepStrictEqual(marksOf(el), []);
   assert.strictEqual(el.textContent, ALBUM.title);
 });
+
+test("a card's accessible name carries the gloss the stylesheet prints", () => {
+  const { previewLabel } = new Function(lift("previewLabel") + "\nreturn { previewLabel };")();
+  assert.strictEqual(previewLabel({ title: "黑色 卫衣", gloss: ["sweatshirt", "black"] }),
+    "Preview: 黑色 卫衣. Read from the title: sweatshirt, black");
+  assert.strictEqual(previewLabel({ title: "Black hoodie", gloss: [] }), "Preview: Black hoodie");
+  assert.match(SOURCE, /aria-label="\$\{escapeAttr\(previewLabel\(album\)\)\}"/,
+    "the card title button is named by previewLabel");
+});

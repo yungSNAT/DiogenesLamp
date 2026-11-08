@@ -440,6 +440,12 @@ button:hover { border-color: var(--ink); }
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
   overflow: hidden;
 }
+/* Experimental: English words read from a Chinese title lead it in the
+   label face, inside the same clamp. The button's name carries them too. */
+.card-title span[data-gloss]::before {
+  content: attr(data-gloss) " · "; color: var(--ink-2); font-size: var(--t-mark);
+  font-family: ui-monospace, "Cascadia Mono", "Segoe UI Mono", Menlo, monospace;
+}
 .preview-btn {
   text-align: left; border: 0; background: transparent; color: inherit;
   font-family: inherit; border-radius: 0; min-height: 0;

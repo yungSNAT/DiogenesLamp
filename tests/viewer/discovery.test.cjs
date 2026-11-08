@@ -180,3 +180,38 @@ test("the delimiter is read outside quotes, so quoted commas and newlines surviv
   assert.deepEqual(result.matched.map(a => a.id), ["9", "8"]);
   assert.deepEqual([...result.found].sort(), ["taobao:2", "weidian:1"]);
 });
+
+test("English garment, colour, fit and material words also find their Chinese title words", () => {
+  const chinese = (id, title) => { const a = {id, title, seller: "example", links: []}; prepareAlbumSearch(a); return a; };
+  const hoodie = chinese("1", "2026新款 黑色 卫衣"), jacket = chinese("2", "秋冬 外套 男"), pink = chinese("3", "粉红色t恤");
+  for (const [query, hit] of [["hoodie", hoodie], ["HOODIES", hoodie], ["black hoodie", hoodie],
+    ["jacket", jacket], ["tee pink", pink]]) {
+    const search = compileCatalogueSearch(query);
+    assert.equal(search.matches(hit), true, query);
+    assert.equal(search.reason(hit), "Title", query);
+  }
+  assert.equal(compileCatalogueSearch("hoodie jacket").matches(hoodie), false, "every term must still match");
+  // Latin to Chinese only: a Chinese query never finds a Latin title through the table.
+  const latin = {id: "4", title: "Moncler down jacket", seller: "example", links: []};
+  prepareAlbumSearch(latin);
+  assert.equal(compileCatalogueSearch("羽绒").matches(latin), false);
+  assert.equal(compileCatalogueSearch("down").matches(latin), true);
+});
+
+test("titles carry an English gloss of their Chinese words and the traits the filters read", () => {
+  const read = title => { const a = {id: "1", title, seller: "example", links: []}; prepareAlbumSearch(a); return a; };
+  const chinese = read("黑色 连帽卫衣 宽松 纯棉");
+  assert.deepEqual(chinese.gloss, ["sweatshirt", "hooded", "black", "loose", "cotton"]);
+  assert.deepEqual(chinese.traits, ["black", "loose", "cotton"]);
+  assert.deepEqual(read("Black wide leg jeans").gloss, []);
+  assert.deepEqual(read("Black wide leg jeans").traits, ["black", "wide leg"]);
+  const filtered = filters => selectCatalogue(createViewState(filters), {albums: [chinese, read("Black tee"),
+    read("白色 修身 衬衫"), read("Off-White hoodie")], favorites: new Set(), bannedKeys: new Set()})
+    .filtered.map(a => a.title);
+  assert.deepEqual(filtered({colour: "black"}), ["黑色 连帽卫衣 宽松 纯棉", "Black tee"]);
+  assert.deepEqual(filtered({colour: "white"}), ["白色 修身 衬衫"]);
+  assert.deepEqual(filtered({colour: "black", fit: "loose", material: "cotton"}), ["黑色 连帽卫衣 宽松 纯棉"]);
+  assert.deepEqual(filtered({fit: "slim", material: "cotton"}), []);
+  assert.deepEqual(filtersFromURL(filtersToURL({colour: "black", fit: "wide leg", material: "down"})),
+    {...filtersFromURL("?view=1"), colour: "black", fit: "wide leg", material: "down"});
+});

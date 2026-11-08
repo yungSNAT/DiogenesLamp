@@ -177,3 +177,10 @@ test("shards from before last_seen fall back to the index run", () => {
   markNew(albums, "run-2");
   assert.deepEqual(albums.map((a) => a.is_new), [true, false]);
 });
+
+test("an English term marks the Chinese word it found", () => {
+  const title = "2026 黑色卫衣";
+  assert.deepEqual(matchRanges(title, "hoodie black"), [[5, 9]]);
+  assert.equal(title.slice(5, 9), "黑色卫衣");
+  assert.deepEqual(matchRanges("秋冬外套", "jacket"), [[2, 4]]);
+});
