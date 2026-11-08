@@ -37,7 +37,8 @@ function matchRanges(title, query) {
     const folded = c.normalize("NFKC");
     return folded.length === c.length ? folded : c;
   }).toLowerCase();
-  const terms = MARK_WORDS.searchTerms(query || "");
+  // The query folds whole, as search folds it.
+  const terms = MARK_WORDS.searchTerms((query || "").normalize("NFKC"));
   if (!terms.length || !text) return [];
   /** @type {[number, number][]} */
   const hits = [];
