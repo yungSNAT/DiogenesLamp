@@ -197,11 +197,28 @@ test("English garment, colour, fit and material words also find their Chinese ti
   // A 2-word form finds its Chinese, and its words still find an English title without the hyphen.
   assert.equal(compileCatalogueSearch("wide leg").reason(chinese("6", "阔腿裤 黑色")), "Title");
   assert.equal(compileCatalogueSearch("wide leg black").reason(chinese("7", "Wide-leg jeans black")), "Title");
+  // Only titles are read: a description is searched as written.
+  const described = {id: "8", title: "Plain", description: "卫衣 黑色", seller: "example", links: []};
+  prepareAlbumSearch(described);
+  assert.equal(compileCatalogueSearch("hoodie").matches(described), false);
+  assert.equal(compileCatalogueSearch("卫衣").reason(described), "Description");
+  assert.equal(compileCatalogueSearch("sb").matches(chinese("9", "运动鞋 板鞋")), false);
   // Latin to Chinese only: a Chinese query never finds a Latin title through the table.
   const latin = {id: "4", title: "Moncler down jacket", seller: "example", links: []};
   prepareAlbumSearch(latin);
   assert.equal(compileCatalogueSearch("羽绒").matches(latin), false);
   assert.equal(compileCatalogueSearch("down").matches(latin), true);
+});
+
+test("every English and Latin form in the word table finds a title with its Chinese", () => {
+  const {WORDS} = require("../../viewer/kinds.js");
+  for (const word of WORDS) {
+    const album = {id: "1", title: `2026 ${word.cjk[0]}`, seller: "example", links: []};
+    prepareAlbumSearch(album);
+    for (const form of [word.en, ...word.latin]) {
+      assert.equal(compileCatalogueSearch(form.toUpperCase()).reason(album), "Title", `${form} finds ${word.cjk[0]}`);
+    }
+  }
 });
 
 test("titles carry an English gloss of their Chinese words and the traits the filters read", () => {

@@ -47,7 +47,7 @@ test("T恤 reads as a tee: tokens are matched against the lowercased title", () 
   for (const kind of KINDS) assert.ok(kind.cjk.every(token => token === token.toLowerCase()), kind.id);
 });
 
-const { WORDS, searchTerms, readWords } = require("../../viewer/kinds.js");
+const { WORDS, readWords } = require("../../viewer/kinds.js");
 const read = title => readWords(title.normalize("NFKC").toLowerCase());
 
 test("the word table is well formed: unique English, lowercase forms, no single-character tokens", () => {
@@ -62,24 +62,6 @@ test("the word table is well formed: unique English, lowercase forms, no single-
   }
 });
 
-test("a query term carries the table words it names, and an unknown or Chinese term none", () => {
-  assert.deepEqual(searchTerms("Hoodie  jacket"), [{literals: ["hoodie"], words: ["sweatshirt", "hooded"]},
-    {literals: ["jacket"], words: ["jacket"]}]);
-  assert.ok(searchTerms("pants")[0].words.includes("jeans"));
-  assert.deepEqual(searchTerms("sb 卫衣"), [{literals: ["sb"], words: []}, {literals: ["卫衣"], words: []}]);
-});
-
-test("query words that make a form read as one term, so every form can be searched", () => {
-  assert.deepEqual(searchTerms("wide leg jeans"), [{literals: ["wide", "leg"], words: ["wide leg"]},
-    {literals: ["jeans"], words: ["jeans"]}]);
-  for (const word of WORDS) {
-    for (const form of [word.en, ...word.latin]) {
-      const terms = searchTerms(form);
-      assert.equal(terms.length, 1, form);
-      assert.ok(terms[0].words.includes(word.en), form);
-    }
-  }
-});
 
 test("titles are read longest token first, links ignored, Latin traits as whole words", () => {
   assert.deepEqual(read("粉红色T恤"), {gloss: ["t-shirt", "pink"], traits: ["pink"]});

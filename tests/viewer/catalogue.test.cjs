@@ -188,4 +188,7 @@ test("an English term marks the Chinese word it found", () => {
   assert.deepEqual(matchRanges("阔腿裤 wide-leg", "wide leg"), [[0, 2], [4, 8], [9, 12]]);
   // A link is not read, so nothing in it is marked for a word.
   assert.deepEqual(matchRanges("卫衣 shop.example.com/卫衣", "hoodie"), [[0, 2]]);
+  // Full-width Latin reads as search reads it, and the marks keep their offsets.
+  assert.deepEqual(matchRanges("Ｔ恤 黑色", "tee"), [[0, 2]]);
+  assert.deepEqual(matchRanges("ＴＥＥ black", "tee"), [[0, 3]]);
 });
