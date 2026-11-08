@@ -71,6 +71,13 @@ unchanged apart from the fixes under Viewer.
   normalisation and IDNA mapping come from Rust crates, which can differ for
   characters added in the newest Unicode versions.
 
+### New commands
+
+- `lamp demo` writes synthetic sellers to a new directory under the system
+  temporary directory, serves the viewer over them and removes them when you
+  stop it with Ctrl+C. It never writes to `--data` or the working directory.
+- `lamp --version` prints `lamp 0.1.0`.
+
 ### Viewer
 
 - The collection, tag and saved-search filters, and the shops panel's
@@ -82,6 +89,10 @@ unchanged apart from the fixes under Viewer.
 - `cargo test` replaces pytest. It runs the viewer's node suite and the
   browser parity checks, and fails rather than skips without node.
 - `cargo run --example make_demo_data` replaces `tests/make_demo_data.py`
-  (same shape of data; its pseudo-random titles and ages differ).
+  (same shape of data; its pseudo-random titles and ages differ). Its
+  generator lives in the library as `lamp::demo`, which `lamp demo` shares.
+- A `v*` tag on main publishes Linux and Windows executables through
+  release-policy's binary release workflow. `VERSION` holds the release
+  version and `rust-toolchain.toml` pins the exact compiler, 1.99.1.
 - The `fixture-transport` feature (differential testing only) answers HTTPS
   requests from a local fixture directory.

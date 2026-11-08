@@ -4,8 +4,10 @@
 > local store and serves them as one searchable, infinite-scroll page. It fetches covers
 > and metadata from public pages only; detail photos stay on Yupoo, linked from the viewer.
 
-Version 0.1.0 (the Rust port) is unreleased and has no tagged release. Install from a
-clone with `cargo install --locked --path .`; the toolchain is pinned in `rust-toolchain.toml`.
+Version 0.1.0 (the Rust port) has no tagged release yet. A `v*` tag publishes Linux and
+Windows executables (README, Install); until then, install from a clone with
+`cargo install --locked --path .`; the toolchain is pinned in `rust-toolchain.toml`.
+`lamp demo` serves the viewer over synthetic data without touching `data/`.
 
 ## Start
 

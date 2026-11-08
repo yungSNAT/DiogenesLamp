@@ -67,6 +67,7 @@ pub fn build_parser() -> Parser {
         None,
         None,
     );
+    parser.version("--version", concat!("lamp ", env!("CARGO_PKG_VERSION")));
 
     let mut import = Parser::new("lamp import", None);
     import.positional("dump", as_path, "Path");
@@ -134,6 +135,10 @@ pub fn build_parser() -> Parser {
     serve.store("--port", port, "_port", Value::Int(8000), None, None);
     serve.flag("--no-browser", None);
 
+    let mut demo = Parser::new("lamp demo", None);
+    demo.store("--port", port, "_port", Value::Int(8000), None, None);
+    demo.flag("--no-browser", None);
+
     let doctor = Parser::new("lamp doctor", None);
     let snapshot = Parser::new("lamp snapshot", None);
     let reindex = Parser::new("lamp reindex", None);
@@ -156,6 +161,11 @@ pub fn build_parser() -> Parser {
             choice("import", "import a raw link dump into sources.toml", import),
             choice("scrape", "scrape Yupoo sellers into data/", scrape),
             choice("serve", "serve the local viewer", serve),
+            choice(
+                "demo",
+                "serve the viewer over synthetic data in a temporary directory",
+                demo,
+            ),
             choice(
                 "doctor",
                 "check catalogue metadata and cached cover coverage",
@@ -516,21 +526,90 @@ fn cmd_serve(args: &Args) -> i32 {
             pyerr::path_str(&data)
         ));
     }
+    let Some(server) = listen(&data, args) else {
+        return 1;
+    };
+    crate::serve::serve(
+        &server,
+        !args.flag("no_browser"),
+        interrupt_flag().unwrap_or_default(),
+    );
+    0
+}
+
+/// Bind the viewer's port for `data`, reporting a failure.
+fn listen(data: &std::path::Path, args: &Args) -> Option<crate::serve::Server> {
     let port = u16::try_from(args.int("port")).unwrap_or(8000);
-    let server = match crate::serve::make_server(crate::serve::Viewer::Embedded, &data, port) {
-        Ok(server) => server,
+    crate::serve::make_server(crate::serve::Viewer::Embedded, data, port)
+        .inspect_err(|e| out::err(&format!("error: could not listen on 127.0.0.1:{port}: {e}")))
+        .ok()
+}
+
+/// Set when the user presses Ctrl+C, instead of ending the process.
+fn interrupt_flag() -> Result<Arc<AtomicBool>, ctrlc::Error> {
+    let stop = Arc::new(AtomicBool::new(false));
+    let flag = stop.clone();
+    ctrlc::set_handler(move || flag.store(true, Ordering::SeqCst))?;
+    Ok(stop)
+}
+
+/// Sellers and albums per seller that `lamp demo` writes.
+const DEMO_SELLERS: usize = 5;
+const DEMO_ALBUMS: usize = 2000;
+
+/// `lamp demo`: synthetic data in a new directory under the system temporary
+/// directory, never `--data`, served until Ctrl+C and then removed.
+fn cmd_demo(args: &Args) -> i32 {
+    let dir = std::env::temp_dir().join(crate::storage::temp_name("lamp-demo-", ""));
+    // Bind first, so a busy port fails before anything is written.
+    let Some(server) = listen(&dir, args) else {
+        return 1;
+    };
+    // Ctrl+C whilst writing stops before serving and still removes the data.
+    // Without the handler it would end the process first, so that is an error.
+    let stop = match interrupt_flag() {
+        Ok(stop) => stop,
         Err(e) => {
-            out::err(&format!("error: could not listen on 127.0.0.1:{port}: {e}"));
+            out::err(&format!("error: could not handle Ctrl+C: {e}"));
             return 1;
         }
     };
-    let stop = Arc::new(AtomicBool::new(false));
-    {
-        let stop = stop.clone();
-        let _ = ctrlc::set_handler(move || stop.store(true, Ordering::SeqCst));
+    // A directory this could not create is not ours to remove.
+    if let Err(e) = std::fs::create_dir(&dir) {
+        out::err(&format!("error: could not write demo data: {e}"));
+        return 1;
     }
-    crate::serve::serve(&server, !args.flag("no_browser"), stop);
-    0
+    let code = match crate::demo::write(&dir, DEMO_SELLERS, DEMO_ALBUMS, DEMO_ALBUMS) {
+        Ok(covers) => {
+            if let Err(e) = out::out(&format!(
+                "demo catalogue: {DEMO_SELLERS} sellers x {DEMO_ALBUMS} albums ({covers} covers) in {}; removed when you stop",
+                pyerr::path_str(&dir)
+            )) {
+                remove_demo(&dir);
+                out::uncaught(&e);
+            }
+            if !stop.load(Ordering::SeqCst) {
+                crate::serve::serve(&server, !args.flag("no_browser"), stop);
+            }
+            0
+        }
+        Err(e) => {
+            out::err(&format!("error: could not write demo data: {e}"));
+            1
+        }
+    };
+    remove_demo(&dir);
+    code
+}
+
+/// The output promised the data would go, so a leftover is named.
+fn remove_demo(dir: &std::path::Path) {
+    if let Err(e) = std::fs::remove_dir_all(dir) {
+        out::err(&format!(
+            "warning: could not remove {}: {e}",
+            pyerr::path_str(dir)
+        ));
+    }
 }
 
 /// Run the CLI with arguments after the program name; returns the exit code.
@@ -550,6 +629,7 @@ pub fn main(argv: &[String]) -> i32 {
         "import" => cmd_import(&args),
         "scrape" => cmd_scrape(&args),
         "serve" => cmd_serve(&args),
+        "demo" => cmd_demo(&args),
         other => match maintenance(other, &args) {
             Ok(code) => code,
             Err(e) => {
