@@ -73,10 +73,12 @@ const PARTS_PATTERN = latinPattern(PARTS);
 /** @param {Kind} kind @param {RegExp} pattern @param {string} text */
 const mentions = (kind, pattern, text) => pattern.test(text) || kind.cjk.some(token => text.includes(token));
 
-// A link needs a slash, so a title with none skips the pattern.
+// A link needs a slash, so a title with none skips the pattern. Blanking
+// keeps every other character where it was, for wordRanges.
 /** @param {string} lowered an NFKC-normalised, lowercased title */
 const withoutLinks = lowered => lowered.includes("/")
-  ? lowered.replace(/(?:https?:\/\/|(?<![a-z0-9.-]))[a-z0-9.-]+\.[a-z]{2,}\/\S*/g, " ") : lowered;
+  ? lowered.replace(/(?:https?:\/\/|(?<![a-z0-9.-]))[a-z0-9.-]+\.[a-z]{2,}\/\S*/g, link => " ".repeat(link.length))
+  : lowered;
 
 /**
  * The kind id for a title, "unsorted" when no token matches. Links in the
@@ -206,22 +208,39 @@ const WORDS = [
 /** @param {Word} word */
 const wordForms = word => [word.en, ...word.latin];
 /** @type {Map<string, string[]>} */
-const QUERY_TOKENS = new Map();
+const WORDS_BY_FORM = new Map();
 for (const word of WORDS) {
-  for (const form of wordForms(word)) {
-    if (!/\s/.test(form)) QUERY_TOKENS.set(form, [...new Set([...QUERY_TOKENS.get(form) || [], ...word.cjk])]);
-  }
+  for (const form of wordForms(word)) WORDS_BY_FORM.set(form, [...WORDS_BY_FORM.get(form) || [], word.en]);
 }
+const LONGEST_FORM = Math.max(...[...WORDS_BY_FORM.keys()].map(form => form.split(" ").length));
+
+/** @typedef {{literals: string[], words: readonly string[]}} SearchTerm */
 
 /**
- * What one lowercased query term matches: itself, then the Chinese tokens
- * of every word that has it as its English or a Latin form.
- * @param {string} term
+ * A query as terms. A term matches text holding every one of its literals,
+ * or a title read as one of its words. Query words that together make a
+ * form, such as "wide leg", are one term.
+ * @param {string} query
+ * @returns {SearchTerm[]}
  */
-const searchForms = term => [term, ...QUERY_TOKENS.get(term) || []];
+function searchTerms(query) {
+  const parts = query.toLowerCase().split(/\s+/).filter(Boolean);
+  /** @type {SearchTerm[]} */
+  const terms = [];
+  for (let at = 0; at < parts.length;) {
+    let size = Math.min(LONGEST_FORM, parts.length - at);
+    while (size > 1 && !WORDS_BY_FORM.has(parts.slice(at, at + size).join(" "))) size--;
+    const literals = parts.slice(at, at + size);
+    terms.push({ literals, words: WORDS_BY_FORM.get(literals.join(" ")) || NO_WORDS });
+    at += size;
+  }
+  return terms;
+}
 
+// "down" in a Latin title is as often a direction ("upside down") as the
+// filling, so only its Chinese reads as the material.
 const TRAIT_BY_FORM = new Map(WORDS.filter(word => word.facet !== "garment")
-  .flatMap(word => wordForms(word).map(form => [form, word.en])));
+  .flatMap(word => wordForms(word).filter(form => form !== "down").map(form => [form, word.en])));
 const LATIN_TRAIT = new RegExp("(?<![a-z0-9-])(" + [...TRAIT_BY_FORM.keys()]
   .sort((a, b) => b.length - a.length).map(escapeToken).join("|") + ")(?![a-z0-9-])", "g");
 // A title is read left to right, taking the longest token at each place,
@@ -229,17 +248,51 @@ const LATIN_TRAIT = new RegExp("(?<![a-z0-9-])(" + [...TRAIT_BY_FORM.keys()]
 // as 牛仔裤 (jeans, denim), is listed under both.
 /** @type {Map<string, Word[]>} */
 const WORDS_BY_TOKEN = new Map();
-/** @type {Map<string, string[]>} */
+/** @type {Map<string, [string, Word[]][]>} */
 const TOKENS_BY_FIRST = new Map();
 for (const word of WORDS) {
   for (const token of word.cjk) WORDS_BY_TOKEN.set(token, [...WORDS_BY_TOKEN.get(token) || [], word]);
 }
-for (const token of [...WORDS_BY_TOKEN.keys()].sort((a, b) => b.length - a.length)) {
-  TOKENS_BY_FIRST.set(token[0], [...TOKENS_BY_FIRST.get(token[0]) || [], token]);
+for (const entry of [...WORDS_BY_TOKEN].sort((a, b) => b[0].length - a[0].length)) {
+  TOKENS_BY_FIRST.set(entry[0][0], [...TOKENS_BY_FIRST.get(entry[0][0]) || [], entry]);
 }
 const HAN_CHARACTER = /\p{Script=Han}/u;
 /** @type {readonly string[]} */
 const NO_WORDS = Object.freeze([]);
+/** @type {readonly [string, Word[]][]} */
+const NO_TOKENS = Object.freeze([]);
+
+/**
+ * Calls `visit` for each table token in a title, with its words and where
+ * it starts.
+ * @param {string} text a lowercased title with its links blanked
+ * @param {(words: Word[], at: number, length: number) => void} visit
+ */
+function eachToken(text, visit) {
+  if (!HAN_CHARACTER.test(text)) return;
+  for (let at = 0; at < text.length;) {
+    let length = 1;
+    for (const [token, words] of TOKENS_BY_FIRST.get(text[at]) || NO_TOKENS) {
+      if (text.startsWith(token, at)) { length = token.length; visit(words, at, length); break; }
+    }
+    at += length;
+  }
+}
+
+/**
+ * Where a lowercased title holds a token read as one of `words`, as
+ * [start, end) pairs, so a mark falls on the token the gloss came from.
+ * @param {string} lowered @param {ReadonlySet<string>} words
+ * @returns {[number, number][]}
+ */
+function wordRanges(lowered, words) {
+  /** @type {[number, number][]} */
+  const ranges = [];
+  eachToken(withoutLinks(lowered), (found, at, length) => {
+    if (found.some(word => words.has(word.en))) ranges.push([at, at + length]);
+  });
+  return ranges;
+}
 
 /**
  * The English words a title carries: `gloss` for its Chinese tokens, in
@@ -253,16 +306,7 @@ function readWords(lowered) {
   const text = withoutLinks(lowered);
   /** @type {Set<Word>} */
   const found = new Set();
-  if (HAN_CHARACTER.test(text)) {
-    for (let at = 0; at < text.length;) {
-      let token = "";
-      for (const candidate of TOKENS_BY_FIRST.get(text[at]) || []) {
-        if (text.startsWith(candidate, at)) { token = candidate; break; }
-      }
-      for (const word of WORDS_BY_TOKEN.get(token) || []) found.add(word);
-      at += token.length || 1;
-    }
-  }
+  eachToken(text, words => { for (const word of words) found.add(word); });
   const gloss = found.size ? WORDS.filter(word => found.has(word)) : [];
   const traits = new Set(gloss.filter(word => word.facet !== "garment").map(word => word.en));
   for (const match of text.matchAll(LATIN_TRAIT)) traits.add(/** @type {string} */ (TRAIT_BY_FORM.get(match[1])));
@@ -270,5 +314,5 @@ function readWords(lowered) {
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { KINDS, KIND_IDS, UNSORTED, kindOf, WORDS, searchForms, readWords };
+  module.exports = { KINDS, KIND_IDS, UNSORTED, kindOf, WORDS, searchTerms, readWords, wordRanges };
 }

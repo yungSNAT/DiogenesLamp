@@ -591,8 +591,11 @@ function refreshCardTitle(card, album, query) {
   return true;
 }
 
-// The title button's name replaces its visible text, so it carries the
-// experimental English gloss the stylesheet prints before the title.
+// A card leads with the first 2 gloss words, garments first, so the title
+// keeps most of its 2 lines. The title button's name replaces its visible
+// text, so it carries every word, as the preview does.
+const CARD_GLOSS_WORDS = 2;
+
 /** @param {{title: string, gloss?: readonly string[]}} album */
 function previewLabel(album) {
   return `Preview: ${album.title}` + (album.gloss?.length ? `. Read from the title: ${album.gloss.join(", ")}` : "");
@@ -665,7 +668,8 @@ function makeCard(album) {
     `aria-label="${favLabel(isFav)}"></button>` +
     `</div>` +
     `<button class="card-title preview-btn" type="button" aria-label="${escapeAttr(previewLabel(album))}">` +
-    `<span${album.gloss?.length ? ` data-gloss="${escapeAttr(album.gloss.join(" · "))}"` : ""}></span></button>` +
+    `<span${album.gloss?.length ? ` data-gloss="${escapeAttr(album.gloss.slice(0, CARD_GLOSS_WORDS).join(" · "))}"` : ""}>` +
+    `</span></button>` +
     `<div class="card-meta">` +
     `<span class="seller-tag">${escapeHtml(album.seller)}</span>` +
     `<span class="card-links">${links}</span>` +

@@ -183,4 +183,9 @@ test("an English term marks the Chinese word it found", () => {
   assert.deepEqual(matchRanges(title, "hoodie black"), [[5, 9]]);
   assert.equal(title.slice(5, 9), "黑色卫衣");
   assert.deepEqual(matchRanges("秋冬外套", "jacket"), [[2, 4]]);
+  // Marks follow the title's reading: 粉红色 is pink, so "red" marks nothing in it.
+  assert.deepEqual(matchRanges("粉红色t恤", "red"), []);
+  assert.deepEqual(matchRanges("阔腿裤 wide-leg", "wide leg"), [[0, 2], [4, 8], [9, 12]]);
+  // A link is not read, so nothing in it is marked for a word.
+  assert.deepEqual(matchRanges("卫衣 shop.example.com/卫衣", "hoodie"), [[0, 2]]);
 });

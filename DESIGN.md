@@ -184,9 +184,10 @@ kept and filled solid in the second ink when it is.
   The marks keep their width and the seller name gives way, because a
   truncated seller is readable and a mark clipped mid-word is not. On narrow
   the seller stands down entirely. A title with Chinese words from the
-  experimental table in `viewer/kinds.js` opens with their English in the
-  label face and faint ink, inside the same clamp, and the title button's
-  name carries the same words.
+  experimental table in `viewer/kinds.js` opens with up to 2 of their English
+  words in the label face and faint ink, inside the same clamp, and none on
+  narrow, where the title has one line; the title button's name and the
+  preview list every word.
 - **Preview.** The title is a button within the existing caption geometry.
   It opens a native modal dialog with the cached cover and full metadata. The
   dialog uses the existing ink and leaf tokens, square rules and no extra

@@ -139,11 +139,14 @@ unmeasured; the seller's own category filter is unchanged.
 
 **Colour**, **Fit** and **Material**, also read from titles and
 experimental, keep albums whose title names a word such as black, loose or
-cotton, in English as a whole word or in Chinese. A card whose title has
-Chinese words from the same table prints them in English before the title,
-and its preview lists them; the title button's accessible name includes
-them. The words are a fixed list in `viewer/kinds.js` with no brand or model
-names, and their precision on real catalogues is unmeasured.
+cotton, in English as a whole word or in Chinese. An English title is read
+as written, so a brand spelt with a space, such as Off White or Old Navy,
+counts as its colour; down counts only in Chinese, because in English it is
+as often a direction. A card whose title has Chinese words from the same
+table prints the first 2 in English before the title, except on a narrow
+screen, and its preview lists them all; the title button's accessible name
+includes them. The words are a fixed list in `viewer/kinds.js` with no brand
+or model names, and their precision on real catalogues is unmeasured.
 
 **Links and prices** holds three choices that stay in this browser:
 

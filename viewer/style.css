@@ -565,6 +565,8 @@ button:hover { border-color: var(--ink); }
   :root.group-view .card-links { margin-left: 8px; }
   select { min-width: 0; }
   .card-title span { -webkit-line-clamp: 1; }
+  /* One line is the title's; the button's name still carries the gloss. */
+  .card-title span[data-gloss]::before { content: none; }
   /* The controls wrap to three rows on a phone, where a sticky header would
      hold 40% of the viewport permanently. It scrolls away instead, which also
      makes the grid's scroll-margin unnecessary. */

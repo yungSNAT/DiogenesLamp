@@ -12,7 +12,7 @@
 // Ordering lives in filters.js with the rest of the filter state; this file
 // only marks what the query hit and moves the cursor over the result.
 
-const MARK_WORDS = typeof module !== "undefined" ? require("./kinds.js") : { searchForms };
+const MARK_WORDS = typeof module !== "undefined" ? require("./kinds.js") : { searchTerms, wordRanges };
 
 // Where the query hit the title, as [start, end) pairs over the original
 // string. The caller strikes those spans in the second ink, so a matched
@@ -20,7 +20,7 @@ const MARK_WORDS = typeof module !== "undefined" ? require("./kinds.js") : { sea
 //
 // The query is multi-term and order-free, exactly as compileCatalogueSearch
 // reads it, so every term is marked wherever it lands, and so is each
-// Chinese word kinds.js gives for it. Matching is done on lowercased
+// Chinese word kinds.js reads as one. Matching is done on lowercased
 // copies of both sides and the offsets are reported against the original, so
 // the marks fall on the real characters.
 /**
@@ -30,11 +30,11 @@ const MARK_WORDS = typeof module !== "undefined" ? require("./kinds.js") : { sea
  */
 function matchRanges(title, query) {
   const text = (title || "").toLowerCase();
-  const terms = (query || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const terms = MARK_WORDS.searchTerms(query || "");
   if (!terms.length || !text) return [];
   /** @type {[number, number][]} */
   const hits = [];
-  for (const term of terms.flatMap(term => MARK_WORDS.searchForms(term))) {
+  for (const term of terms.flatMap(term => term.literals)) {
     let from = 0;
     for (;;) {
       const at = text.indexOf(term, from);
@@ -47,6 +47,8 @@ function matchRanges(title, query) {
     }
     if (hits.length >= 40) break;
   }
+  const words = new Set(terms.flatMap(term => term.words));
+  if (words.size) hits.push(...MARK_WORDS.wordRanges(text, words));
   return mergeRanges(hits);
 }
 

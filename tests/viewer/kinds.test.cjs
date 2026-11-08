@@ -47,7 +47,7 @@ test("T恤 reads as a tee: tokens are matched against the lowercased title", () 
   for (const kind of KINDS) assert.ok(kind.cjk.every(token => token === token.toLowerCase()), kind.id);
 });
 
-const { WORDS, searchForms, readWords } = require("../../viewer/kinds.js");
+const { WORDS, searchTerms, readWords } = require("../../viewer/kinds.js");
 const read = title => readWords(title.normalize("NFKC").toLowerCase());
 
 test("the word table is well formed: unique English, lowercase forms, no single-character tokens", () => {
@@ -62,12 +62,23 @@ test("the word table is well formed: unique English, lowercase forms, no single-
   }
 });
 
-test("a query word expands to Chinese tokens only, and an unknown word stays itself", () => {
-  assert.deepEqual(searchForms("hoodie"), ["hoodie", "卫衣", "连帽"]);
-  assert.deepEqual(searchForms("jacket"), ["jacket", "外套", "夹克"]);
-  assert.ok(searchForms("pants").includes("牛仔裤"));
-  assert.deepEqual(searchForms("sb"), ["sb"]);
-  assert.deepEqual(searchForms("卫衣"), ["卫衣"]);
+test("a query term carries the table words it names, and an unknown or Chinese term none", () => {
+  assert.deepEqual(searchTerms("Hoodie  jacket"), [{literals: ["hoodie"], words: ["sweatshirt", "hooded"]},
+    {literals: ["jacket"], words: ["jacket"]}]);
+  assert.ok(searchTerms("pants")[0].words.includes("jeans"));
+  assert.deepEqual(searchTerms("sb 卫衣"), [{literals: ["sb"], words: []}, {literals: ["卫衣"], words: []}]);
+});
+
+test("query words that make a form read as one term, so every form can be searched", () => {
+  assert.deepEqual(searchTerms("wide leg jeans"), [{literals: ["wide", "leg"], words: ["wide leg"]},
+    {literals: ["jeans"], words: ["jeans"]}]);
+  for (const word of WORDS) {
+    for (const form of [word.en, ...word.latin]) {
+      const terms = searchTerms(form);
+      assert.equal(terms.length, 1, form);
+      assert.ok(terms[0].words.includes(word.en), form);
+    }
+  }
 });
 
 test("titles are read longest token first, links ignored, Latin traits as whole words", () => {
@@ -76,6 +87,9 @@ test("titles are read longest token first, links ignored, Latin traits as whole 
   assert.deepEqual(read("牛仔裤"), {gloss: ["jeans", "denim"], traits: ["denim"]});
   assert.deepEqual(read("Off-White hoodie"), {gloss: [], traits: []});
   assert.deepEqual(read("Grey oversized hoodie, gray cuffs"), {gloss: [], traits: ["grey", "loose"]});
+  // "down" is read only in Chinese: in English it is as often a direction.
+  assert.deepEqual(read("Upside Down tee, button down shirt"), {gloss: [], traits: []});
+  assert.deepEqual(read("羽绒服"), {gloss: ["puffer", "down"], traits: ["down"]});
   assert.deepEqual(read("卫衣 https://shop.example.com/black-黑色"), {gloss: ["sweatshirt"], traits: []});
   assert.equal(read("Plain title").gloss, read("").traits, "titles with no words share one empty list");
 });

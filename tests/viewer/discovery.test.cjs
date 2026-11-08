@@ -191,6 +191,12 @@ test("English garment, colour, fit and material words also find their Chinese ti
     assert.equal(search.reason(hit), "Title", query);
   }
   assert.equal(compileCatalogueSearch("hoodie jacket").matches(hoodie), false, "every term must still match");
+  // A title is found as it is read: 粉红色 is pink, not red, and 米白色 beige, not white.
+  assert.equal(compileCatalogueSearch("red").matches(pink), false);
+  assert.equal(compileCatalogueSearch("white").matches(chinese("5", "米白色 卫衣")), false);
+  // A 2-word form finds its Chinese, and its words still find an English title without the hyphen.
+  assert.equal(compileCatalogueSearch("wide leg").reason(chinese("6", "阔腿裤 黑色")), "Title");
+  assert.equal(compileCatalogueSearch("wide leg black").reason(chinese("7", "Wide-leg jeans black")), "Title");
   // Latin to Chinese only: a Chinese query never finds a Latin title through the table.
   const latin = {id: "4", title: "Moncler down jacket", seller: "example", links: []};
   prepareAlbumSearch(latin);
