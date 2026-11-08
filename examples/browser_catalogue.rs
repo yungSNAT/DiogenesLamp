@@ -284,34 +284,42 @@ mod driver {
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::piped())
+                .process_group(0)
                 .spawn()
                 .map_err(|error| fail(format!("{}: {error}", generator.display())))?;
-            let mut stderr = child.stderr.take().expect("piped stderr");
-            let diagnostic = thread::spawn(move || {
-                let mut bytes = Vec::new();
-                let _ = stderr.read_to_end(&mut bytes);
-                bytes
-            });
-            loop {
+            let (sink, chunks) = mpsc::channel();
+            forward(child.stderr.take().expect("piped stderr"), sink);
+            let status = loop {
                 if let Some(status) = child.try_wait()? {
-                    if status.success() {
-                        return Ok(());
-                    }
-                    let bytes = diagnostic.join().unwrap_or_default();
-                    let text = String::from_utf8_lossy(&bytes);
-                    return Err(fail(format!(
-                        "Fixture generator exit {}: {}",
-                        exit_code(status),
-                        tail(&text, 4000)
-                    )));
+                    break Ok(status);
                 }
                 if let Err(failure) = self.check_deadline() {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Err(failure);
+                    break Err(failure);
                 }
                 thread::sleep(Duration::from_millis(50));
+            };
+            // End anything the generator left running, so nothing outlives it.
+            if let Some(group) = Pid::from_raw(child.id() as i32) {
+                let _ = kill_process_group(group, Signal::KILL);
             }
+            let _ = child.wait();
+            let status = status?;
+            if status.success() {
+                return Ok(());
+            }
+            // Report what stderr held at exit; a process outside the group may keep it open.
+            let until = Instant::now() + Duration::from_secs(1);
+            let mut bytes = Vec::new();
+            while let Ok(chunk) =
+                chunks.recv_timeout(until.saturating_duration_since(Instant::now()))
+            {
+                bytes.extend(chunk);
+            }
+            Err(fail(format!(
+                "Fixture generator exit {}: {}",
+                exit_code(status),
+                tail(&String::from_utf8_lossy(&bytes), 4000)
+            )))
         }
 
         /// Start an owned process group and return the first capture of `pattern` in its output.
@@ -710,6 +718,17 @@ mod driver {
             expected.get(at).unwrap_or(&Value::Null),
             actual.get(at).unwrap_or(&Value::Null),
         )))
+    }
+
+    /// A run that passed but could not finish cleanly fails, in its JSON as in its exit code.
+    fn fail_late(result: &mut Value, code: u8, message: String) -> u8 {
+        eprintln!("Error: {message}");
+        if code != 0 {
+            return code;
+        }
+        result["status"] = json!("fail");
+        result["error"] = json!(message);
+        1
     }
 
     /// Remove the run folder, retrying whilst killed descendants finish closing
@@ -1135,7 +1154,10 @@ mod driver {
             }
         }
 
-        let runs = result["runs"].as_array().cloned().unwrap_or_default();
+        let runs = result["runs"]
+            .as_array()
+            .map(Vec::as_slice)
+            .unwrap_or_default();
         let distribution: Vec<Value> = [1440, 390]
             .into_iter()
             .map(|width| {
@@ -1241,19 +1263,18 @@ mod driver {
         };
         let mut code = match removed {
             Ok(()) => code,
-            Err(error) => {
-                eprintln!("Error: temporary folder not removed: {error}");
-                if code == 0 { 1 } else { code }
-            }
+            Err(error) => fail_late(
+                &mut result,
+                code,
+                format!("temporary folder not removed: {error}"),
+            ),
         };
-        let json = serde_json::to_string_pretty(&result).expect("JSON values serialise");
+        let mut json = serde_json::to_string_pretty(&result).expect("JSON values serialise");
         if let Some(output) = &options.output
             && let Err(error) = fs::write(output, format!("{json}\n"))
         {
-            eprintln!("Error: {}: {error}", output.display());
-            if code == 0 {
-                code = 1;
-            }
+            code = fail_late(&mut result, code, format!("{}: {error}", output.display()));
+            json = serde_json::to_string_pretty(&result).expect("JSON values serialise");
         }
         println!("{json}");
         ExitCode::from(code)
