@@ -423,6 +423,7 @@ mod driver {
                 .ok_or_else(|| fail(format!("Unexpected DevTools endpoint: {endpoint}")))?;
             let stream = TcpStream::connect(address)?;
             stream.set_read_timeout(Some(COMMAND_TIMEOUT))?;
+            stream.set_write_timeout(Some(COMMAND_TIMEOUT))?;
             let (socket, _) = tungstenite::client(endpoint, stream)
                 .map_err(|error| fail(format!("WebSocket handshake: {error}")))?;
             socket.get_ref().set_read_timeout(Some(SOCKET_POLL))?;
@@ -691,6 +692,42 @@ mod driver {
         entries
     }
 
+    /// Backup entries equal in any order; a mismatch names the first entry that differs.
+    fn ensure_entries(actual: &Value, expected: &Value, what: &str) -> Outcome<()> {
+        let (actual, expected) = (ordered(actual), ordered(expected));
+        if actual == expected {
+            return Ok(());
+        }
+        let at = actual
+            .iter()
+            .zip(&expected)
+            .take_while(|(a, b)| a == b)
+            .count();
+        Err(fail(format!(
+            "Assertion failed: {what}: {} entries, expected {}; first difference at {at}: expected {}, got {}",
+            actual.len(),
+            expected.len(),
+            expected.get(at).unwrap_or(&Value::Null),
+            actual.get(at).unwrap_or(&Value::Null),
+        )))
+    }
+
+    /// Remove the run folder, retrying whilst killed descendants finish closing
+    /// files, as the Node driver's `rm` did (10 retries, 200 ms apart).
+    fn remove_run(path: &Path) -> io::Result<()> {
+        let mut retries = 10;
+        loop {
+            match fs::remove_dir_all(path) {
+                Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+                Err(_) if retries > 0 => {
+                    retries -= 1;
+                    thread::sleep(Duration::from_millis(200));
+                }
+                result => return result,
+            }
+        }
+    }
+
     fn last_run(result: &mut Value) -> &mut Value {
         result["runs"]
             .as_array_mut()
@@ -881,8 +918,9 @@ mod driver {
                         "import of the previous context's export",
                     )?;
                     let (_, immediate) = cdp.download(session, &downloads)?;
-                    ensure(
-                        ordered(&immediate["entries"]) == ordered(&backup["entries"]),
+                    ensure_entries(
+                        &immediate["entries"],
+                        &backup["entries"],
                         "immediate export matches the previous context's export",
                     )?;
                     last_run(result)["roundtrip_verified_before_edits"] = json!(true);
@@ -1023,13 +1061,11 @@ mod driver {
                     {"kind": "tags", "id": saved_id, "value": ["synthetic"]},
                     {"kind": "note", "id": saved_id, "value": "Fabricated offline note"},
                 ]);
-                ensure(
-                    ordered(entries) == ordered(&expected),
-                    "exported saved fields",
-                )?;
+                ensure_entries(entries, &expected, "exported saved fields")?;
                 if let Some((_, backup)) = &previous_export {
-                    ensure(
-                        ordered(entries) == ordered(&backup["entries"]),
+                    ensure_entries(
+                        entries,
+                        &backup["entries"],
                         "export matches the previous context's export",
                     )?;
                 }
@@ -1074,8 +1110,9 @@ mod driver {
                         let import_export_ms = started.elapsed().as_secs_f64() * 1000.0;
                         let mut all = entries.as_array().cloned().unwrap_or_default();
                         all.extend(notes);
-                        ensure(
-                            ordered(&roundtrip["entries"]) == ordered(&Value::Array(all)),
+                        ensure_entries(
+                            &roundtrip["entries"],
+                            &Value::Array(all),
                             &format!("{count}-note backup round trip"),
                         )?;
                         ensure_eq(
@@ -1185,7 +1222,7 @@ mod driver {
             result["memory"]["error"] = json!(error);
         }
         driver.cleanup();
-        let removed = temporary.close();
+        let removed = remove_run(temporary.path());
         let code = match outcome {
             Ok(()) => {
                 result["status"] = json!("pass");
