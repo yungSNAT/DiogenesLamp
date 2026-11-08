@@ -285,6 +285,7 @@ function showPreview(album = resolvePreview(previewIds[previewAt])) {
   workEl("preview-next").disabled = previewAt + 1 === previewIds.length;
   workEl("preview-facts").textContent = `${album.seller} · Album ${album.id} · ${album.category || "No category"}` +
     ` · Kind: ${album.kind || UNSORTED} (read from the title, experimental)` +
+    (album.gloss?.length ? `\nTitle words (experimental): ${album.gloss.join(", ")}` : "") +
     `\nFirst seen: ${localDate(album.first_seen)}\nListed: ${localDate(album.last_seen)}\nDetails checked: ${localDate(album.updated_at)}` +
     (album.gone_since ? `\nNo longer listed since ${localDate(album.gone_since)}` : "");
   const reason = compileCatalogueSearch(state.view.filters.search).reason(album);

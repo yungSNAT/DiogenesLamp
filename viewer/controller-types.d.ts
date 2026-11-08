@@ -55,7 +55,8 @@ export interface ViewerElements {
   'price-min': HTMLInputElement; 'price-max': HTMLInputElement;
   'include-unknown': HTMLInputElement; 'collection-filter': HTMLSelectElement;
   'tag-filter': HTMLSelectElement; unreviewed: HTMLInputElement; changed: HTMLInputElement;
-  'kind-filter': HTMLSelectElement; 'description-coverage': HTMLElement;
+  'kind-filter': HTMLSelectElement; 'colour-filter': HTMLSelectElement; 'fit-filter': HTMLSelectElement;
+  'material-filter': HTMLSelectElement; 'description-coverage': HTMLElement;
   search: HTMLInputElement; 'seller-filter': HTMLSelectElement; 'category-filter': HTMLSelectElement;
   'new-only': HTMLInputElement; 'favs-only': HTMLInputElement; 'hide-dups': HTMLInputElement;
   'age-filter': HTMLSelectElement; 'sort-filter': HTMLSelectElement;

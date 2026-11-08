@@ -79,7 +79,10 @@ unwrapped to the taobao, tmall, weidian or 1688 item it carries, the same
 way the scraper stores such links from album text. Stored descriptions are
 searched after titles and named as the match reason; the panel under
 **More filters and saved work** says how many loaded albums have one
-recorded. Press `/` to focus search.
+recorded. An English garment, colour, fit or material word also finds a
+title with the Chinese words sellers write for it, so `hoodie` finds 卫衣
+and `jacket` finds 外套 (experimental, English to Chinese only). Press `/`
+to focus search.
 Filter by seller, category or posting age, and sort by price, photo count or
 newest first. **More filters and saved work** includes minimum and maximum
 CNY prices, a separate unknown-price toggle, collections, tags and review
@@ -134,6 +137,17 @@ jackets, hoodies, tees, pants, shorts, sets, bags, watches, jewellery,
 accessories. A title with no keyword is Unsorted, and a part such as a
 watch strap or shoelaces is an accessory. Precision on real catalogues is
 unmeasured; the seller's own category filter is unchanged.
+
+**Colour**, **Fit** and **Material**, also read from titles and
+experimental, keep albums whose title names a word such as black, loose or
+cotton, in English as a whole word or in Chinese. An English title is read
+as written, so a brand spelt with a space, such as Off White or Old Navy,
+counts as its colour; down counts only in Chinese, because in English it is
+as often a direction. A card whose title has Chinese words from the same
+table prints up to 2 of them in English before the title, garments first,
+except on a narrow screen, and its preview lists them all; the title button's accessible name
+includes them. The words are a fixed list in `viewer/kinds.js` with no brand
+or model names, and their precision on real catalogues is unmeasured.
 
 **Links and prices** holds three choices that stay in this browser:
 
