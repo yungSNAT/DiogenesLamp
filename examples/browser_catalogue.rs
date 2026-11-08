@@ -307,14 +307,16 @@ mod driver {
             if status.success() {
                 return Ok(());
             }
-            // Report what stderr held at exit; a process outside the group may keep it open.
-            let until = Instant::now() + Duration::from_secs(1);
+            // Report what stderr held at exit, reading for at most a second: a process
+            // outside the group may keep it open, and keep writing.
+            let until = (Instant::now() + Duration::from_secs(1)).min(self.deadline);
             let mut bytes = Vec::new();
-            while let Ok(chunk) =
-                chunks.recv_timeout(until.saturating_duration_since(Instant::now()))
+            while let Some(left) = until.checked_duration_since(Instant::now())
+                && let Ok(chunk) = chunks.recv_timeout(left)
             {
                 bytes.extend(chunk);
             }
+            self.check_deadline()?;
             Err(fail(format!(
                 "Fixture generator exit {}: {}",
                 exit_code(status),
