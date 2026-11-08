@@ -529,7 +529,11 @@ fn cmd_serve(args: &Args) -> i32 {
     let Some(server) = listen(&data, args) else {
         return 1;
     };
-    crate::serve::serve(&server, !args.flag("no_browser"), interrupt_flag());
+    crate::serve::serve(
+        &server,
+        !args.flag("no_browser"),
+        interrupt_flag().unwrap_or_default(),
+    );
     0
 }
 
@@ -542,13 +546,11 @@ fn listen(data: &std::path::Path, args: &Args) -> Option<crate::serve::Server> {
 }
 
 /// Set when the user presses Ctrl+C, instead of ending the process.
-fn interrupt_flag() -> Arc<AtomicBool> {
+fn interrupt_flag() -> Result<Arc<AtomicBool>, ctrlc::Error> {
     let stop = Arc::new(AtomicBool::new(false));
-    {
-        let stop = stop.clone();
-        let _ = ctrlc::set_handler(move || stop.store(true, Ordering::SeqCst));
-    }
-    stop
+    let flag = stop.clone();
+    ctrlc::set_handler(move || flag.store(true, Ordering::SeqCst))?;
+    Ok(stop)
 }
 
 /// Sellers and albums per seller that `lamp demo` writes.
@@ -564,7 +566,14 @@ fn cmd_demo(args: &Args) -> i32 {
         return 1;
     };
     // Ctrl+C whilst writing stops before serving and still removes the data.
-    let stop = interrupt_flag();
+    // Without the handler it would end the process first, so that is an error.
+    let stop = match interrupt_flag() {
+        Ok(stop) => stop,
+        Err(e) => {
+            out::err(&format!("error: could not handle Ctrl+C: {e}"));
+            return 1;
+        }
+    };
     // A directory this could not create is not ours to remove.
     if let Err(e) = std::fs::create_dir(&dir) {
         out::err(&format!("error: could not write demo data: {e}"));

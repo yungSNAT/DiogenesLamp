@@ -57,7 +57,7 @@ commands below stop at the first failed check. With the
     tag=v0.1.0
     asset=diogenes-lamp-0.1.0-x86_64-unknown-linux-musl.tar.gz
     gh release download "$tag" --repo yungSNAT/DiogenesLamp --pattern "$asset" --pattern SHA256SUMS &&
-      sha256sum --check --ignore-missing SHA256SUMS &&
+      awk -v f="$asset" '$2 == f' SHA256SUMS | sha256sum --check &&
       gh attestation verify "$asset" --repo yungSNAT/DiogenesLamp \
         --signer-workflow ryanduguid/release-policy/.github/workflows/release-binary.yml \
         --source-ref "refs/tags/$tag" &&
@@ -146,7 +146,7 @@ The task runs whilst you are signed in. Remove it with
 
 Run `crontab -e` and add:
 
-    47 3 * * * $HOME/.local/bin/lamp --sources $HOME/lamp/sources.toml --data $HOME/lamp/data scrape >> $HOME/lamp/refresh.log 2>&1
+    47 3 * * * "$HOME/.local/bin/lamp" --sources "$HOME/lamp/sources.toml" --data "$HOME/lamp/data" scrape >> "$HOME/lamp/refresh.log" 2>&1
 
 </details>
 
