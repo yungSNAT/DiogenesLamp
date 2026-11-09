@@ -1363,6 +1363,7 @@ mod driver {
                 listener.local_addr().unwrap()
             );
             listener.set_nonblocking(true).unwrap();
+            let (finished, driver_done) = mpsc::channel();
             let peer = thread::spawn(move || {
                 let accept_deadline = Instant::now() + Duration::from_secs(1);
                 let mut stream = loop {
@@ -1370,7 +1371,7 @@ mod driver {
                         Ok((stream, _)) => break stream,
                         Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                             if Instant::now() >= accept_deadline {
-                                return;
+                                return false;
                             }
                             thread::sleep(Duration::from_millis(1));
                         }
@@ -1379,20 +1380,22 @@ mod driver {
                 };
                 if stream
                     .write_all(b"HTTP/1.1 101 Switching Protocols\r\nX-Drip: ")
-                    .is_ok()
+                    .is_err()
                 {
-                    for _ in 0..20 {
-                        thread::sleep(Duration::from_millis(10));
-                        if stream.write_all(b"a").is_err() {
-                            break;
-                        }
-                    }
+                    return true;
                 }
+                // Keep the handshake incomplete until the driver returns. The
+                // watchdog makes a missing I/O deadline fail without hanging the test.
+                (0..100).any(|_| {
+                    driver_done.recv_timeout(Duration::from_millis(10)).is_ok()
+                        || stream.write_all(b"a").is_err()
+                })
             });
             let deadline = Instant::now() + Duration::from_millis(60);
             let outcome = Cdp::connect(&endpoint, String::new(), deadline);
-            peer.join().unwrap();
+            let _ = finished.send(());
             assert!(matches!(outcome, Err(Failure::Deadline)));
+            assert!(peer.join().unwrap(), "driver waited for the peer to close");
         }
     }
 }
