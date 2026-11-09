@@ -200,6 +200,15 @@ pub fn write(
             }
             records.push(album(&seller, j, &aid, covered, today, &mut rng));
         }
+        // Counted as scrape and reindex count, so `doctor` agrees: gone albums are not listed.
+        let listed = records
+            .iter()
+            .filter(|a| {
+                !a.as_object()
+                    .and_then(|m| m.get("gone_since"))
+                    .is_some_and(Value::truthy)
+            })
+            .count();
         let shard = crate::obj! { "seller" => seller.as_str(), "albums" => records };
         std::fs::write(
             data_dir.join("catalog").join(format!("{seller}.json")),
@@ -209,7 +218,7 @@ pub fn write(
             "id" => seller.as_str(),
             "name" => seller.as_str(),
             "url" => format!("https://{seller}.x.yupoo.com"),
-            "album_count" => albums,
+            "album_count" => listed,
             "shard" => format!("catalog/{seller}.json"),
         }));
     }

@@ -107,6 +107,16 @@ fn get(child: &mut Child, port: &str, path: &str) -> String {
 }
 
 #[test]
+fn demo_data_passes_doctor() {
+    // 200 albums a seller include gone ones (every 97th), which the index must not count.
+    let dir = common::tmp();
+    lamp::demo::write(dir.path(), 2, 200, 0).unwrap();
+    let (code, stdout, _) =
+        common::lamp(&["--data", &dir.path().to_string_lossy(), "doctor"], None);
+    assert_eq!(code, 0, "{stdout}");
+}
+
+#[test]
 fn demo_serves_synthetic_data_and_writes_nowhere_near_named_data() {
     let dirs = dirs();
     let port = free_port();
