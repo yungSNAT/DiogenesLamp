@@ -34,4 +34,5 @@ changing `viewer/`.
 `tests/repo_policy.rs` pins the CI workflow, the Dependabot configuration,
 SECURITY.md and the toolchain file. A change to one of them is a security
 change: update its expected text in the same pull request and say why it
-changed.
+changed. The CI contract leaves out which commit each action is pinned to, so
+Dependabot's action bumps pass; it still requires a full commit SHA.
