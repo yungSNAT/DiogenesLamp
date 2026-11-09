@@ -5,7 +5,7 @@ name: Scorecard
 on:
   branch_protection_rule:
   schedule:
-    - cron: "35 6 * * 1"
+    - cron: "36 6 * * 1"
   workflow_dispatch:
 
 permissions:
