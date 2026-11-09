@@ -31,13 +31,13 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@<pin>
         with:
           persist-credentials: false
       # The Rust tests run the viewer's node suite and the browser parity
       # checks, and fail rather than skip without node, so it is installed
       # explicitly. The separate type check does not execute tests.
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - uses: actions/setup-node@<pin>
         with:
           node-version: "22"
           package-manager-cache: false
@@ -45,7 +45,7 @@ jobs:
       - run: npm run typecheck
       # Only main saves, so pull requests cannot replace the shared entries.
       # 1 crate on 2 systems stays well inside the 10 GB cache limit.
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: Swatinem/rust-cache@<pin>
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # rust-toolchain.toml pins the compiler and its clippy and rustfmt components.
@@ -60,14 +60,14 @@ jobs:
       # llvm-tools and a prebuilt cargo-llvm-cov, with no fallback to compiling it.
       - run: rustup component add llvm-tools
         if: matrix.os == 'ubuntu-latest'
-      - uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
+      - uses: taiki-e/install-action@<pin>
         if: matrix.os == 'ubuntu-latest'
         with:
           tool: cargo-llvm-cov@0.9.1
           fallback: none
       - run: cargo llvm-cov --locked --lcov --output-path coverage-rust.lcov
         if: matrix.os == 'ubuntu-latest'
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - uses: actions/upload-artifact@<pin>
         if: matrix.os == 'ubuntu-latest'
         with:
           name: coverage-rust
@@ -88,13 +88,13 @@ jobs:
       contents: read
       id-token: write # Authenticate the Codecov upload with OIDC; no stored token.
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@<pin>
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      - uses: actions/download-artifact@<pin>
         with:
           name: coverage-rust
-      - uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+      - uses: codecov/codecov-action@<pin>
         with:
           use_oidc: true
           files: coverage-rust.lcov
@@ -256,9 +256,74 @@ fn active_workflow_inventory_is_exact() {
     );
 }
 
+/// Dependabot moves action pins, so the CI contract fixes each action, its
+/// inputs and every other line, but not the commit an action is pinned to.
 #[test]
 fn ci_workflow_is_exact() {
-    assert_exact(&read(".github/workflows/ci.yml"), EXPECTED_CI, "ci.yml");
+    let actual = without_action_pins(&read(".github/workflows/ci.yml")).unwrap_or_else(|line| {
+        panic!("ci.yml: `{line}` must pin a full commit SHA and name its version")
+    });
+    assert_exact(&actual, EXPECTED_CI, "ci.yml");
+}
+
+/// Replaces `uses: <action>@<40-hex SHA> # <version>` with `uses: <action>@<pin>`,
+/// or returns the first `uses:` line that is not pinned that way.
+fn without_action_pins(workflow: &str) -> Result<String, String> {
+    let mut out = String::with_capacity(workflow.len());
+    for line in workflow.split_inclusive('\n') {
+        let step = line.trim_start().trim_start_matches("- ");
+        if !step.starts_with("uses: ") || step.starts_with("uses: ./") {
+            out.push_str(line);
+            continue;
+        }
+        let ending = if line.ends_with('\n') { "\n" } else { "" };
+        let (action, pin) = line
+            .trim_end()
+            .split_once('@')
+            .ok_or_else(|| line.trim().to_string())?;
+        let (sha, version) = pin.split_once(" # ").unwrap_or((pin, ""));
+        if sha.len() != 40
+            || !sha.bytes().all(|b| b.is_ascii_hexdigit())
+            || version.trim().is_empty()
+        {
+            return Err(line.trim().to_string());
+        }
+        out.push_str(action);
+        out.push_str("@<pin>");
+        out.push_str(ending);
+    }
+    Ok(out)
+}
+
+/// A Dependabot bump of an action passes; a tag pin, another action or a
+/// changed input still fails.
+#[test]
+fn ci_contract_ignores_only_the_pin() {
+    let ci = read(".github/workflows/ci.yml");
+    let checkout = ci
+        .lines()
+        .find(|l| l.contains("uses: actions/checkout@"))
+        .unwrap();
+    let with = |line: &str| ci.replace(checkout, line);
+
+    let bumped =
+        with("      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567 # v9.0.0");
+    assert_eq!(without_action_pins(&bumped).unwrap(), EXPECTED_CI);
+
+    for unpinned in [
+        "      - uses: actions/checkout@v7",
+        "      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567",
+        "      - uses: actions/checkout@0123456 # v7.0.1",
+        "      - uses: actions/checkout",
+    ] {
+        assert!(without_action_pins(&with(unpinned)).is_err(), "{unpinned}");
+    }
+
+    let other =
+        with("      - uses: someone/checkout@0123456789abcdef0123456789abcdef01234567 # v7.0.1");
+    assert_ne!(without_action_pins(&other).unwrap(), EXPECTED_CI);
+    let input = ci.replacen("persist-credentials: false", "persist-credentials: true", 1);
+    assert_ne!(without_action_pins(&input).unwrap(), EXPECTED_CI);
 }
 
 /// Release-time permissions, the release-policy pin and the checks the release
