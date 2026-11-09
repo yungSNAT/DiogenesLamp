@@ -1,13 +1,15 @@
 # Synthetic browser qualification
 
-These opt-in checks use the existing Rust demo generator, release binaries and
-Node's standard library to drive an installed Chromium-compatible browser over
-CDP. They do not download a browser or fetch a real catalogue.
+These opt-in checks use the existing Rust demo generator and release binaries,
+and the `browser_catalogue` example drives an installed Chromium-compatible
+browser over CDP. They do not download a browser or fetch a real catalogue.
+Ordinary `cargo test` never launches a browser.
 
-Prerequisites: a POSIX host, Rust, Node 22 or newer and an installed Chromium-compatible
-browser. Windows requires an isolated job runner for reliable process-tree cleanup
-and is rejected by this driver. Linux qualification is recorded separately from
-other POSIX hosts. Set `BROWSER_BIN` to its executable path, then run from the repository:
+Prerequisites: a POSIX host, Rust and an installed Chromium-compatible browser.
+Node is needed only for the npm wrappers below. Windows requires an isolated job
+runner for reliable process-tree cleanup and is rejected by this driver. Linux
+qualification is recorded separately from other POSIX hosts. Set `BROWSER_BIN`
+to its executable path, then run from the repository:
 
 ```sh
 npm run test:browser
@@ -36,7 +38,7 @@ report no aggregate RSS measurement.
 For already-built or externally staged binaries:
 
 ```sh
-node tests/browser/catalogue.mjs --lamp /path/lamp --generator /path/make_demo_data --browser /path/chromium --benchmark --runs 5 --output /path/results.json
+cargo run --release --example browser_catalogue -- --lamp /path/lamp --generator /path/make_demo_data --browser /path/chromium --benchmark --runs 5 --output /path/results.json
 ```
 
 `--runs` accepts 1 to 10. `CARGO_TARGET_DIR` is respected. The driver uses a fresh
@@ -49,5 +51,6 @@ outside the local catalogue origin are rejected. This page interception is not
 an OS network sandbox. For untrusted builds, add process/network/filesystem
 isolation outside the driver.
 
-Results go to stdout and, with `--output`, the supplied file. Failure exits
-nonzero. No live user profile, clipboard or existing catalogue data is used.
+Results go to stdout and, with `--output`, the supplied file, including when
+the overall deadline is exceeded. Failure exits nonzero, and the deadline exits
+124. No live user profile, clipboard or existing catalogue data is used.

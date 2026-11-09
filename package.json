@@ -3,8 +3,8 @@
   "private": true,
   "scripts": {
     "typecheck": "tsc --project tsconfig.json",
-    "test:browser": "cargo build --release --bins --examples && node tests/browser/catalogue.mjs",
-    "bench:browser": "cargo build --release --bins --examples && node tests/browser/catalogue.mjs --benchmark"
+    "test:browser": "cargo build --release --bins --examples && cargo run --release --quiet --example browser_catalogue --",
+    "bench:browser": "cargo build --release --bins --examples && cargo run --release --quiet --example browser_catalogue -- --benchmark"
   },
   "devDependencies": {
     "@types/node": "26.6.6",
