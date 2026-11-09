@@ -60,7 +60,7 @@ jobs:
       # llvm-tools and a prebuilt cargo-llvm-cov, with no fallback to compiling it.
       - run: rustup component add llvm-tools
         if: matrix.os == 'ubuntu-latest'
-      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+      - uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
         if: matrix.os == 'ubuntu-latest'
         with:
           tool: cargo-llvm-cov@0.9.1
