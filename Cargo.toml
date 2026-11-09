@@ -15,6 +15,10 @@ path = "src/lib.rs"
 name = "lamp"
 path = "src/main.rs"
 
+[[example]]
+name = "browser_catalogue"
+test = true
+
 [features]
 # Differential and integration harnesses only: answers HTTPS requests from a
 # local fixture directory instead of the network. Never enabled in releases.

@@ -30,8 +30,8 @@ fn main() -> ExitCode {
 mod driver {
     use std::ffi::{OsStr, OsString};
     use std::fs;
-    use std::io::{self, Read};
-    use std::net::{TcpListener, TcpStream};
+    use std::io::{self, Read, Write};
+    use std::net::{SocketAddr, TcpListener, TcpStream};
     use std::os::unix::process::CommandExt;
     use std::path::{Path, PathBuf};
     use std::process::{Child, Command, ExitCode, ExitStatus, Stdio};
@@ -57,6 +57,7 @@ mod driver {
     const WAIT_TIMEOUT: Duration = Duration::from_secs(30);
     const LOAD_TIMEOUT: Duration = Duration::from_secs(45);
     const SOCKET_POLL: Duration = Duration::from_millis(10);
+    const PIPE_CHUNKS: usize = 16;
     const UNRESOLVED: &str = "999999999999999";
     const NONE_IMPORTED: &str = "Imported 0 saved fields. Existing values were kept.";
 
@@ -68,6 +69,13 @@ mod driver {
 
     fn fail(message: impl Into<String>) -> Failure {
         Failure::Error(message.into())
+    }
+
+    fn time_left(deadline: Instant) -> Outcome<Duration> {
+        deadline
+            .checked_duration_since(Instant::now())
+            .filter(|left| !left.is_zero())
+            .ok_or(Failure::Deadline)
     }
     impl From<io::Error> for Failure {
         fn from(error: io::Error) -> Self {
@@ -237,15 +245,35 @@ mod driver {
             .map_or_else(|| "null".to_string(), |code| code.to_string())
     }
 
-    fn forward(mut stream: impl Read + Send + 'static, sink: mpsc::Sender<Vec<u8>>) {
+    fn append_tail(output: &mut Vec<u8>, bytes: &[u8], limit: usize) {
+        let bytes = &bytes[bytes.len().saturating_sub(limit)..];
+        output.drain(..(output.len() + bytes.len()).saturating_sub(limit));
+        output.extend_from_slice(bytes);
+    }
+
+    fn receive_chunk(chunks: &mpsc::Receiver<Vec<u8>>, timeout: Duration) -> Option<Vec<u8>> {
+        match chunks.recv_timeout(timeout) {
+            Ok(bytes) => Some(bytes),
+            Err(mpsc::RecvTimeoutError::Timeout) => None,
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                thread::sleep(timeout);
+                None
+            }
+        }
+    }
+
+    fn forward(mut stream: impl Read + Send + 'static, sink: mpsc::SyncSender<Vec<u8>>) {
         thread::spawn(move || {
             let mut buffer = [0; 8192];
+            let mut forwarding = true;
             loop {
                 match stream.read(&mut buffer) {
                     Ok(0) => return,
                     // Keep draining after readiness so the child never blocks on a full pipe.
                     Ok(n) => {
-                        let _ = sink.send(buffer[..n].to_vec());
+                        if forwarding {
+                            forwarding = sink.send(buffer[..n].to_vec()).is_ok();
+                        }
                     }
                     Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
                     Err(_) => return,
@@ -267,11 +295,7 @@ mod driver {
 
     impl Driver {
         fn check_deadline(&self) -> Outcome<()> {
-            if Instant::now() >= self.deadline {
-                Err(Failure::Deadline)
-            } else {
-                Ok(())
-            }
+            time_left(self.deadline).map(drop)
         }
 
         fn generate(&mut self, generator: &Path, data: &Path) -> Outcome<()> {
@@ -287,40 +311,41 @@ mod driver {
                 .process_group(0)
                 .spawn()
                 .map_err(|error| fail(format!("{}: {error}", generator.display())))?;
-            let (sink, chunks) = mpsc::channel();
+            let (sink, chunks) = mpsc::sync_channel(PIPE_CHUNKS);
             forward(child.stderr.take().expect("piped stderr"), sink);
-            let status = loop {
+            let mut output = Vec::new();
+            let status = (|| loop {
+                let wait = time_left(self.deadline)?.min(Duration::from_millis(50));
                 if let Some(status) = child.try_wait()? {
-                    break Ok(status);
+                    return Ok(status);
                 }
-                if let Err(failure) = self.check_deadline() {
-                    break Err(failure);
+                if let Some(bytes) = receive_chunk(&chunks, wait) {
+                    append_tail(&mut output, &bytes, 16_000);
                 }
-                thread::sleep(Duration::from_millis(50));
-            };
+            })();
             // End anything the generator left running, so nothing outlives it.
             if let Some(group) = Pid::from_raw(child.id() as i32) {
                 let _ = kill_process_group(group, Signal::KILL);
             }
             let _ = child.wait();
             let status = status?;
+            self.check_deadline()?;
             if status.success() {
                 return Ok(());
             }
             // Report what stderr held at exit, reading for at most a second: a process
             // outside the group may keep it open, and keep writing.
             let until = (Instant::now() + Duration::from_secs(1)).min(self.deadline);
-            let mut bytes = Vec::new();
-            while let Some(left) = until.checked_duration_since(Instant::now())
+            while let Ok(left) = time_left(until)
                 && let Ok(chunk) = chunks.recv_timeout(left)
             {
-                bytes.extend(chunk);
+                append_tail(&mut output, &chunk, 16_000);
             }
             self.check_deadline()?;
             Err(fail(format!(
                 "Fixture generator exit {}: {}",
                 exit_code(status),
-                tail(&String::from_utf8_lossy(&bytes), 4000)
+                tail(&String::from_utf8_lossy(&output), 4000)
             )))
         }
 
@@ -343,7 +368,7 @@ mod driver {
                 .process_group(0)
                 .spawn()
                 .map_err(|error| fail(format!("{label}: {error}")))?;
-            let (sink, chunks) = mpsc::channel();
+            let (sink, chunks) = mpsc::sync_channel(PIPE_CHUNKS);
             forward(child.stdout.take().expect("piped stdout"), sink.clone());
             forward(child.stderr.take().expect("piped stderr"), sink);
             self.groups
@@ -353,37 +378,31 @@ mod driver {
             self.owned.push(child);
             let child = self.owned.len() - 1;
             let started = Instant::now();
-            let mut output = String::new();
+            let mut output = Vec::new();
             loop {
-                self.check_deadline()?;
-                match chunks.recv_timeout(Duration::from_millis(50)) {
-                    Ok(bytes) => {
-                        output.push_str(&String::from_utf8_lossy(&bytes));
-                        output = tail(&output, 100_000).to_string();
-                        if let Some(found) = pattern.captures(&output) {
-                            return Ok(found[1].to_string());
-                        }
-                        continue;
+                let wait = time_left(self.deadline)?.min(Duration::from_millis(50));
+                if let Some(bytes) = receive_chunk(&chunks, wait) {
+                    append_tail(&mut output, &bytes, 100_000);
+                    if let Some(found) = pattern.captures(&String::from_utf8_lossy(&output)) {
+                        self.check_deadline()?;
+                        return Ok(found[1].to_string());
                     }
-                    Err(mpsc::RecvTimeoutError::Disconnected) => {
-                        thread::sleep(Duration::from_millis(50));
-                    }
-                    Err(mpsc::RecvTimeoutError::Timeout) => {}
                 }
                 if let Some(status) = self.owned[child].try_wait()? {
-                    for bytes in chunks.try_iter() {
-                        output.push_str(&String::from_utf8_lossy(&bytes));
+                    for bytes in chunks.try_iter().take(PIPE_CHUNKS) {
+                        append_tail(&mut output, &bytes, 100_000);
                     }
+                    self.check_deadline()?;
                     return Err(fail(format!(
                         "Child exited {}: {}",
                         exit_code(status),
-                        tail(&output, 1000)
+                        tail(&String::from_utf8_lossy(&output), 1000)
                     )));
                 }
                 if started.elapsed() >= COMMAND_TIMEOUT {
                     return Err(fail(format!(
                         "Child readiness timed out: {label}: {}",
-                        tail(&output, 2000)
+                        tail(&String::from_utf8_lossy(&output), 2000)
                     )));
                 }
             }
@@ -416,33 +435,79 @@ mod driver {
         }
     }
 
+    // Tungstenite can perform several reads in one handshake or message. Refresh
+    // the timeout for each blocking operation so partial reads cannot extend it.
+    struct DeadlineStream {
+        stream: TcpStream,
+        deadline: Instant,
+        read_limit: Duration,
+    }
+
+    impl DeadlineStream {
+        fn timeout(&self, limit: Duration) -> io::Result<Duration> {
+            time_left(self.deadline)
+                .map(|left| left.min(limit))
+                .map_err(|_| io::ErrorKind::TimedOut.into())
+        }
+    }
+
+    impl Read for DeadlineStream {
+        fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+            self.stream
+                .set_read_timeout(Some(self.timeout(self.read_limit)?))?;
+            self.stream.read(bytes)
+        }
+    }
+
+    impl Write for DeadlineStream {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.stream
+                .set_write_timeout(Some(self.timeout(COMMAND_TIMEOUT)?))?;
+            self.stream.write(bytes)
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.stream.flush()
+        }
+    }
+
     /// One CDP connection. Events are handled whilst any command or wait reads the socket.
     struct Cdp {
-        socket: WebSocket<TcpStream>,
+        socket: WebSocket<DeadlineStream>,
         sequence: u64,
         origin: String,
         completed_downloads: Vec<String>,
-        deadline: Instant,
     }
 
     impl Cdp {
         fn connect(endpoint: &str, origin: String, deadline: Instant) -> Outcome<Self> {
-            let address = endpoint
+            let address: SocketAddr = endpoint
                 .strip_prefix("ws://")
                 .and_then(|rest| rest.split('/').next())
+                .and_then(|address| address.parse::<SocketAddr>().ok())
+                .filter(|address| address.ip().is_loopback())
                 .ok_or_else(|| fail(format!("Unexpected DevTools endpoint: {endpoint}")))?;
-            let stream = TcpStream::connect(address)?;
-            stream.set_read_timeout(Some(COMMAND_TIMEOUT))?;
-            stream.set_write_timeout(Some(COMMAND_TIMEOUT))?;
-            let (socket, _) = tungstenite::client(endpoint, stream)
-                .map_err(|error| fail(format!("WebSocket handshake: {error}")))?;
-            socket.get_ref().set_read_timeout(Some(SOCKET_POLL))?;
+            let handshake_deadline = deadline.min(Instant::now() + COMMAND_TIMEOUT);
+            let stream = TcpStream::connect_timeout(&address, time_left(handshake_deadline)?);
+            time_left(deadline)?;
+            let handshake = tungstenite::client(
+                endpoint,
+                DeadlineStream {
+                    stream: stream?,
+                    deadline: handshake_deadline,
+                    read_limit: COMMAND_TIMEOUT,
+                },
+            );
+            time_left(deadline)?;
+            let (mut socket, _) =
+                handshake.map_err(|error| fail(format!("WebSocket handshake: {error}")))?;
+            socket.get_mut().deadline = deadline;
+            socket.get_mut().read_limit = SOCKET_POLL;
             Ok(Self {
                 socket,
                 sequence: 0,
                 origin,
                 completed_downloads: Vec::new(),
-                deadline,
             })
         }
 
@@ -452,16 +517,17 @@ mod driver {
             if let Some(session) = session {
                 message["sessionId"] = json!(session);
             }
-            self.socket.send(Message::text(message.to_string()))?;
+            let sent = self.socket.send(Message::text(message.to_string()));
+            time_left(self.socket.get_ref().deadline)?;
+            sent?;
             Ok(self.sequence)
         }
 
         /// Read one message, answer or record events, and return a command reply.
         fn receive(&mut self) -> Outcome<Option<Value>> {
-            if Instant::now() >= self.deadline {
-                return Err(Failure::Deadline);
-            }
-            let text = match self.socket.read() {
+            let received = self.socket.read();
+            time_left(self.socket.get_ref().deadline)?;
+            let text = match received {
                 Ok(Message::Text(text)) => text,
                 Ok(_) => return Ok(None),
                 Err(tungstenite::Error::Io(error))
@@ -1233,6 +1299,7 @@ mod driver {
         let outcome = fs::create_dir(&driver.downloads)
             .map_err(Failure::from)
             .and_then(|()| qualify(&mut driver, &options, &mut result));
+        let outcome = driver.check_deadline().and(outcome);
 
         // One finalisation path for pass, failure and the overall deadline.
         stop.store(true, Ordering::Relaxed);
@@ -1247,6 +1314,7 @@ mod driver {
         }
         driver.cleanup();
         let removed = remove_run(temporary.path());
+        let outcome = outcome.and_then(|()| driver.check_deadline());
         let code = match outcome {
             Ok(()) => {
                 result["status"] = json!("pass");
@@ -1280,5 +1348,51 @@ mod driver {
         }
         println!("{json}");
         ExitCode::from(code)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use std::io::Write;
+
+        #[test]
+        fn cdp_handshake_obeys_deadline_with_a_dripping_header() {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let endpoint = format!(
+                "ws://{}/devtools/browser/test",
+                listener.local_addr().unwrap()
+            );
+            listener.set_nonblocking(true).unwrap();
+            let peer = thread::spawn(move || {
+                let accept_deadline = Instant::now() + Duration::from_secs(1);
+                let mut stream = loop {
+                    match listener.accept() {
+                        Ok((stream, _)) => break stream,
+                        Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                            if Instant::now() >= accept_deadline {
+                                return;
+                            }
+                            thread::sleep(Duration::from_millis(1));
+                        }
+                        Err(error) => panic!("accept: {error}"),
+                    }
+                };
+                if stream
+                    .write_all(b"HTTP/1.1 101 Switching Protocols\r\nX-Drip: ")
+                    .is_ok()
+                {
+                    for _ in 0..20 {
+                        thread::sleep(Duration::from_millis(10));
+                        if stream.write_all(b"a").is_err() {
+                            break;
+                        }
+                    }
+                }
+            });
+            let deadline = Instant::now() + Duration::from_millis(60);
+            let outcome = Cdp::connect(&endpoint, String::new(), deadline);
+            peer.join().unwrap();
+            assert!(matches!(outcome, Err(Failure::Deadline)));
+        }
     }
 }
