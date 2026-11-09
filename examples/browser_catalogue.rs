@@ -314,7 +314,7 @@ mod driver {
             let (sink, chunks) = mpsc::sync_channel(PIPE_CHUNKS);
             forward(child.stderr.take().expect("piped stderr"), sink);
             let mut output = Vec::new();
-            let status = (|| loop {
+            let status: Outcome<ExitStatus> = (|| loop {
                 let wait = time_left(self.deadline)?.min(Duration::from_millis(50));
                 if let Some(status) = child.try_wait()? {
                     return Ok(status);
