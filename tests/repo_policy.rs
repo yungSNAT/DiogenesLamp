@@ -222,7 +222,7 @@ profile = "minimal"
 "#;
 
 /// Pin the reviewed attribution workflow without duplicating its script.
-const ATTRIBUTION_SHA256: &str = "16f31e7f5c804156c705b7eed48cf440d0fc1ed11e280cbbe0dba34ef2407eb1";
+const ATTRIBUTION_SHA256: &str = "744eae4e533e209bef890fb253491a7a5fe540fb1cf97a47d9b7dac0455d335b";
 
 fn read(relative: &str) -> String {
     common::read(&common::root().join(relative))
