@@ -153,6 +153,9 @@ pub fn classify_url(raw: &str) -> Option<Source> {
             return None;
         }
         let seller_id = slug(&seller.replace('.', "-"));
+        if seller_id.is_empty() {
+            return None;
+        }
         return Some(Source::new(
             "yupoo",
             &seller_id,
@@ -227,7 +230,11 @@ pub fn classify_url(raw: &str) -> Option<Source> {
         ));
     }
     let name = host.strip_prefix("www.").unwrap_or(&host);
-    Some(Source::new("shop", &slug(name), "web", &raw, name))
+    let id = slug(name);
+    if id.is_empty() {
+        return None;
+    }
+    Some(Source::new("shop", &id, "web", &raw, name))
 }
 
 #[derive(Debug, Default)]
@@ -429,8 +436,20 @@ pub fn load_sources(path: &Path) -> Result<Sources> {
             .is_some_and(|v| v.truthy())
     };
     for (seller_id, entry) in section("yupoo")? {
-        if !safe_id(&seller_id) {
-            return value(format!("unsafe TOML id: {}", pystr::repr(&seller_id)));
+        // Catalogue and run files are named after the seller, so the id must pass the
+        // catalogue's rule here, or every scrape of this seller fails later.
+        if !crate::schema::is_seller_id(&seller_id) {
+            let lower = seller_id.to_ascii_lowercase();
+            let example = if crate::schema::is_seller_id(&lower) {
+                format!(", for example to [yupoo.{lower}]")
+            } else {
+                String::new()
+            };
+            return value(format!(
+                "{}: Yupoo seller id {} may use only a-z, 0-9, '_' and '-'; rename its table{example}",
+                pyerr::path_str(path),
+                pystr::repr(&seller_id)
+            ));
         }
         let Some(toml::Value::String(url)) = entry.get("url") else {
             return value(format!("[yupoo.{seller_id}] needs a url string"));

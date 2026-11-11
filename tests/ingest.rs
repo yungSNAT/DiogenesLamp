@@ -154,6 +154,9 @@ fn classify_rejects_junk_malformed_and_unsafe() {
         "https://user:password@example.test/path",
         "https://user@example.test/path",
         "\u{0}\u{0}",
+        // Hosts whose id slugs to nothing.
+        "https://_.x.yupoo.com",
+        "https://\u{4f8b}\u{5b50}.\u{4e2d}\u{56fd}/",
     ] {
         assert!(classify_url(raw).is_none(), "{raw:?}");
     }
@@ -377,6 +380,32 @@ fn skip_flag_round_trips_and_survives_reimport() {
             .nth(1)
             .unwrap()
             .contains("skip")
+    );
+}
+
+#[test]
+fn a_row_without_an_id_is_counted_invalid_and_the_rest_imported() {
+    let (merged, report) = merge_sources(
+        &Sources::new(),
+        &rows(&["https://_.x.yupoo.com", "https://kept.x.yupoo.com"]),
+    );
+    assert_eq!(report.invalid, 1);
+    assert_eq!(merged.keys().collect::<Vec<_>>(), ["yupoo:kept"]);
+}
+
+#[test]
+fn load_sources_refuses_a_seller_id_the_catalogue_refuses() {
+    let dir = common::tmp();
+    let path = dir.path().join("sources.toml");
+    common::write(
+        &path,
+        "[yupoo.MySeller]\nurl = \"https://myseller.x.yupoo.com\"\n",
+    );
+    let err = load_sources(&path).unwrap_err().to_string();
+    assert!(
+        err.contains("Yupoo seller id 'MySeller' may use only a-z")
+            && err.contains("[yupoo.myseller]"),
+        "{err}"
     );
 }
 
