@@ -1,9 +1,10 @@
 # Copy to sources.toml, or generate it with: lamp import links.csv
 #
 # Two things to know if you hand-edit this file:
-#   - A table key must be a plain [A-Za-z0-9_-] id. Dots would nest tables and
-#     the file would no longer load, so a seller like "shop.name" becomes
-#     "shop-name". 'lamp import' derives these ids for you.
+#   - A table key must be a plain id. Dots would nest tables and the file
+#     would no longer load, so a seller like "shop.name" becomes "shop-name".
+#     A [yupoo.*] id may use only [a-z0-9_-]; a [shops.*] id may also use
+#     capitals. 'lamp import' derives these ids for you.
 #   - 'lamp import' rewrites this file from your dump, keeping url and name.
 #     Comments do not survive, so to leave a seller out use skip = true rather
 #     than commenting the entry out.

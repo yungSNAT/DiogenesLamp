@@ -32,9 +32,13 @@ unchanged apart from the fixes under Viewer.
   DiogenesLamp instead of the Python version. The "viewer files not found"
   error can no longer occur.
 - **Uncaught Python exceptions.** Where the Python CLI crashed with a traceback
-  (an unreadable or invalid `sources.toml`, an unsafe source id on import, a
+  (an unreadable or invalid `sources.toml`, an unsafe id in `sources.toml`, a
   port already in use, an unreadable dump file), `lamp` prints `error: ...`
   and exits 1.
+- **Seller ids.** A `[yupoo.*]` id outside `[a-z0-9_-]` is refused when
+  `sources.toml` loads, with the id and the fix; Python loaded it, and every
+  scrape of that seller then failed. An import row whose host gives an empty
+  id is counted as invalid; Python stopped the whole import.
 - **Short listings.** A listing that ends with 5 or more known albums
   missing (previously listed, or failed and never recorded; an empty or
   repeated page part-way through, as a soft block could cause) marks none of
