@@ -35,6 +35,21 @@ fn version_flag_prints_the_package_version() {
     assert!(err.ends_with("lamp: error: argument --version: ignored explicit argument '1'\n"));
 }
 
+/// A double-clicked `lamp.exe` runs with no arguments; it gets the next
+/// steps, not a usage error. Any argument still goes to the parser.
+#[test]
+fn no_arguments_print_the_next_steps() {
+    let (code, out, err) = lamp(&[], None);
+    assert_eq!((code, err.as_str()), (0, ""));
+    assert!(out.starts_with(concat!("lamp ", env!("CARGO_PKG_VERSION"))));
+    for step in ["lamp demo", "lamp import", "lamp scrape", "lamp serve", "lamp --help"] {
+        assert!(out.contains(step), "{step} missing from {out:?}");
+    }
+    let (code, out, err) = lamp(&["bogus"], None);
+    assert_eq!(code, 2);
+    assert!(out.is_empty() && err.contains("lamp: error: argument command: invalid choice"));
+}
+
 #[test]
 fn import_creates_sources() {
     let dir = common::tmp();

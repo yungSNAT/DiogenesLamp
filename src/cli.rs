@@ -612,8 +612,43 @@ fn remove_demo(dir: &std::path::Path) {
     }
 }
 
+/// `lamp` alone, which is what a double-click on `lamp.exe` runs: the next
+/// steps instead of argparse's missing-command error.
+fn next_steps() -> i32 {
+    out::out_raw(concat!(
+        "lamp ",
+        env!("CARGO_PKG_VERSION"),
+        ": every Yupoo catalogue you follow on one searchable page.\n",
+        "Run it from a terminal, in the folder that should hold your data:\n",
+        "\n",
+        "  lamp demo                 see the viewer on synthetic data\n",
+        "  lamp import links.csv     add the Yupoo links you follow\n",
+        "  lamp scrape               collect their catalogues (slow on purpose)\n",
+        "  lamp serve                browse them\n",
+        "\n",
+        "lamp --help lists every command.\n",
+    ));
+    // shortcut: waits whenever stdin is a console, so `lamp` typed in a
+    // Windows terminal also waits for Enter. Telling a double-click apart
+    // needs GetConsoleProcessList, which no dependency wraps safely and
+    // this crate's forbid(unsafe_code) rules out calling directly.
+    #[cfg(windows)]
+    {
+        use std::io::{IsTerminal, Write};
+        if std::io::stdin().is_terminal() {
+            out::out_raw("\nPress Enter to close.\n");
+            let _ = std::io::stdout().flush();
+            let _ = std::io::stdin().read_line(&mut String::new());
+        }
+    }
+    0
+}
+
 /// Run the CLI with arguments after the program name; returns the exit code.
 pub fn main(argv: &[String]) -> i32 {
+    if argv.is_empty() {
+        return next_steps();
+    }
     let parser = build_parser();
     let namespace = match parser.parse_args(argv) {
         Ok(namespace) => namespace,
