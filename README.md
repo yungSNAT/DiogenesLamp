@@ -136,7 +136,8 @@ when you press Ctrl+C. It never writes to `data/` or `sources.toml`.
    weidian, link aggregators) are kept as a link-out directory.
 
 2. Scrape (the first run is slow by design: it rate-limits itself to stay
-   polite, and re-runs fetch only what changed):
+   polite; re-runs read every listing page again but skip albums whose
+   titles are unchanged):
 
        lamp scrape
 
@@ -149,8 +150,9 @@ Flags, scrape behaviour and the viewer's features are in
 
 ### Refresh on a schedule
 
-Re-runs fetch only what changed, so one scrape a day keeps a catalogue
-current. Schedule the same command with absolute paths, no more than once a
+Re-runs read every listing page but skip albums whose titles are unchanged
+([docs/reference.md](docs/reference.md) lists the exceptions), so one scrape
+a day keeps a catalogue current. Schedule the same command with absolute paths, no more than once a
 day, at an odd minute rather than on the hour, and keep the default limits in
 [Politeness and scope](#politeness-and-scope): a scheduled run with a higher
 `--rps` or `--workers` adds that load to every seller, every day. A run that
