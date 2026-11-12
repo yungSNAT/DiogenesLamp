@@ -62,6 +62,19 @@ An album that has disappeared from a seller's listing is kept, marked
 gone, and available under Favourites, a collection or Changed since review. It comes back
 if the seller lists it again.
 
+Each seller's result line counts its new and returned albums and names the
+first 5 of each, so a scheduled run's log says what arrived. An album is
+new when this run stores it and the seller's data held no record of it:
+its `first_seen` is this run. A seller's first run therefore reports every
+album it stores as new. An album whose fetch failed, or that an interrupted
+run never reached, is new on the run that first stores it. An album marked
+gone and then listed again is returned, not new; its history records the
+change. A short or blocked listing marks nothing gone (see the README's
+Development section), so the next run reports none of the albums it held
+back as new or returned.
+Dry runs report neither. The viewer's **Added since review** shows the same
+albums by their `first_seen` dates.
+
 ## Serve and browse
 
 `--port N` changes the port and `--no-browser` stops it opening one.

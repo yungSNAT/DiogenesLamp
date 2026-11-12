@@ -335,16 +335,23 @@ pub fn report_line(s: &SellerSummary, reported: usize, total: usize, dry_run: bo
     if s.thumbs_refetched != 0 {
         line.push_str(&format!(", {} covers fetched again", s.thumbs_refetched));
     }
-    if !s.failed_ids.is_empty() {
-        let shown = s
-            .failed_ids
-            .iter()
-            .take(5)
-            .cloned()
-            .collect::<Vec<_>>()
-            .join(", ");
-        let more = if s.failed_ids.len() > 5 { ", ..." } else { "" };
-        line.push_str(&format!(" (failed albums: {shown}{more})"));
+    if !s.new_ids.is_empty() {
+        line.push_str(&format!(", {} new", s.new_ids.len()));
+    }
+    if !s.returned_ids.is_empty() {
+        line.push_str(&format!(", {} returned", s.returned_ids.len()));
+    }
+    // The first 5 IDs of each list, so a scheduled run's log names them.
+    for (label, ids) in [
+        ("failed", &s.failed_ids),
+        ("new", &s.new_ids),
+        ("returned", &s.returned_ids),
+    ] {
+        if !ids.is_empty() {
+            let shown = ids.iter().take(5).cloned().collect::<Vec<_>>().join(", ");
+            let more = if ids.len() > 5 { ", ..." } else { "" };
+            line.push_str(&format!(" ({label} albums: {shown}{more})"));
+        }
     }
     if s.thumbs_blocked {
         line.push_str(" (thumbs blocked - hotlink protection?)");
