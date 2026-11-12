@@ -42,7 +42,13 @@ fn no_arguments_print_the_next_steps() {
     let (code, out, err) = lamp(&[], None);
     assert_eq!((code, err.as_str()), (0, ""));
     assert!(out.starts_with(concat!("lamp ", env!("CARGO_PKG_VERSION"))));
-    for step in ["lamp demo", "lamp import", "lamp scrape", "lamp serve", "lamp --help"] {
+    for step in [
+        "lamp demo",
+        "lamp import",
+        "lamp scrape",
+        "lamp serve",
+        "lamp --help",
+    ] {
         assert!(out.contains(step), "{step} missing from {out:?}");
     }
     let (code, out, err) = lamp(&["bogus"], None);
