@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- `lamp` with no arguments, as a double-click on `lamp.exe` runs it, prints
+  the next steps and exits 0 instead of a usage error with exit 2. On Windows,
+  when stdin is a console, it waits for Enter so the window stays open. Any
+  argument goes to the parser as before.
+
 ## 0.1.1 (2026-11-12)
 
 The first release. v0.1.0 was tagged but never released: the release audit
