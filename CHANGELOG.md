@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 (Rust port, unreleased)
+## 0.1.0 (Rust port, 2026-11-12)
 
 `lamp` is now a single Rust binary. It replaces the Python package
 (`src/lamp`), its wheel packaging and its pytest suite. The command,
