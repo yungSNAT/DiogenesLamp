@@ -706,6 +706,62 @@ fn a_stale_failure_for_a_gone_album_keeps_its_gone_record() {
 }
 
 #[test]
+fn each_run_reports_the_albums_it_stored_first_and_those_listed_again() {
+    let dir = common::tmp();
+    let none: Vec<String> = Vec::new();
+    // A seller's first run stores every album for the first time.
+    let summary = run_once(&paged(&[(101, 106), (107, 112)]), dir.path(), T1, opts());
+    assert_eq!(
+        (summary.new_ids, summary.returned_ids),
+        (ids(101, 112), none.clone())
+    );
+
+    // A short listing, as from a soft block, reports nothing new or returned
+    // and marks nothing gone; the full listing after it reports only 113.
+    let summary = run_once(&paged(&[(101, 106)]), dir.path(), T2, opts());
+    assert!(!summary.listing_complete);
+    assert_eq!(
+        (summary.new_ids, summary.returned_ids),
+        (none.clone(), none.clone())
+    );
+    let third = "2026-08-19T12:00:00+10:00";
+    let summary = run_once(&paged(&[(101, 106), (107, 113)]), dir.path(), third, opts());
+    assert_eq!(
+        (summary.new_ids, summary.returned_ids),
+        (ids(113, 113), none.clone())
+    );
+    assert!(gone(dir.path()).is_empty());
+
+    // An album whose fetch failed is new on the run that first stores it.
+    let fourth = "2026-08-20T12:00:00+10:00";
+    let failing = paged(&[(101, 106), (107, 114)]).fetch_errors(&["/albums/114?"]);
+    let summary = run_once(&failing, dir.path(), fourth, opts());
+    assert_eq!(
+        (summary.new_ids, summary.failed_ids),
+        (none.clone(), ids(114, 114))
+    );
+    let fifth = "2026-08-21T12:00:00+10:00";
+    let summary = run_once(&paged(&[(101, 106), (107, 114)]), dir.path(), fifth, opts());
+    assert_eq!(summary.new_ids, ids(114, 114));
+
+    // An album marked gone and then listed again is returned, not new.
+    let sixth = "2026-08-22T12:00:00+10:00";
+    run_once(&paged(&[(101, 106), (107, 113)]), dir.path(), sixth, opts());
+    assert_eq!(gone(dir.path()), ids(114, 114));
+    let seventh = "2026-08-23T12:00:00+10:00";
+    let summary = run_once(
+        &paged(&[(101, 106), (107, 114)]),
+        dir.path(),
+        seventh,
+        opts(),
+    );
+    assert_eq!(
+        (summary.new_ids, summary.returned_ids),
+        (none, ids(114, 114))
+    );
+}
+
+#[test]
 fn a_blocked_run_does_not_confirm_a_short_listing() {
     let dir = common::tmp();
     run_once(&paged(&[(101, 106), (107, 112)]), dir.path(), T1, opts());

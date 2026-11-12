@@ -6,6 +6,9 @@
   the next steps and exits 0 instead of a usage error with exit 2. On Windows,
   when stdin is a console, it waits for Enter so the window stays open. Any
   argument goes to the parser as before.
+- Each seller's `lamp scrape` result line counts and names its new albums
+  (stored for the first time) and returned albums (listed again after being
+  marked gone). The run summaries in `data/runs/` are unchanged.
 
 ## 0.1.1 (2026-11-12)
 
