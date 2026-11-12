@@ -46,7 +46,7 @@ build.
 
 ### From a release
 
-From v0.1.0, each
+From v0.1.1, each
 [release](https://github.com/yungSNAT/DiogenesLamp/releases) carries an
 executable for Linux (x86_64, statically linked) and one for Windows (x86_64),
 with a `SHA256SUMS` file and signed build provenance; if the page lists none
@@ -54,8 +54,8 @@ yet, install from source as above. Check both before you run it; the
 commands below stop at the first failed check. With the
 [GitHub CLI](https://cli.github.com/) signed in (`gh auth login`), on Linux:
 
-    tag=v0.1.0
-    asset=diogenes-lamp-0.1.0-x86_64-unknown-linux-musl.tar.gz
+    tag=v0.1.1
+    asset=diogenes-lamp-0.1.1-x86_64-unknown-linux-musl.tar.gz
     gh release download "$tag" --repo yungSNAT/DiogenesLamp --pattern "$asset" --pattern SHA256SUMS &&
       awk -v f="$asset" '$2 == f' SHA256SUMS | sha256sum --check &&
       gh attestation verify "$asset" --repo yungSNAT/DiogenesLamp \
@@ -65,8 +65,8 @@ commands below stop at the first failed check. With the
 
 `~/.local/bin` must be on your `PATH`. On Windows, in PowerShell:
 
-    $tag = 'v0.1.0'
-    $asset = 'diogenes-lamp-0.1.0-x86_64-pc-windows-msvc.zip'
+    $tag = 'v0.1.1'
+    $asset = 'diogenes-lamp-0.1.1-x86_64-pc-windows-msvc.zip'
     gh release download $tag --repo yungSNAT/DiogenesLamp --pattern $asset --pattern SHA256SUMS
     if ($LASTEXITCODE) { throw 'download failed' }
     $sum = (Select-String -Path SHA256SUMS -SimpleMatch $asset).Line.Split(' ')[0]

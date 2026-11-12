@@ -1,6 +1,6 @@
 [package]
 name = "diogenes-lamp"
-version = "0.1.0"
+version = "0.1.1"
 description = "Browse any Yupoo catalog locally as one fast, searchable page"
 license = "Apache-2.0"
 edition = "2024"
