@@ -83,6 +83,11 @@ pub struct SellerSummary {
     pub listing_complete: bool,
     pub resolved_ids: Vec<String>,
     pub short_missing: Vec<String>,
+    /// Albums this run stored for the first time, and albums listed again
+    /// after being marked gone. Reported, not written to the run summary:
+    /// the shard's `first_seen` and availability history already record them.
+    pub new_ids: Vec<String>,
+    pub returned_ids: Vec<String>,
 }
 
 impl SellerSummary {
@@ -553,6 +558,10 @@ pub fn scrape_seller(
                 record.insert("cover_prepared".into(), Value::Int(1));
             }
         }
+        // merge_album reads an empty record as none, so first_seen is this run.
+        if old_ref.is_none_or(Map::is_empty) {
+            summary.new_ids.push(stub.id.clone());
+        }
         let merged = merge_album(old_ref, &record, run_ts);
         shard.insert(stub.id.clone(), merged);
         summary.scraped += 1;
@@ -606,25 +615,27 @@ pub fn scrape_seller(
         summary.error = format!("all {} album fetches failed", summary.failed);
     }
     if !options.dry_run {
-        stamp_listing(&mut shard, &listed, &absent, run_ts);
+        summary.returned_ids = stamp_listing(&mut shard, &listed, &absent, run_ts);
         write_shard(data_dir, &source.id, &shard)?;
     }
     Ok(summary)
 }
 
 /// Record which albums the seller's listing still carries, and mark the
-/// confirmed absent ones gone.
+/// confirmed absent ones gone. Returns the gone albums listed again.
 fn stamp_listing(
     shard: &mut Shard,
     listed: &HashSet<String>,
     absent: &HashSet<String>,
     run_ts: &str,
-) {
+) -> Vec<String> {
+    let mut returned = Vec::new();
     for (album_id, album) in shard.iter_mut() {
         if listed.contains(album_id) {
             album.insert("last_seen".into(), run_ts.into());
             let gone = album.shift_remove("gone_since");
             if gone.is_some_and(|g| g.truthy()) {
+                returned.push(album_id.clone());
                 record_change(
                     album,
                     "availability",
@@ -644,6 +655,7 @@ fn stamp_listing(
             album.insert("gone_since".into(), run_ts.into());
         }
     }
+    returned
 }
 
 /// Ctrl+C presses, counted. The first stops queued sellers and lets running

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Each seller's `lamp scrape` result line counts and names its new albums
+  (stored for the first time) and returned albums (listed again after being
+  marked gone). The run summaries in `data/runs/` are unchanged.
+
 ## 0.1.1 (2026-11-12)
 
 The first release. v0.1.0 was tagged but never released: the release audit
