@@ -1,6 +1,13 @@
 # Changelog
 
-## 0.1.0 (Rust port, 2026-11-12)
+## 0.1.1 (2026-11-12)
+
+The first release. v0.1.0 was tagged but never released: the release audit
+refused its binary for rustix 1.1.5, which RUSTSEC-2026-0486 marks unsound.
+
+- Takes rustix 1.1.6.
+
+## 0.1.0 (Rust port, 2026-11-12, not released)
 
 `lamp` is now a single Rust binary. It replaces the Python package
 (`src/lamp`), its wheel packaging and its pytest suite. The command,
