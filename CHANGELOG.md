@@ -9,6 +9,9 @@
 - Each seller's `lamp scrape` result line counts and names its new albums
   (stored for the first time) and returned albums (listed again after being
   marked gone). The run summaries in `data/runs/` are unchanged.
+- An album page with tens of thousands of void tags and stray closing tags, or
+  one tag with tens of thousands of attributes, parses in linear time. At
+  40,000 each took 0.49 s and 1.11 s before and 18 ms and 9 ms after.
 
 ## 0.1.1 (2026-11-12)
 
