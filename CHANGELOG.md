@@ -37,6 +37,10 @@
 - An album page with tens of thousands of void tags and stray closing tags, or
   one tag with tens of thousands of attributes, parses in linear time. At
   40,000 each took 0.49 s and 1.11 s before and 18 ms and 9 ms after.
+- Duplicate detection records each duplicate's alias without searching every
+  alias found so far, so its time no longer grows with the square of the
+  number of duplicates: on 160,000 demo albums it falls from about 50 s to
+  3 s. The selected albums and aliases are unchanged.
 
 ## 0.1.1 (2026-11-12)
 
