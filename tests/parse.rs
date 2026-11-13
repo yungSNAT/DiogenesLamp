@@ -127,6 +127,32 @@ fn unmatched_closing_tags_at_depth_take_linear_time() {
     );
 }
 
+/// Closing tags after many void tags, and one tag with many attributes, must
+/// not scan everything seen before: each was quadratic, about 0.5 s and 1.1 s
+/// for 40,000 in a release build. Each crafted page is timed against a page
+/// of the same number of plain tags; the bound is generous.
+#[test]
+fn void_tag_closers_and_repeated_attributes_take_linear_time() {
+    const N: usize = 40_000;
+    let title = "<h1 class=\"showalbumheader__gallerytitle\">Deep title</h1>";
+    let timed = |html: String| {
+        let started = Instant::now();
+        let detail = parse_album_page(&format!("{html}{title}"));
+        assert_eq!(detail.title, "Deep title");
+        started.elapsed()
+    };
+    let plain = timed("<br>".repeat(2 * N));
+    let closers = timed(format!("{}{}", "<br>".repeat(N), "</p>".repeat(N)));
+    let attrs: String = (0..N).map(|i| format!(" a{i}=\"v\"")).collect();
+    let wide = timed(format!("<div{attrs}></div>"));
+    for (name, crafted) in [("closers", closers), ("attributes", wide)] {
+        assert!(
+            crafted < plain * 10 + Duration::from_secs(1),
+            "{name} {crafted:?}, plain {plain:?}"
+        );
+    }
+}
+
 #[test]
 fn parse_album_page_malformed_ld_json() {
     let html = "<html><body><script type=\"application/ld+json\">not json {</script>\
