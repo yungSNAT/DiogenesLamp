@@ -204,7 +204,9 @@ kept and filled solid in the second ink when it is.
   rate preferences; a converted price prints in the existing price figure's
   footprint, marked ≈ with its currency code, never as a new mark on the cover.
 - **Form field.** A baseline rule rather than a box, thickening into the
-  second ink on focus. Selects carry a drawn caret as a data URI rather than
+  second ink on focus. The baseline alone differs from the faint resting
+  baseline at only 1.11:1 to 1.12:1, so a focused field also carries the
+  shared ink focus ring. Selects carry a drawn caret as a data URI rather than
   the platform arrow.
 - **Mark box.** The checkbox toggles are a ruled square with a drawn tick;
   the native input stays in the accessibility tree and keeps the keyboard, and

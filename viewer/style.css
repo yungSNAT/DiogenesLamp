@@ -197,8 +197,10 @@ select {
   }
 }
 input[type="search"]:hover, select:hover { border-bottom-color: var(--ink); }
+/* The red baseline differs from the faint resting one mostly by hue, so a
+   focused field also keeps the shared ink focus ring. */
 input[type="search"]:focus, select:focus {
-  outline: none; border-bottom-color: var(--ink-red); border-bottom-width: 2px;
+  border-bottom-color: var(--ink-red); border-bottom-width: 2px;
   padding-bottom: 5px;
 }
 input[type="search"]::placeholder { color: var(--ink-2); opacity: 1; }

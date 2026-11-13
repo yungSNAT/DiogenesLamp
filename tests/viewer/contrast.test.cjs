@@ -31,11 +31,12 @@ function ratio(a, b) {
   return (hi + 0.05) / (lo + 0.05);
 }
 
+const dark = tokens(":root");
+const themes = {dark, light: {...dark, ...tokens(':root[data-theme="light"]')}};
+
 // WCAG 1.4.11: an edge that is the only sign of a control needs 3:1 against
 // what it sits on. Fields and mark boxes sit on the leaf and the raised leaf.
 test("control edges clear 3:1 on both leaves in both themes", () => {
-  const dark = tokens(":root");
-  const themes = {dark, light: {...dark, ...tokens(':root[data-theme="light"]')}};
   const edges = {
     "field baseline": [/border-bottom:\s*1px solid var\((--[\w-]+)\)/, 'input[type="search"], select'],
     "mark box": [/border:\s*1px solid var\((--[\w-]+)\)/, ".mark-check"],
@@ -49,6 +50,20 @@ test("control edges clear 3:1 on both leaves in both themes", () => {
         const measured = ratio(palette[token], palette[ground]);
         assert.ok(measured >= 3, `${name} ${token} on ${ground} (${theme}): ${measured.toFixed(2)}:1`);
       }
+    }
+  }
+});
+
+// The red focused baseline is about 1.1:1 against the faint resting one, so a
+// focused field must keep the shared focus ring, which must clear 3:1.
+test("a focused field keeps the shared focus ring", () => {
+  assert.doesNotMatch(block('input[type="search"]:focus, select:focus'), /outline:\s*none/);
+  const ring = block(":focus-visible").match(/outline:\s*2px solid var\((--[\w-]+)\)/)?.[1];
+  assert.ok(ring, "no focus ring colour");
+  for (const [theme, palette] of Object.entries(themes)) {
+    for (const ground of ["--leaf", "--leaf-2"]) {
+      const measured = ratio(palette[ring], palette[ground]);
+      assert.ok(measured >= 3, `focus ring ${ring} on ${ground} (${theme}): ${measured.toFixed(2)}:1`);
     }
   }
 });
