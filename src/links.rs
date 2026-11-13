@@ -351,16 +351,30 @@ fn clean_rest(rest: Option<&str>) -> String {
         .to_string()
 }
 
-/// The purchase links in `text`, and whether the scan reached its end.
-/// A run of a few hundred dotted words with no space can exceed the regex
-/// engine's backtracking limit; the scan stops there, keeps the links found
-/// before it and returns `false` so the caller can report the album.
+/// The purchase links in `text`, and whether every part was scanned.
+///
+/// No match can contain whitespace (the scheme, host labels and `rest` all
+/// exclude it), and the pattern's lookbehind and lookahead treat whitespace
+/// as they treat the ends of the text, so scanning each whitespace-separated
+/// word finds exactly the links a scan of the whole text finds. Scanning word
+/// by word bounds the regex engine's backtracking by one word's length: a run
+/// of a few hundred dotted words with no space can still exceed its limit,
+/// which loses only the rest of that word and returns `false`.
 pub fn extract_links(text: &str) -> (Vec<Link>, bool) {
     let mut seen: HashSet<String> = HashSet::new();
     let mut links = Vec::new();
-    for caps in URL_RE.captures_iter(text) {
+    let mut scanned = true;
+    for word in text.split(char::is_whitespace) {
+        scanned &= scan_word(word, &mut seen, &mut links);
+    }
+    (links, scanned)
+}
+
+/// Adds the new links in one word; `false` if the scan stopped early.
+fn scan_word(word: &str, seen: &mut HashSet<String>, links: &mut Vec<Link>) -> bool {
+    for caps in URL_RE.captures_iter(word) {
         let Ok(caps) = caps else {
-            return (links, false);
+            return false;
         };
         let Some(host_match) = caps.name("host") else {
             continue;
@@ -389,5 +403,5 @@ pub fn extract_links(text: &str) -> (Vec<Link>, bool) {
             links.push(Link::new(platform, url));
         }
     }
-    (links, true)
+    true
 }

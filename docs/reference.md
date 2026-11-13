@@ -75,11 +75,13 @@ back as new or returned.
 Dry runs report neither. The viewer's **Added since review** shows the same
 albums by their `first_seen` dates.
 
-The line also counts and names albums whose purchase-link scan stopped
-early. A run of a few hundred dotted words with no space, such as `a.a.a.`,
-exceeds the link pattern's backtracking limit. Such an album keeps the links
-found before that point; later links in its text are not stored, and a
-re-scrape stops at the same place.
+Purchase links are found word by word, between whitespace. A word of a few
+hundred dotted parts with no space, such as `a.a.a.`, that never reaches a
+known host exceeds the link pattern's backtracking limit; the rest of that
+word is not scanned, so a link later in the same word is not stored, whilst
+links in every other word are. The
+line counts and names such albums as partly scanned, and the run summary
+lists them as `partly_scanned_ids`. A re-scrape stops at the same place.
 
 ## Serve and browse
 

@@ -1784,8 +1784,12 @@ fn an_album_whose_link_scan_stopped_early_is_reported() {
     let summary = run(&client, dir.path(), T1, opts());
     assert_eq!(summary.partly_scanned_ids, ["301"]);
     assert_eq!(
+        summary.as_map()["partly_scanned_ids"].py_str(),
+        r#"["301"]"#
+    );
+    assert_eq!(
         get(&shard(dir.path()), "301", "links").py_str(),
-        r#"[{"platform": "weidian", "url": "https://weidian.com/item.html?itemID=1"}]"#
+        r#"[{"platform": "weidian", "url": "https://weidian.com/item.html?itemID=1"}, {"platform": "taobao", "url": "https://item.taobao.com/item.htm?id=2"}]"#
     );
 }
 

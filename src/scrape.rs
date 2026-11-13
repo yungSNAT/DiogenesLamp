@@ -88,8 +88,8 @@ pub struct SellerSummary {
     /// the shard's `first_seen` and availability history already record them.
     pub new_ids: Vec<String>,
     pub returned_ids: Vec<String>,
-    /// Albums whose purchase-link scan stopped before the end of their text,
-    /// so links after that point were not stored. Reported only.
+    /// Albums with a word whose purchase-link scan stopped early, so links
+    /// later in that word were not stored. Reported and kept in the run summary.
     pub partly_scanned_ids: Vec<String>,
 }
 
@@ -121,6 +121,7 @@ impl SellerSummary {
             "listing_complete" => self.listing_complete,
             "resolved_ids" => strings(&self.resolved_ids),
             "short_missing" => strings(&self.short_missing),
+            "partly_scanned_ids" => strings(&self.partly_scanned_ids),
         }
     }
 }

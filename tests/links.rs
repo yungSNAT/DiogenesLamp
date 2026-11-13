@@ -359,16 +359,22 @@ fn invisible_characters_end_a_url() {
 }
 
 #[test]
-fn a_scan_stopped_by_the_backtracking_limit_says_so_and_keeps_earlier_links() {
-    // 400 one-letter dotted labels exceed the engine's backtracking limit.
+fn a_word_that_exceeds_the_backtracking_limit_loses_only_itself() {
+    // 400 one-letter dotted labels that never reach a known host exceed the
+    // engine's backtracking limit. Links in the words around them are kept;
+    // one later in the same word is not, and the scan says so.
+    let dotted = "a.".repeat(400);
     let text = format!(
-        "https://weidian.com/item.html?itemID=1 {} https://item.taobao.com/item.htm?id=2",
-        "a.".repeat(400)
+        "https://weidian.com/item.html?itemID=1 {dotted} https://item.taobao.com/item.htm?id=2\n\
+         {dotted}/weidian.com/item.html?itemID=3"
     );
     assert_eq!(
         extract_links(&text),
         (
-            vec![l("weidian", "https://weidian.com/item.html?itemID=1")],
+            vec![
+                l("weidian", "https://weidian.com/item.html?itemID=1"),
+                l("taobao", "https://item.taobao.com/item.htm?id=2"),
+            ],
             false
         )
     );

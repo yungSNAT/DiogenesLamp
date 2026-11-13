@@ -9,10 +9,11 @@
 - Each seller's `lamp scrape` result line counts and names its new albums
   (stored for the first time) and returned albums (listed again after being
   marked gone). The run summaries in `data/runs/` are unchanged.
-- An album whose purchase-link scan stops early, on a run of a few hundred
-  dotted words, is now counted and named on the result line as partly
-  scanned. Before, the scan stopped silently and the album's later links were
-  lost with no sign.
+- Purchase links are found word by word. Before, a run of a few hundred
+  dotted words stopped the whole scan silently and every later link in the
+  album was lost. Now only the rest of that word is skipped, and the album is
+  counted and named on the result line as partly scanned and listed in its
+  run summary as `partly_scanned_ids`.
 - `lamp prepare-covers` saves its metadata snapshot only when a batch has a
   cover to prepare. A batch with nothing left reports `"snapshot": null`
   instead of adding another snapshot to `data/snapshots/`.
