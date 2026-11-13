@@ -17,9 +17,16 @@ fn l(platform: &str, url: &str) -> Link {
     }
 }
 
+/// The links in `text`, from a scan that must reach the end.
+fn found(text: &str) -> Vec<Link> {
+    let (links, scanned) = extract_links(text);
+    assert!(scanned, "scan stopped early: {text}");
+    links
+}
+
 fn check(cases: &[(&str, Vec<Link>)]) {
     for (text, expected) in cases {
-        assert_eq!(&extract_links(text), expected, "{text}");
+        assert_eq!(&found(text), expected, "{text}");
     }
 }
 
@@ -108,7 +115,7 @@ fn extract_links_cases() {
 fn dedupes_and_preserves_order() {
     let text = "https://item.taobao.com/item.htm?id=1 then https://weidian.com/item.html?itemID=2 and again https://item.taobao.com/item.htm?id=1";
     assert_eq!(
-        extract_links(text),
+        found(text),
         vec![
             l("taobao", "https://item.taobao.com/item.htm?id=1"),
             l("weidian", "https://weidian.com/item.html?itemID=2")
@@ -118,14 +125,14 @@ fn dedupes_and_preserves_order() {
 
 #[test]
 fn fragments_are_stripped() {
-    let with = extract_links("buy https://item.taobao.com/item.htm?id=695#detail now");
+    let with = found("buy https://item.taobao.com/item.htm?id=695#detail now");
     assert_eq!(
         with,
-        extract_links("buy https://item.taobao.com/item.htm?id=695 now")
+        found("buy https://item.taobao.com/item.htm?id=695 now")
     );
     assert_eq!(with[0].url, "https://item.taobao.com/item.htm?id=695");
     assert_eq!(
-        extract_links("https://m.tb.cn/h.ABC#x")[0].url,
+        found("https://m.tb.cn/h.ABC#x")[0].url,
         "https://m.tb.cn/h.ABC"
     );
 }
@@ -204,7 +211,7 @@ fn control_and_invisible_characters_never_reach_a_url() {
         "k.youshop10.com/abc\u{0}def",
         "m.tb.cn/h.Xyz\u{200b}12",
     ] {
-        for link in extract_links(text) {
+        for link in found(text) {
             assert_eq!(link.url, link.url.trim());
             assert!(
                 link.url.chars().all(|c| c as u32 > 0x20
@@ -242,7 +249,7 @@ fn suffix_lookalikes_never_collapse_onto_the_real_host() {
         "taobao.com.cn/item?id=5",
         "weidian.com.evil.example/item",
     ] {
-        assert!(extract_links(text).is_empty(), "{text}");
+        assert!(found(text).is_empty(), "{text}");
     }
 }
 
@@ -253,7 +260,7 @@ fn valid_hosts_still_match() {
         ("item.taobao.com/x", "item.taobao.com"),
         ("buy from taobao.com. Then wait.", "taobao.com"),
     ] {
-        let links = extract_links(text);
+        let links = found(text);
         assert!(!links.is_empty() && links[0].url.contains(host), "{text}");
     }
 }
@@ -331,14 +338,14 @@ fn agent_links_unwrap_to_the_marketplace_item() {
         ("https://user@weidian.com/item.html?itemID=123".into(), none()),
     ];
     for (text, expected) in cases {
-        assert_eq!(extract_links(&text), expected, "{text}");
+        assert_eq!(found(&text), expected, "{text}");
     }
 }
 
 #[test]
 fn an_agent_link_and_the_direct_link_are_one_entry() {
     assert_eq!(
-        extract_links(&format!("https://hoobuy.com/product/2/7652831688 or {WD}")),
+        found(&format!("https://hoobuy.com/product/2/7652831688 or {WD}")),
         vec![l("weidian", WD)]
     );
 }
@@ -346,8 +353,30 @@ fn an_agent_link_and_the_direct_link_are_one_entry() {
 #[test]
 fn invisible_characters_end_a_url() {
     assert_eq!(
-        extract_links("weidian.com/item.html?itemID=12\u{0}34"),
+        found("weidian.com/item.html?itemID=12\u{0}34"),
         vec![l("weidian", "https://weidian.com/item.html?itemID=12")]
+    );
+}
+
+#[test]
+fn a_word_that_exceeds_the_backtracking_limit_loses_only_itself() {
+    // 400 one-letter dotted labels that never reach a known host exceed the
+    // engine's backtracking limit. Links in the words around them are kept;
+    // one later in the same word is not, and the scan says so.
+    let dotted = "a.".repeat(400);
+    let text = format!(
+        "https://weidian.com/item.html?itemID=1 {dotted} https://item.taobao.com/item.htm?id=2\n\
+         {dotted}/weidian.com/item.html?itemID=3"
+    );
+    assert_eq!(
+        extract_links(&text),
+        (
+            vec![
+                l("weidian", "https://weidian.com/item.html?itemID=1"),
+                l("taobao", "https://item.taobao.com/item.htm?id=2"),
+            ],
+            false
+        )
     );
 }
 
