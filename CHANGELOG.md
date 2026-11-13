@@ -13,6 +13,9 @@
   drawn in the faint ink, at 5.57:1 or more on either leaf in both themes.
   The strong rule they used measured 1.79:1 to 2.32:1, under the 3:1 a
   control's edge needs.
+- The viewer's album and seller tally and its description coverage line stay
+  silent to screen readers whilst shards load, then announce their finished
+  figures once. Before, they were announced up to 5 times a second.
 
 ## 0.1.1 (2026-11-12)
 
