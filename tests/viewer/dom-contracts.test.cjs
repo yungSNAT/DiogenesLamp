@@ -35,6 +35,7 @@ test("every heading in the shipped HTML has text before app.js fills it", () => 
   const headings = [...html.matchAll(/<(h[1-6])\b[^>]*>([\s\S]*?)<\/\1>/g)];
   assert.ok(headings.length > 0, "the preview title is checked");
   for (const [heading, , text] of headings) {
-    assert.ok(text.replace(/<[^>]*>/g, "").trim(), `empty heading: ${heading}`);
+    // Some character outside every tag that is not whitespace.
+    assert.match(text, /(?:^|>)[^<]*[^<\s]/, `empty heading: ${heading}`);
   }
 });
