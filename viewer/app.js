@@ -168,9 +168,23 @@ function tallySeparator() {
   return span;
 }
 
+function catalogueLoading() {
+  return !state.index || state.loadedSellers < state.index.sellers.length;
+}
+
+// #status and #description-coverage are polite live regions, rewritten up to
+// 5 times a second while shards stream in. Keep them silent until the load
+// ends, so a screen reader hears the finished figures once rather than every
+// intermediate count. Set before the text, so the final write is announced.
+/** @param {HTMLElement} element @param {boolean} loading */
+function setLive(element, loading) {
+  element.setAttribute("aria-live", loading ? "off" : "polite");
+}
+
 function setStatus() {
   const total = state.index ? state.index.sellers.length : 0;
-  const loading = !state.index || state.loadedSellers < total;
+  const loading = catalogueLoading();
+  setLive(els.status, loading);
   // A seller whose scrape errored has no shard on disk, so its fetch 404s.
   // Those still count in loadedSellers (the attempt finished), so name the
   // missing part rather than silently reporting a full catalogue.
@@ -369,6 +383,7 @@ function setDescriptionCoverage() {
     if (album.description_truncated) excerpts += 1;
   }
   const total = state.albums.length;
+  setLive(els.descriptionCoverage, catalogueLoading());
   els.descriptionCoverage.textContent = !total ? "" :
     `Descriptions recorded for ${recorded} of ${total} loaded albums` +
     (empty ? `, ${empty} with no text extracted` : "") +

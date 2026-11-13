@@ -9,6 +9,13 @@
 - Each seller's `lamp scrape` result line counts and names its new albums
   (stored for the first time) and returned albums (listed again after being
   marked gone). The run summaries in `data/runs/` are unchanged.
+- The viewer's field baselines, checkbox boxes and preview form fields are
+  drawn in the faint ink, at 5.57:1 or more on either leaf in both themes.
+  The strong rule they used measured 1.79:1 to 2.32:1, under the 3:1 a
+  control's edge needs.
+- The viewer's album and seller tally and its description coverage line stay
+  silent to screen readers whilst shards load, then announce their finished
+  figures once. Before, they were announced up to 5 times a second.
 - Purchase links are found word by word. Before, a run of a few hundred
   dotted words stopped the whole scan silently and every later link in the
   album was lost. Now only the rest of that word is skipped, and the album is

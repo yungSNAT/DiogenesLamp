@@ -29,3 +29,13 @@ test("controller DOM declarations match the shipped HTML elements", () => {
   assert.match(html, /<div id="load-progress"[^>]*><div id="load-progress-bar"/,
     "the progress bar has the parent promised by its DOM contract");
 });
+
+test("every heading in the shipped HTML has text before app.js fills it", () => {
+  const html = fs.readFileSync(path.join(viewer, "index.html"), "utf8");
+  const headings = [...html.matchAll(/<(h[1-6])\b[^>]*>([\s\S]*?)<\/\1>/g)];
+  assert.ok(headings.length > 0, "the preview title is checked");
+  for (const [heading, , text] of headings) {
+    // Some character outside every tag that is not whitespace.
+    assert.match(text, /(?:^|>)[^<]*[^<\s]/, `empty heading: ${heading}`);
+  }
+});
