@@ -388,6 +388,7 @@ pub fn prepare_covers(root: &Path, limit: i128) -> Result<Map> {
     let mut resized: i128 = 0;
     let mut before_bytes: i128 = 0;
     let mut after_bytes: i128 = 0;
+    let mut missing_covers: i128 = 0;
     let mut errors: Vec<String> = Vec::new();
     let _lock = CatalogueLock::acquire(root)?;
     // Taken before the first cover is touched, so a batch with nothing to
@@ -415,10 +416,16 @@ pub fn prepare_covers(root: &Path, limit: i128) -> Result<Map> {
                     _ => continue,
                 };
                 let path = data_path(root, &thumb, true)?;
-                let prepared = album
+                // A cover missing from disk is the next scrape's to fetch, so
+                // it neither takes a snapshot nor counts against the limit.
+                if !path.is_file() {
+                    missing_covers += 1;
+                    continue;
+                }
+                if album
                     .get("cover_prepared")
-                    .is_some_and(|v| pyjson::py_eq(v, &Value::Int(1)));
-                if prepared && path.is_file() {
+                    .is_some_and(|v| pyjson::py_eq(v, &Value::Int(1)))
+                {
                     continue;
                 }
                 if snapshot_path.is_none() {
@@ -457,6 +464,7 @@ pub fn prepare_covers(root: &Path, limit: i128) -> Result<Map> {
         "resized" => Value::Int(resized),
         "before_bytes" => Value::Int(before_bytes),
         "after_bytes" => Value::Int(after_bytes),
+        "missing_covers" => Value::Int(missing_covers),
     };
     result.insert(
         "errors".into(),
