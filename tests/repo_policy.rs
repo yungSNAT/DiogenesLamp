@@ -246,6 +246,7 @@ fn active_workflow_inventory_is_exact() {
     assert_eq!(
         names,
         [
+            "changelog.yml",
             "ci.yml",
             "codeql.yml",
             "no-ai-attribution.yml",
