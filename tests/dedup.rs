@@ -5,6 +5,7 @@
 mod common;
 
 use std::collections::BTreeSet;
+use std::time::{Duration, Instant};
 
 use common::{json, lamp, obj, read_json, write};
 use lamp::dedup::{duplicate_key, item_keys, newest_listings};
@@ -466,6 +467,47 @@ fn reindex_selects_before_seller_filters_and_preserves_captures() {
         &Value::Object(older)
     ));
     assert!(pyjson::py_eq(&index, &read_json(&root.join("index.json"))));
+}
+
+/// An album whose duplicate identity is its title within the seller.
+fn titled(aid: usize, seller: &str, title: &str, date: &str) -> Map {
+    album(
+        &aid.to_string(),
+        seller,
+        &format!(r#"{{"title": "{title}", "date_published": "{date}"}}"#),
+    )
+}
+
+/// Recording an alias must not rescan the aliases found so far: that was
+/// quadratic, 19 s for the demo generator's 80,000 albums in a release build.
+/// Title pairs are timed against as many distinct titles; the bound is
+/// generous.
+#[test]
+fn many_aliases_take_linear_time() {
+    const PAIRS: usize = 20_000;
+    let distinct: Vec<Map> = (1..=2 * PAIRS)
+        .map(|i| titled(i, "one", &format!("Listing {i:06} jacket"), "2026-01-01"))
+        .collect();
+    let paired: Vec<Map> = (1..=2 * PAIRS)
+        .map(|i| {
+            let title = format!("Listing {:06} jacket", i.div_ceil(2));
+            titled(i, "one", &title, ["2026-02-01", "2026-01-01"][i % 2])
+        })
+        .collect();
+    let timed = |albums: &[Map]| {
+        let started = Instant::now();
+        let (selected, aliases) = newest_listings(albums);
+        (started.elapsed(), selected.len(), aliases)
+    };
+    let (plain, plain_selected, plain_aliases) = timed(&distinct);
+    assert_eq!((plain_selected, plain_aliases.len()), (2 * PAIRS, 0));
+    let (crafted, selected, aliases) = timed(&paired);
+    assert_eq!((selected, aliases.len()), (PAIRS, PAIRS));
+    assert_eq!(pairs(&aliases[..2]), [("1", "2"), ("3", "4")]);
+    assert!(
+        crafted < plain * 4 + Duration::from_secs(1),
+        "aliases {crafted:?}, plain {plain:?}"
+    );
 }
 
 #[test]

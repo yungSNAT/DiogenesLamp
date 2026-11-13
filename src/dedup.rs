@@ -5,6 +5,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 
+use indexmap::IndexMap;
 use unicode_normalization::UnicodeNormalization;
 
 use crate::age::estimate_published;
@@ -159,7 +160,8 @@ pub fn newest_listings(albums: &[Map]) -> (Vec<Map>, Vec<(String, String)>) {
         }
     }
     let mut selected = Vec::new();
-    let mut aliases = Vec::new();
+    // A repeated key keeps its first position, as in a dict.
+    let mut aliases: IndexMap<String, String> = IndexMap::new();
     for (index, key) in keys.iter().enumerate() {
         let winner = key.as_deref().and_then(|k| winners.get(k)).copied();
         match winner {
@@ -172,17 +174,10 @@ pub fn newest_listings(albums: &[Map]) -> (Vec<Map>, Vec<(String, String)>) {
                     .unwrap_or_default();
                 let winner_id = albums[w].get("id").map(Value::py_str).unwrap_or_default();
                 if id != winner_id {
-                    // A repeated key keeps its first position, as in a dict.
-                    match aliases
-                        .iter_mut()
-                        .find(|(old, _): &&mut (String, String)| *old == id)
-                    {
-                        Some(entry) => entry.1 = winner_id,
-                        None => aliases.push((id, winner_id)),
-                    }
+                    aliases.insert(id, winner_id);
                 }
             }
         }
     }
-    (selected, aliases)
+    (selected, aliases.into_iter().collect())
 }
