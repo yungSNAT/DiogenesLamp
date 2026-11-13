@@ -5,6 +5,7 @@
 
 use crate::pystr;
 use crate::pytables;
+use indexmap::IndexMap;
 use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,7 +78,9 @@ struct Builder {
     current_data: Vec<String>,
     preserve_stack: Vec<usize>,
     container_stack: Vec<usize>,
-    already_closed_empty: Vec<String>,
+    /// bs4's `already_closed_empty_element` list, kept as a count per name:
+    /// it only ever removes one occurrence of a name, so order is irrelevant.
+    already_closed_empty: HashMap<String, usize>,
 }
 
 impl Builder {
@@ -186,26 +189,28 @@ impl Builder {
     }
 
     fn start_tag(&mut self, tag: &str, raw: Vec<(String, Option<String>)>, handle_empty: bool) {
-        let mut attrs: Vec<(String, String)> = Vec::new();
+        // A repeated attribute keeps its first position and its last value,
+        // as bs4's dict does.
+        let mut attrs: IndexMap<String, String> = IndexMap::with_capacity(raw.len());
         for (key, value) in raw {
-            let value = value.unwrap_or_default();
-            match attrs.iter_mut().find(|(k, _)| *k == key) {
-                Some(entry) => entry.1 = value,
-                None => attrs.push((key, value)),
-            }
+            attrs.insert(key, value.unwrap_or_default());
         }
-        self.push_tag(tag.to_string(), attrs);
+        self.push_tag(tag.to_string(), attrs.into_iter().collect());
         if handle_empty && VOID.contains(&tag) {
             self.end_tag(tag, false);
-            self.already_closed_empty.push(tag.to_string());
+            *self
+                .already_closed_empty
+                .entry(tag.to_string())
+                .or_default() += 1;
         }
     }
 
     fn end_tag(&mut self, tag: &str, check_already_closed: bool) {
         if check_already_closed
-            && let Some(pos) = self.already_closed_empty.iter().position(|t| t == tag)
+            && let Some(count) = self.already_closed_empty.get_mut(tag)
+            && *count > 0
         {
-            self.already_closed_empty.remove(pos);
+            *count -= 1;
         } else {
             self.soup_end_tag(tag);
         }
@@ -962,7 +967,7 @@ pub fn parse(html: &str) -> Document {
         current_data: Vec::new(),
         preserve_stack: Vec::new(),
         container_stack: Vec::new(),
-        already_closed_empty: Vec::new(),
+        already_closed_empty: HashMap::new(),
     };
     let mut tokenizer = Tokenizer {
         raw: html,
