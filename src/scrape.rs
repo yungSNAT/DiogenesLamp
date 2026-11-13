@@ -892,24 +892,16 @@ pub fn write_scrape_index(
 ) -> Result<()> {
     let mut seller_meta = Vec::new();
     for source in sellers {
-        let album_count = match load_shard(data_dir, &source.id) {
-            Err(Error::Value(_)) => 0,
-            Err(other) => return Err(other),
-            Ok(shard) => {
-                if source.skip && shard.is_empty() {
-                    continue;
-                }
-                shard
-                    .values()
-                    .filter(|a| !a.get("gone_since").is_some_and(Value::truthy))
-                    .count()
-            }
-        };
+        if source.skip && load_shard(data_dir, &source.id).is_ok_and(|shard| shard.is_empty()) {
+            continue;
+        }
+        // write_index loads each shard and replaces this count when it can
+        // read the shard; an unreadable or missing shard keeps 0.
         seller_meta.push(crate::obj! {
             "id" => source.id.as_str(),
             "name" => source.name.clone(),
             "url" => source.url.clone(),
-            "album_count" => album_count,
+            "album_count" => 0usize,
             "shard" => format!("catalog/{}.json", source.id),
             "run" => Value::Object(read_run(data_dir, &source.id)?),
         });
