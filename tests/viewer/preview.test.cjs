@@ -112,6 +112,16 @@ test("navigation failure leaves the displayed save target unchanged", () => {
   assert.equal(h.store.get("note", "300"), "For 300"); assert.equal(h.store.get("note", "100"), undefined);
 });
 
+test("an untitled album keeps the preview heading, which names the dialog", () => {
+  const h = harness(); open(h);
+  for (const title of ["", "  "]) {
+    h.el("album-preview").close(); h.state.albums[1].title = title; h.context.openPreview("300");
+    assert.equal(h.el("preview-title").textContent, "Album preview");
+  }
+  h.el("preview-prev").fire("click");
+  assert.equal(h.el("preview-title").textContent, "Album 100");
+});
+
 test("untrusted replacement is unresolved and exports original saved work", () => {
   const h = harness(); h.store.set("note", "100", "Saved original"); open(h); replace(h, false);
   h.el("preview-notes").value = "Draft"; h.el("preview-form").fire("submit");

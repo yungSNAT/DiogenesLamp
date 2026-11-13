@@ -259,6 +259,20 @@ function setLoadNote(loading) {
   els.note.hidden = false;
 }
 
+// Without the manifest nothing else can run. Name the cause on screen instead
+// of leaving the "Loading the catalog..." message up forever, and end the
+// status region's loading silence so a screen reader hears that it failed.
+function showIndexFailure() {
+  els.message.textContent =
+    "Could not load data/index.json - run `lamp scrape` first, and serve " +
+    "the viewer from the directory that holds data/.";
+  els.message.hidden = false;
+  els.progress.parentElement.hidden = true;
+  els.grid.setAttribute("aria-busy", "false");
+  setLive(els.status, false);
+  els.status.textContent = "Catalogue not loaded";
+}
+
 const SHARD_CONCURRENCY = 6;
 
 async function loadAll() {
@@ -270,15 +284,8 @@ async function loadAll() {
     index = await response.json();
     if (!validCatalogueIndex(index)) throw new Error("Invalid catalogue index");
   } catch (err) {
-    // Without the manifest nothing below can run; name the cause on screen
-    // instead of leaving the "Loading the catalog..." message up forever.
     console.error("index.json failed to load", err);
-    els.message.textContent =
-      "Could not load data/index.json - run `lamp scrape` first, and serve " +
-      "the viewer from the directory that holds data/.";
-    els.message.hidden = false;
-    els.progress.parentElement.hidden = true;
-    els.grid.setAttribute("aria-busy", "false");
+    showIndexFailure();
     return;
   }
   state.index = index;
