@@ -558,6 +558,9 @@ pub fn scrape_seller(
         if pystr::char_len(&detail.description) > DESCRIPTION_LIMIT {
             record.insert("description_truncated".into(), true.into());
         }
+        if !scanned {
+            record.insert("links_truncated".into(), true.into());
+        }
         if !stub.thumb_url.is_empty() && cover_current && thumb_path.is_file() {
             for (k, v) in cover_facts(&thumb_path) {
                 record.insert(k, v);

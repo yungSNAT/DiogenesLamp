@@ -1791,6 +1791,26 @@ fn an_album_whose_link_scan_stopped_early_is_reported() {
         get(&shard(dir.path()), "301", "links").py_str(),
         r#"[{"platform": "weidian", "url": "https://weidian.com/item.html?itemID=1"}, {"platform": "taobao", "url": "https://item.taobao.com/item.htm?id=2"}]"#
     );
+    let marked = |id: &str| {
+        matches!(
+            shard(dir.path())[id].get("links_truncated"),
+            Some(Value::Bool(true))
+        )
+    };
+    assert!(marked("301"));
+    assert!(!shard(dir.path())["302"].contains_key("links_truncated"));
+    // The next run skips the unchanged album, so only its record still says so.
+    let again = run(&client, dir.path(), T2, opts());
+    assert_eq!((again.skipped, again.partly_scanned_ids.len()), (2, 0));
+    assert!(marked("301"));
+    // A fetch that scans every word clears the mark.
+    client.set("/albums/301", album_page("Item C", "plain"));
+    let full = Options {
+        full: true,
+        ..opts()
+    };
+    run(&client, dir.path(), T2, full);
+    assert!(!shard(dir.path())["301"].contains_key("links_truncated"));
 }
 
 #[test]

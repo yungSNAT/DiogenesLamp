@@ -419,10 +419,10 @@ pub fn validate_metadata(value_in: &Value, relative: &str) -> Result<()> {
                 return value(format!("album {field} must be text"));
             }
         }
-        if a.get("description_truncated")
-            .is_some_and(|v| !matches!(v, Value::Bool(_)))
-        {
-            return value("album description_truncated must be a boolean");
+        for field in ["description_truncated", "links_truncated"] {
+            if a.get(field).is_some_and(|v| !matches!(v, Value::Bool(_))) {
+                return value(format!("album {field} must be a boolean"));
+            }
         }
         if let Some(price) = a.get("price")
             && !price_ok(price)
