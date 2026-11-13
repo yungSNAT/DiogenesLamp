@@ -9,6 +9,14 @@
 - Each seller's `lamp scrape` result line counts and names its new albums
   (stored for the first time) and returned albums (listed again after being
   marked gone). The run summaries in `data/runs/` are unchanged.
+- Purchase links are found word by word. Before, a run of a few hundred
+  dotted words stopped the whole scan silently and every later link in the
+  album was lost. Now only the rest of that word is skipped, and the album is
+  counted and named on the result line as partly scanned and listed in its
+  run summary as `partly_scanned_ids`.
+- `lamp prepare-covers` saves its metadata snapshot only when a batch has a
+  cover to prepare. A batch with nothing left reports `"snapshot": null`
+  instead of adding another snapshot to `data/snapshots/`.
 - An album page with tens of thousands of void tags and stray closing tags, or
   one tag with tens of thousands of attributes, parses in linear time. At
   40,000 each took 0.49 s and 1.11 s before and 18 ms and 9 ms after.

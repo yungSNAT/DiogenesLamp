@@ -75,6 +75,14 @@ back as new or returned.
 Dry runs report neither. The viewer's **Added since review** shows the same
 albums by their `first_seen` dates.
 
+Purchase links are found word by word, between whitespace. A word of a few
+hundred dotted parts with no space, such as `a.a.a.`, that never reaches a
+known host exceeds the link pattern's backtracking limit; the rest of that
+word is not scanned, so a link later in the same word is not stored, whilst
+links in every other word are. The
+line counts and names such albums as partly scanned, and the run summary
+lists them as `partly_scanned_ids`. A re-scrape stops at the same place.
+
 ## Serve and browse
 
 `--port N` changes the port and `--no-browser` stops it opening one.
