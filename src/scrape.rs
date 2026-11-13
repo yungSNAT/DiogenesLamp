@@ -88,6 +88,9 @@ pub struct SellerSummary {
     /// the shard's `first_seen` and availability history already record them.
     pub new_ids: Vec<String>,
     pub returned_ids: Vec<String>,
+    /// Albums whose purchase-link scan stopped before the end of their text,
+    /// so links after that point were not stored. Reported only.
+    pub partly_scanned_ids: Vec<String>,
 }
 
 impl SellerSummary {
@@ -485,7 +488,11 @@ pub fn scrape_seller(
         } else {
             detail.title.clone()
         };
-        let links = extract_links(&format!("{title}\n{}\n{}", stub.title, detail.description));
+        let (links, scanned) =
+            extract_links(&format!("{title}\n{}\n{}", stub.title, detail.description));
+        if !scanned {
+            summary.partly_scanned_ids.push(stub.id.clone());
+        }
         let mut evidence = price_evidence(&format!("{title} {}", detail.description));
         if evidence.is_empty() {
             evidence = price_evidence(&format!("{title} {} {}", stub.title, detail.description));

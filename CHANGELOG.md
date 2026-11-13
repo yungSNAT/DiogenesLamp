@@ -9,6 +9,10 @@
 - Each seller's `lamp scrape` result line counts and names its new albums
   (stored for the first time) and returned albums (listed again after being
   marked gone). The run summaries in `data/runs/` are unchanged.
+- An album whose purchase-link scan stops early, on a run of a few hundred
+  dotted words, is now counted and named on the result line as partly
+  scanned. Before, the scan stopped silently and the album's later links were
+  lost with no sign.
 
 ## 0.1.1 (2026-11-12)
 

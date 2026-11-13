@@ -210,12 +210,14 @@ fn scrape_report_lines_name_each_diagnostic() {
         scraped: 7,
         new_ids: (11..=17).map(|i| i.to_string()).collect(),
         returned_ids: vec!["9".into()],
+        partly_scanned_ids: vec!["12".into()],
         ..SellerSummary::new("s")
     };
     assert_eq!(
         report_line(&changed, 1, 1, false),
-        "[1/1] s: 7 scraped, 0 skipped, 0 failed, 7 new, 1 returned \
+        "[1/1] s: 7 scraped, 0 skipped, 0 failed, 7 new, 1 returned, 1 partly scanned \
          (new albums: 11, 12, 13, 14, 15, ...) (returned albums: 9) \
+         (partly scanned albums: 12) \
          (no publish dates found - Yupoo markup change?)"
     );
     // A run with nothing new or returned keeps its line as before.

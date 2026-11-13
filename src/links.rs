@@ -351,11 +351,17 @@ fn clean_rest(rest: Option<&str>) -> String {
         .to_string()
 }
 
-pub fn extract_links(text: &str) -> Vec<Link> {
+/// The purchase links in `text`, and whether the scan reached its end.
+/// A run of a few hundred dotted words with no space can exceed the regex
+/// engine's backtracking limit; the scan stops there, keeps the links found
+/// before it and returns `false` so the caller can report the album.
+pub fn extract_links(text: &str) -> (Vec<Link>, bool) {
     let mut seen: HashSet<String> = HashSet::new();
     let mut links = Vec::new();
     for caps in URL_RE.captures_iter(text) {
-        let Ok(caps) = caps else { break };
+        let Ok(caps) = caps else {
+            return (links, false);
+        };
         let Some(host_match) = caps.name("host") else {
             continue;
         };
@@ -383,5 +389,5 @@ pub fn extract_links(text: &str) -> Vec<Link> {
             links.push(Link::new(platform, url));
         }
     }
-    links
+    (links, true)
 }

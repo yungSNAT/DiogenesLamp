@@ -1766,6 +1766,30 @@ fn descriptions_are_stored_bounded_after_the_full_text_is_used() {
 }
 
 #[test]
+fn an_album_whose_link_scan_stopped_early_is_reported() {
+    let dir = common::tmp();
+    let text = format!(
+        "https://weidian.com/item.html?itemID=1 {} https://item.taobao.com/item.htm?id=2",
+        "a.".repeat(400)
+    );
+    let client = FakeClient::new(&[
+        (
+            "albums?page=1",
+            list_item("301", "Item C") + &list_item("302", "Item D"),
+        ),
+        ("albums?page=2", EMPTY_PAGE.into()),
+        ("/albums/301", album_page("Item C", &text)),
+        ("/albums/302", album_page("Item D", "plain")),
+    ]);
+    let summary = run(&client, dir.path(), T1, opts());
+    assert_eq!(summary.partly_scanned_ids, ["301"]);
+    assert_eq!(
+        get(&shard(dir.path()), "301", "links").py_str(),
+        r#"[{"platform": "weidian", "url": "https://weidian.com/item.html?itemID=1"}]"#
+    );
+}
+
+#[test]
 fn scrape_lock_precedes_any_fetch_and_dry_runs_create_nothing() {
     let dir = common::tmp();
     let _lock = lamp::locking::CatalogueLock::acquire(dir.path()).unwrap();

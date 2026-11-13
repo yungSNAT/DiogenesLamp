@@ -341,11 +341,15 @@ pub fn report_line(s: &SellerSummary, reported: usize, total: usize, dry_run: bo
     if !s.returned_ids.is_empty() {
         line.push_str(&format!(", {} returned", s.returned_ids.len()));
     }
+    if !s.partly_scanned_ids.is_empty() {
+        line.push_str(&format!(", {} partly scanned", s.partly_scanned_ids.len()));
+    }
     // The first 5 IDs of each list, so a scheduled run's log names them.
     for (label, ids) in [
         ("failed", &s.failed_ids),
         ("new", &s.new_ids),
         ("returned", &s.returned_ids),
+        ("partly scanned", &s.partly_scanned_ids),
     ] {
         if !ids.is_empty() {
             let shown = ids.iter().take(5).cloned().collect::<Vec<_>>().join(", ");
