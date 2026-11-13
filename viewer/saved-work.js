@@ -279,7 +279,8 @@ function showPreviewLinks(album) {
 function showPreview(album = resolvePreview(previewIds[previewAt])) {
   if (!album) return false;
   previewSnapshot = album;
-  workEl("preview-title").textContent = album.title;
+  // The heading names the dialog, so an untitled album keeps the default name.
+  workEl("preview-title").textContent = album.title.trim() || "Album preview";
   workEl("preview-position").textContent = `${previewAt + 1} of ${previewIds.length}`;
   workEl("preview-prev").disabled = previewAt === 0;
   workEl("preview-next").disabled = previewAt + 1 === previewIds.length;
