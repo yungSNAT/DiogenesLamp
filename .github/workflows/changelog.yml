@@ -31,7 +31,7 @@ jobs:
         run: |
           # Each git call stands alone, so a git error fails the step instead
           # of reading as an empty diff.
-          files=$(git diff --name-only "$BASE...$HEAD")
+          files=$(git diff --no-renames --name-only "$BASE...$HEAD")
           shipped=$(grep -E '^(src/|viewer/[^/]+\.(js|html|css|json)$|Cargo\.toml$|rust-toolchain\.toml$)' <<<"$files" || true)
           if [ -z "$shipped" ]; then
             echo "No shipped file changed."
