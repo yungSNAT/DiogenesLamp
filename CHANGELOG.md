@@ -9,6 +9,10 @@
 - Each seller's `lamp scrape` result line counts and names its new albums
   (stored for the first time) and returned albums (listed again after being
   marked gone). The run summaries in `data/runs/` are unchanged.
+- The viewer's field baselines, checkbox boxes and preview form fields are
+  drawn in the faint ink, at 5.57:1 or more on either leaf in both themes.
+  The strong rule they used measured 1.79:1 to 2.32:1, under the 3:1 a
+  control's edge needs.
 
 ## 0.1.1 (2026-11-12)
 

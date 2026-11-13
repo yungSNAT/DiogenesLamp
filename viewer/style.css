@@ -173,10 +173,13 @@ body {
 .field-grow { flex: 1 1 220px; min-width: 150px; }
 
 /* Printed form fields: a baseline rule rather than a box, which is what a
-   ruled leaf does with a blank anyone is expected to fill in. */
+   ruled leaf does with a blank anyone is expected to fill in. The baseline
+   and the mark box are the only edge that says a control is there, so they
+   take the faint ink, which clears 3:1 on both leaves; the strong rule
+   does not. */
 input[type="search"], select {
   background: transparent; color: var(--ink);
-  border: 0; border-bottom: 1px solid var(--rule-strong);
+  border: 0; border-bottom: 1px solid var(--ink-2);
   border-radius: 0; padding: 6px 2px; font: inherit; width: 100%;
 }
 select {
@@ -193,7 +196,7 @@ select {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 6'%3E%3Cpath d='M0.5 0.5L4.5 5 8.5 0.5' fill='none' stroke='%23545c66' stroke-width='1.2'/%3E%3C/svg%3E");
   }
 }
-input[type="search"]:hover, select:hover { border-bottom-color: var(--ink-2); }
+input[type="search"]:hover, select:hover { border-bottom-color: var(--ink); }
 input[type="search"]:focus, select:focus {
   outline: none; border-bottom-color: var(--ink-red); border-bottom-width: 2px;
   padding-bottom: 5px;
@@ -234,13 +237,13 @@ button:hover { border-color: var(--ink); }
    take the ruled box with it and leave nothing to tick. */
 .mark-check {
   width: 15px; height: 15px; stroke-width: 3; stroke: transparent;
-  border: 1px solid var(--rule-strong); padding: 1px;
+  border: 1px solid var(--ink-2); padding: 1px;
 }
 .toggle input:checked ~ .mark-check {
   stroke: var(--ink-red); border-color: var(--ink-red);
 }
 .toggle input:checked ~ span { color: var(--ink); font-weight: 600; }
-.toggle:hover .mark-check { border-color: var(--ink-2); }
+.toggle:hover .mark-check { border-color: var(--ink); }
 .toggle:focus-within {
   outline: 2px solid var(--ink); outline-offset: 1px;
   box-shadow: 0 0 0 4px var(--leaf);
@@ -482,7 +485,7 @@ button:hover { border-color: var(--ink); }
 #preview-links a:hover, #preview-external a:hover { color: var(--ink-red); }
 #preview-form { margin-top: 16px; display: grid; gap: 12px; }
 #preview-form label { display: grid; gap: 4px; }
-#preview-form input, #preview-form textarea { width: 100%; font: inherit; background: var(--leaf-2); color: var(--ink); border: 1px solid var(--rule-strong); padding: 6px; }
+#preview-form input, #preview-form textarea { width: 100%; font: inherit; background: var(--leaf-2); color: var(--ink); border: 1px solid var(--ink-2); padding: 6px; }
 #preview-form textarea { resize: vertical; }
 #album-preview button { min-height: 30px; }
 @media (max-width: 720px) {

@@ -50,11 +50,15 @@ screen. The light leaf is a cool printed stock, deliberately not a warm cream.
   the 2 surfaces that sit above the page rather than on it.
 - **Rule** (`#262c33` / `#c8ced5`): the printed lattice, the hairline under a
   window, the box around a purchase mark.
-- **Rule Strong** (`#3a434d` / `#9aa4ae`): the baseline under a form field,
-  the border of a control, the scrollbar thumb.
-- **Ink** (`#e9ebee` / `#14171b`): titles, control text, the focus ring.
+- **Rule Strong** (`#3a434d` / `#9aa4ae`): the border of a labelled button,
+  the head band's rule, the panel and dialog frames, the scrollbar thumb.
+  At 1.79:1 to 2.32:1 it is too faint to be the only sign of a control.
+- **Ink** (`#e9ebee` / `#14171b`): titles, control text, the focus ring, a
+  hovered field's baseline or mark box.
 - **Ink Faint** (`#9aa3ad` / `#545c66`): sellers, tallies, purchase marks,
-  placeholders. Both values clear 4.5:1 on their own leaf.
+  placeholders, and the edges that alone show a control is there: the
+  baseline under a form field, the mark box, the preview form's fields. Both
+  values clear 4.5:1 on their own leaf, and at least 5.57:1 on either leaf.
 
 ### Named rules
 
