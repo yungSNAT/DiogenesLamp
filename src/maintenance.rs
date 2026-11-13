@@ -390,7 +390,9 @@ pub fn prepare_covers(root: &Path, limit: i128) -> Result<Map> {
     let mut after_bytes: i128 = 0;
     let mut errors: Vec<String> = Vec::new();
     let _lock = CatalogueLock::acquire(root)?;
-    let snapshot_path = snapshot_inner(root, true)?;
+    // Taken before the first cover is touched, so a batch with nothing to
+    // prepare writes no snapshot.
+    let mut snapshot_path: Option<PathBuf> = None;
     let index = read_metadata(&data_path(root, "index.json", false)?, "index.json")?;
     for seller in sellers_of(&index) {
         if processed >= limit {
@@ -418,6 +420,9 @@ pub fn prepare_covers(root: &Path, limit: i128) -> Result<Map> {
                     .is_some_and(|v| pyjson::py_eq(v, &Value::Int(1)));
                 if prepared && path.is_file() {
                     continue;
+                }
+                if snapshot_path.is_none() {
+                    snapshot_path = Some(snapshot_inner(root, true)?);
                 }
                 processed += 1;
                 let attempt = (|| -> Result<()> {
@@ -457,6 +462,9 @@ pub fn prepare_covers(root: &Path, limit: i128) -> Result<Map> {
         "errors".into(),
         Value::Array(errors.into_iter().map(Value::Str).collect()),
     );
-    result.insert("snapshot".into(), pyerr::path_str(&snapshot_path).into());
+    result.insert(
+        "snapshot".into(),
+        snapshot_path.map_or(Value::Null, |p| pyerr::path_str(&p).into()),
+    );
     Ok(result)
 }

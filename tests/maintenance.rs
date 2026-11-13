@@ -662,9 +662,14 @@ fn cover_limit_leaves_later_shards_untouched_after_validating_the_snapshot() {
             &Value::Int(limit.min(6))
         ));
         assert_eq!(result["errors"].py_str(), "[]");
-        let snapshot = PathBuf::from(result["snapshot"].py_str());
-        for (name, bytes) in names.iter().zip(&before) {
-            assert_eq!(&zip_member(&snapshot, name), bytes);
+        // A batch that prepares nothing changes nothing, so it has no snapshot.
+        if limit == 0 {
+            assert!(matches!(result["snapshot"], Value::Null));
+        } else {
+            let snapshot = PathBuf::from(result["snapshot"].py_str());
+            for (name, bytes) in names.iter().zip(&before) {
+                assert_eq!(&zip_member(&snapshot, name), bytes);
+            }
         }
         let all: Vec<String> = ["first", "second", "third"]
             .iter()
@@ -684,6 +689,24 @@ fn cover_limit_leaves_later_shards_untouched_after_validating_the_snapshot() {
             }
         }
     }
+}
+
+#[test]
+fn a_cover_batch_with_nothing_left_to_prepare_writes_no_snapshot() {
+    let dir = common::tmp();
+    several_sellers(dir.path());
+    let snapshots = || {
+        std::fs::read_dir(dir.path().join("snapshots"))
+            .unwrap()
+            .count()
+    };
+    let first = prepare_covers(dir.path(), 9).unwrap();
+    assert!(matches!(first["processed"], Value::Int(6)));
+    assert_eq!(snapshots(), 1);
+    let again = prepare_covers(dir.path(), 9).unwrap();
+    assert!(matches!(again["processed"], Value::Int(0)));
+    assert!(matches!(again["snapshot"], Value::Null));
+    assert_eq!(snapshots(), 1);
 }
 
 #[test]

@@ -13,6 +13,9 @@
   dotted words, is now counted and named on the result line as partly
   scanned. Before, the scan stopped silently and the album's later links were
   lost with no sign.
+- `lamp prepare-covers` saves its metadata snapshot only when a batch has a
+  cover to prepare. A batch with nothing left reports `"snapshot": null`
+  instead of adding another snapshot to `data/snapshots/`.
 
 ## 0.1.1 (2026-11-12)
 

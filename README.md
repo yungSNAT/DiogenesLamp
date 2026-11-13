@@ -275,9 +275,10 @@ detail refreshes.
 
     lamp --data data prepare-covers --limit 1000
 
-This command processes cached covers locally, saves a metadata snapshot first
-and reports byte counts and failures. Repeat it to process the next batch;
-prepared covers are skipped. Resizing replaces the cached image with a smaller
+This command processes cached covers locally, saves a metadata snapshot before
+it changes the first cover and reports byte counts and failures. Repeat it to
+process the next batch; prepared covers are skipped, and a batch with nothing
+left to prepare saves no snapshot (its report shows `"snapshot": null`). Resizing replaces the cached image with a smaller
 copy, so preserve original images separately if you need them. Metadata snapshots
 do not restore original cover pixels. The command makes no network requests.
 
