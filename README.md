@@ -45,8 +45,8 @@ You need only a browser, or the commands below, which use tools every Windows
 and Linux machine has. Each stops if the download does not match
 `SHA256SUMS`. On Windows, in PowerShell:
 
-    $base = 'https://github.com/yungSNAT/DiogenesLamp/releases/download/v0.1.1'
-    $asset = 'diogenes-lamp-0.1.1-x86_64-pc-windows-msvc.zip'
+    $base = 'https://github.com/yungSNAT/DiogenesLamp/releases/download/v0.1.2'
+    $asset = 'diogenes-lamp-0.1.2-x86_64-pc-windows-msvc.zip'
     Invoke-WebRequest "$base/$asset" -OutFile $asset
     Invoke-WebRequest "$base/SHA256SUMS" -OutFile SHA256SUMS
     $sum = (Select-String -Path SHA256SUMS -SimpleMatch $asset).Line.Split(' ')[0]
@@ -56,8 +56,8 @@ and Linux machine has. Each stops if the download does not match
 
 Add that folder to your `PATH` to type `lamp` alone. On Linux:
 
-    base=https://github.com/yungSNAT/DiogenesLamp/releases/download/v0.1.1
-    asset=diogenes-lamp-0.1.1-x86_64-unknown-linux-musl.tar.gz
+    base=https://github.com/yungSNAT/DiogenesLamp/releases/download/v0.1.2
+    asset=diogenes-lamp-0.1.2-x86_64-unknown-linux-musl.tar.gz
     curl -fsSLO "$base/$asset" && curl -fsSLO "$base/SHA256SUMS" &&
       awk -v f="$asset" '$2 == f' SHA256SUMS | sha256sum --check &&
       mkdir -p ~/.local/bin && tar -xzf "$asset" -C ~/.local/bin lamp &&
@@ -78,8 +78,8 @@ With the [GitHub CLI](https://cli.github.com/) signed in (`gh auth login`),
 these commands also check the signed provenance, which shows the file was built
 from this repository's tagged source by its release workflow. On Linux:
 
-    tag=v0.1.1
-    asset=diogenes-lamp-0.1.1-x86_64-unknown-linux-musl.tar.gz
+    tag=v0.1.2
+    asset=diogenes-lamp-0.1.2-x86_64-unknown-linux-musl.tar.gz
     gh release download "$tag" --repo yungSNAT/DiogenesLamp --pattern "$asset" --pattern SHA256SUMS &&
       awk -v f="$asset" '$2 == f' SHA256SUMS | sha256sum --check &&
       gh attestation verify "$asset" --repo yungSNAT/DiogenesLamp \
@@ -89,8 +89,8 @@ from this repository's tagged source by its release workflow. On Linux:
 
 On Windows, in PowerShell:
 
-    $tag = 'v0.1.1'
-    $asset = 'diogenes-lamp-0.1.1-x86_64-pc-windows-msvc.zip'
+    $tag = 'v0.1.2'
+    $asset = 'diogenes-lamp-0.1.2-x86_64-pc-windows-msvc.zip'
     gh release download $tag --repo yungSNAT/DiogenesLamp --pattern $asset --pattern SHA256SUMS
     if ($LASTEXITCODE) { throw 'download failed' }
     $sum = (Select-String -Path SHA256SUMS -SimpleMatch $asset).Line.Split(' ')[0]
@@ -279,9 +279,11 @@ detail refreshes.
 
 This command processes cached covers locally, saves a metadata snapshot before
 it changes the first cover and reports byte counts and failures. Repeat it to
-process the next batch; prepared covers are skipped. From the release after
-v0.1.1, a batch with nothing left to prepare saves no snapshot (its report
-shows `"snapshot": null`); v0.1.1 saves one for every batch.
+process the next batch; prepared covers are skipped, and a batch with nothing
+left to prepare saves no snapshot (its report shows `"snapshot": null`).
+Covers missing from disk are skipped too, without counting against `--limit`,
+and counted in the report's `missing_covers` (only those the batch passes
+before it fills); `lamp scrape` fetches them again.
 Resizing replaces the cached image with a smaller copy, so preserve original
 images separately if you need them. Metadata snapshots do not restore original
 cover pixels. The command makes no network requests.

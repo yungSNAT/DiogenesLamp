@@ -348,6 +348,24 @@ fn release_version_files_agree() {
         Some(format!("# v{version}").as_str()),
         "RELEASE_NOTES.md must start with the tag's heading"
     );
+    // The README's download commands name the release by tag and asset.
+    let readme = read("README.md");
+    for marker in [
+        "releases/download/v",
+        "tag=v",
+        "$tag = 'v",
+        "diogenes-lamp-",
+    ] {
+        for rest in readme.split(marker).skip(1) {
+            let pinned: String = rest
+                .chars()
+                .take_while(|c| c.is_ascii_digit() || *c == '.')
+                .collect();
+            if !pinned.is_empty() {
+                assert_eq!(pinned, version, "README.md pins {marker}{pinned}");
+            }
+        }
+    }
 }
 
 #[test]

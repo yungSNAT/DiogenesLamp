@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.2 (2026-11-13)
 
 - `lamp` with no arguments, as a double-click on `lamp.exe` runs it, prints
   the next steps and exits 0 instead of a usage error with exit 2. On Windows,
@@ -13,17 +13,27 @@
   drawn in the faint ink, at 5.57:1 or more on either leaf in both themes.
   The strong rule they used measured 1.79:1 to 2.32:1, under the 3:1 a
   control's edge needs.
+- A focused search field or select keeps the viewer's 2px ink focus ring as
+  well as its red baseline. The red baseline alone differs from the resting
+  one mostly by hue, at 1.11:1 in the dark theme and 1.12:1 in the light.
 - The viewer's album and seller tally and its description coverage line stay
   silent to screen readers whilst shards load, then announce their finished
   figures once. Before, they were announced up to 5 times a second.
-- Purchase links are found word by word. Before, a run of a few hundred
-  dotted words stopped the whole scan silently and every later link in the
-  album was lost. Now only the rest of that word is skipped, and the album is
-  counted and named on the result line as partly scanned and listed in its
-  run summary as `partly_scanned_ids`.
+- Purchase links are found word by word. Before, one word of a few hundred
+  dotted parts with no space, such as `a.a.a.`, stopped the whole scan
+  silently and every later link in the album was lost. Now only the rest of
+  that word is skipped, and the album is counted and named on the result line
+  as partly scanned and listed in its run summary as `partly_scanned_ids`.
 - `lamp prepare-covers` saves its metadata snapshot only when a batch has a
   cover to prepare. A batch with nothing left reports `"snapshot": null`
-  instead of adding another snapshot to `data/snapshots/`.
+  instead of adding another snapshot to `data/snapshots/`. An album whose
+  cover file is missing from disk is skipped without counting against
+  `--limit` and counted in the report's new `missing_covers`, for
+  `lamp scrape` to fetch again; the count covers the albums the batch passed.
+  Before, every run took a snapshot for it, spent a place in the batch on it
+  and reported the same error, exiting 1, so with `--limit` or more such
+  albums ahead, later covers were never prepared. A missing cover no longer
+  makes the run exit 1.
 - An album page with tens of thousands of void tags and stray closing tags, or
   one tag with tens of thousands of attributes, parses in linear time. At
   40,000 each took 0.49 s and 1.11 s before and 18 ms and 9 ms after.
