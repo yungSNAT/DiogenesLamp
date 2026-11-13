@@ -79,7 +79,9 @@ Purchase links are found word by word, between whitespace. A word of a few
 hundred dotted parts with no space, such as `a.a.a.`, that never reaches a
 known host exceeds the link pattern's backtracking limit; the rest of that
 word is not scanned, so a link later in the same word is not stored, whilst
-links in every other word are. The
+links in every other word are. An agent link whose wrapped `url=` value
+exceeds the same limit, which takes a far longer run of such parts, is not
+stored either. The
 line counts and names such albums as partly scanned, and the run summary
 lists them as `partly_scanned_ids`. A re-scrape stops at the same place.
 

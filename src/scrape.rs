@@ -89,7 +89,8 @@ pub struct SellerSummary {
     pub new_ids: Vec<String>,
     pub returned_ids: Vec<String>,
     /// Albums with a word whose purchase-link scan stopped early, so links
-    /// later in that word were not stored. Reported and kept in the run summary.
+    /// later in that word, or an agent link's wrapped URL, were not stored.
+    /// Reported and kept in the run summary.
     pub partly_scanned_ids: Vec<String>,
 }
 
