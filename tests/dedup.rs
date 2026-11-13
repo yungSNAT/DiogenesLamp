@@ -469,32 +469,30 @@ fn reindex_selects_before_seller_filters_and_preserves_captures() {
     assert!(pyjson::py_eq(&index, &read_json(&root.join("index.json"))));
 }
 
-fn listing(aid: usize, seller: &str, item_id: usize, date: &str) -> Map {
-    let mut map = album(
+/// An album whose duplicate identity is its title within the seller.
+fn titled(aid: usize, seller: &str, title: &str, date: &str) -> Map {
+    album(
         &aid.to_string(),
         seller,
-        &format!(r#"{{"date_published": "{date}"}}"#),
-    );
-    map.insert(
-        "links".into(),
-        json(&format!(
-            r#"[{{"platform": "weidian", "url": "https://weidian.com/item.html?itemID={item_id}"}}]"#
-        )),
-    );
-    map
+        &format!(r#"{{"title": "{title}", "date_published": "{date}"}}"#),
+    )
 }
 
 /// Recording an alias must not rescan the aliases found so far: that was
-/// quadratic, about 2.9 s for 80,000 demo albums in a release build. Pairs of
-/// listings are timed against as many distinct listings; the bound is generous.
+/// quadratic, 19 s for the demo generator's 80,000 albums in a release build.
+/// Title pairs are timed against as many distinct titles; the bound is
+/// generous.
 #[test]
 fn many_aliases_take_linear_time() {
     const PAIRS: usize = 20_000;
     let distinct: Vec<Map> = (1..=2 * PAIRS)
-        .map(|i| listing(i, "one", i, "2026-01-01"))
+        .map(|i| titled(i, "one", &format!("Listing {i:06} jacket"), "2026-01-01"))
         .collect();
     let paired: Vec<Map> = (1..=2 * PAIRS)
-        .map(|i| listing(i, "one", i.div_ceil(2), ["2026-02-01", "2026-01-01"][i % 2]))
+        .map(|i| {
+            let title = format!("Listing {:06} jacket", i.div_ceil(2));
+            titled(i, "one", &title, ["2026-02-01", "2026-01-01"][i % 2])
+        })
         .collect();
     let timed = |albums: &[Map]| {
         let started = Instant::now();
@@ -507,26 +505,25 @@ fn many_aliases_take_linear_time() {
     assert_eq!((selected, aliases.len()), (PAIRS, PAIRS));
     assert_eq!(pairs(&aliases[..2]), [("1", "2"), ("3", "4")]);
     assert!(
-        crafted < plain * 10 + Duration::from_secs(1),
+        crafted < plain * 4 + Duration::from_secs(1),
         "aliases {crafted:?}, plain {plain:?}"
     );
 }
 
 /// Each seller's album list must not filter every selected album: that was
-/// sellers x albums. The same albums are indexed under many sellers and under
-/// a few; the bound is generous.
+/// sellers x albums. The same number of albums is indexed under many sellers
+/// and under a few; the bound is generous.
 #[test]
 fn many_sellers_index_in_linear_time() {
-    const ALBUMS: usize = 40_000;
+    const ALBUMS: usize = 8_000;
     let timed = |sellers_n: usize| {
         let dir = common::tmp();
         let root = dir.path();
         let names: Vec<String> = (0..sellers_n).map(|s| format!("s{s}")).collect();
         let per = ALBUMS / sellers_n;
         for (s, name) in names.iter().enumerate() {
-            let albums: Vec<Map> = (1..=per)
-                .map(|j| s * per + j)
-                .map(|aid| listing(aid, name, aid, "2026-01-01"))
+            let albums: Vec<Map> = (s * per + 1..=s * per + per)
+                .map(|aid| titled(aid, name, &format!("Listing {aid:06} jacket"), "2026-01-01"))
                 .collect();
             write_shard(root, name, &shard_of(&albums)).unwrap();
         }
@@ -546,10 +543,10 @@ fn many_sellers_index_in_linear_time() {
         elapsed
     };
     let few = timed(20);
-    let many = timed(2_000);
+    let many = timed(4_000);
     assert!(
         many < few * 10 + Duration::from_secs(1),
-        "2,000 sellers {many:?}, 20 sellers {few:?}"
+        "4,000 sellers {many:?}, 20 sellers {few:?}"
     );
 }
 
