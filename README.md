@@ -282,8 +282,8 @@ it changes the first cover and reports byte counts and failures. Repeat it to
 process the next batch; prepared covers are skipped, and a batch with nothing
 left to prepare saves no snapshot (its report shows `"snapshot": null`).
 Covers missing from disk are skipped too, without counting against `--limit`,
-and counted in the report's `missing_covers`; `lamp scrape` fetches them again
-whilst their albums are listed.
+and counted in the report's `missing_covers` (only those the batch passes
+before it fills); `lamp scrape` fetches them again.
 Resizing replaces the cached image with a smaller copy, so preserve original
 images separately if you need them. Metadata snapshots do not restore original
 cover pixels. The command makes no network requests.

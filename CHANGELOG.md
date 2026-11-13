@@ -29,9 +29,11 @@
   instead of adding another snapshot to `data/snapshots/`. An album whose
   cover file is missing from disk is skipped without counting against
   `--limit` and counted in the report's new `missing_covers`, for
-  `lamp scrape` to fetch again. Before, every run took a snapshot for it,
-  spent a place in the batch on it and reported the same error, so with
-  `--limit` or more such albums ahead, later covers were never prepared.
+  `lamp scrape` to fetch again; the count covers the albums the batch passed.
+  Before, every run took a snapshot for it, spent a place in the batch on it
+  and reported the same error, exiting 1, so with `--limit` or more such
+  albums ahead, later covers were never prepared. A missing cover no longer
+  makes the run exit 1.
 - An album page with tens of thousands of void tags and stray closing tags, or
   one tag with tens of thousands of attributes, parses in linear time. At
   40,000 each took 0.49 s and 1.11 s before and 18 ms and 9 ms after.
