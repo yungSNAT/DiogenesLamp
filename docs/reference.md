@@ -82,6 +82,9 @@ word is not scanned, so a link later in the same word is not stored, whilst
 links in every other word are. The
 line counts and names such albums as partly scanned, and the run summary
 lists them as `partly_scanned_ids`. A re-scrape stops at the same place.
+The album's record carries `links_truncated: true`, so the mark outlasts
+later runs that skip the album as unchanged; a fetch that scans every word
+clears it.
 
 ## Serve and browse
 

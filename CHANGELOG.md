@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- An album whose purchase-link scan stopped early carries
+  `links_truncated: true` in its record, so it stays marked after later runs
+  skip it as unchanged. Before, only that run's summary named it, and nothing
+  did after the next run. A fetch that scans every word clears the mark.
+
 ## 0.1.2 (2026-11-13)
 
 - `lamp` with no arguments, as a double-click on `lamp.exe` runs it, prints
