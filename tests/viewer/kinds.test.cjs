@@ -40,6 +40,9 @@ test("link removal preserves adjacent title words and handles long domain candid
   }
   assert.equal(kindOf("a".repeat(50000) + "! watch"), "watches");
   assert.equal(kindOf("https://" + "a".repeat(50000) + ".com/watch"), UNSORTED);
+  // A link with a scheme is a link without a path too.
+  assert.equal(kindOf("https://shoes.example.com"), UNSORTED);
+  assert.equal(kindOf("watch https://shoes.example.com"), "watches");
 });
 
 test("T恤 reads as a tee: tokens are matched against the lowercased title", () => {

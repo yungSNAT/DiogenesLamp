@@ -32,7 +32,8 @@ test("an alias finds its Chinese tokens and whole-word seller codes, and glosses
   assert.deepEqual(read("黑色卫衣 港湾"), {gloss: ["harbour works", "sweatshirt", "black"], traits: ["black"]});
   assert.deepEqual(read("HW hoodie"), {gloss: ["harbour works"], traits: []});
   // A code is a whole Latin word: not inside another word or joined by a hyphen.
-  for (const title of ["HWY hoodie", "SHW tee", "HW-01 tee", "https://shop.example.com/hw/1"]) {
+  for (const title of ["HWY hoodie", "SHW tee", "HW-01 tee", "https://shop.example.com/hw/1",
+    "https://hw.example.com", "http://hw"]) {
     assert.deepEqual(read(title).gloss, [], title);
   }
   assert.equal(reason("harbour works", "港湾卫衣"), "Title");
@@ -42,6 +43,26 @@ test("an alias finds its Chinese tokens and whole-word seller codes, and glosses
   assert.equal(reason("north peak", "HW tee"), null);
   assert.deepEqual(wordRanges("hw 港湾", new Set(["harbour works"])).sort((a, b) => a[0] - b[0]), [[0, 2], [3, 5]]);
   assert.deepEqual(matchRanges("港湾 tee", "harbour works"), [[0, 2]]);
+});
+
+test("an alias's Chinese token is found inside or across the table's tokens, which still read", () => {
+  setOperatorAliases({version: 1, aliases: [{en: "long name", tokens: ["黑色卫衣"]}, {en: "short name", tokens: ["衣"]},
+    {en: "across", tokens: ["色卫"]}]});
+  assert.deepEqual(read("黑色卫衣"),
+    {gloss: ["long name", "short name", "across", "sweatshirt", "black"], traits: ["black"]});
+  assert.deepEqual(wordRanges("黑色卫衣", new Set(["short name"])), [[3, 4]]);
+  assert.deepEqual(wordRanges("黑色卫衣", new Set(["across"])), [[1, 3]]);
+});
+
+test("a number is an item ID first, and also a seller code only when an alias lists it", () => {
+  const search = (query, album) => compileCatalogueSearch(query).reason(album);
+  setOperatorAliases({version: 1, aliases: []});
+  assert.equal(search("574", {id: "9", title: "北峰 574"}), null);
+  assert.equal(search("574", {id: "574", title: "x"}), "Exact item ID");
+  setOperatorAliases({version: 1, aliases: [{en: "north peak", tokens: ["北峰", "574"]}]});
+  assert.equal(search("574", {id: "9", title: "北峰 jacket"}), "Title");
+  assert.equal(search("574", {id: "574", title: "北峰 jacket"}), "Exact item ID");
+  assert.equal(search("575", {id: "9", title: "北峰 575"}), null);
 });
 
 test("a file of the wrong shape is refused whole and leaves the aliases as they were", () => {
@@ -103,9 +124,11 @@ test("every other failure is named in the load note and loading goes on", async 
   assert.equal((await load(() => json({version: 1, aliases: [FILE.aliases[0], {en: "x"}]}))).note,
     "data/aliases.json: 1 entry was skipped for a missing or malformed field or a repeated name.");
   // A server that never answers is given up on, not waited for.
+  let reason;
   const stalled = await load(signal => new Promise((_, reject) =>
-    signal.addEventListener("abort", () => reject(signal.reason))), 20);
-  assert.match(stalled.note, /^data\/aliases\.json was not used: /);
+    signal.addEventListener("abort", () => reject(reason = signal.reason))), 20);
+  assert.equal(reason?.name, "TimeoutError");
+  assert.equal(stalled.note, `data/aliases.json was not used: ${reason.message}.`);
 });
 
 test("the load note carries an alias problem alone or after failed sellers", () => {

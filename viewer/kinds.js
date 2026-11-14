@@ -73,11 +73,13 @@ const PARTS_PATTERN = latinPattern(PARTS);
 /** @param {Kind} kind @param {RegExp} pattern @param {string} text */
 const mentions = (kind, pattern, text) => pattern.test(text) || kind.cjk.some(token => text.includes(token));
 
-// A link needs a slash, so a title with none skips the pattern. Blanking
-// keeps every other character where it was, for wordRanges.
+// A link needs a slash, so a title with none skips the pattern: after the
+// scheme, or after the host when there is none, so "https://shoes.example.com"
+// names no kind. Blanking keeps every other character where it was, for
+// wordRanges.
 /** @param {string} lowered an NFKC-normalised, lowercased title */
 const withoutLinks = lowered => lowered.includes("/")
-  ? lowered.replace(/(?:https?:\/\/|(?<![a-z0-9.-]))[a-z0-9.-]+\.[a-z]{2,}\/\S*/g, link => " ".repeat(link.length))
+  ? lowered.replace(/https?:\/\/\S*|(?<![a-z0-9.-])[a-z0-9.-]+\.[a-z]{2,}\/\S*/g, link => " ".repeat(link.length))
   : lowered;
 
 /**
@@ -256,13 +258,22 @@ const NO_TOKENS = Object.freeze([]);
 const WORDS_BY_TOKEN = new Map();
 /** @type {Map<string, [string, Word[]][]>} */
 const TOKENS_BY_FIRST = new Map();
+for (const word of WORDS) {
+  for (const token of word.cjk) WORDS_BY_TOKEN.set(token, [...WORDS_BY_TOKEN.get(token) || [], word]);
+}
+for (const entry of [...WORDS_BY_TOKEN].sort((a, b) => b[0].length - a[0].length)) {
+  TOKENS_BY_FIRST.set(entry[0][0], [...TOKENS_BY_FIRST.get(entry[0][0]) || [], entry]);
+}
 
 // The operator's aliases: brand and model names from data/aliases.json,
 // read like the table's words but never a colour, fit or material. A
-// title token with a Chinese character is found anywhere, as the table's
-// are; one without is a seller code, found only as a whole Latin word.
-// `forms` are only typed, like the table's Latin forms.
+// title token with a Chinese character is found anywhere, even inside or
+// across the table's tokens, so its own index is read at every place; one
+// without is a seller code, found only as a whole Latin word. `forms` are
+// only typed, like the table's Latin forms.
 /** @typedef {Word & {facet: "alias", codes: string[]}} AliasWord */
+/** @type {Map<string, [string, AliasWord[]][]>} */
+const ALIAS_TOKENS_BY_FIRST = new Map();
 /** @type {Map<string, AliasWord[]>} */
 const ALIASES_BY_CODE = new Map();
 let ALIAS_CODE = /(?!)/g;
@@ -272,20 +283,21 @@ let GLOSS_ORDER = WORDS;
 /** @param {AliasWord[]} aliases */
 function indexWords(aliases) {
   WORDS_BY_FORM.clear();
-  WORDS_BY_TOKEN.clear();
-  TOKENS_BY_FIRST.clear();
+  ALIAS_TOKENS_BY_FIRST.clear();
   ALIASES_BY_CODE.clear();
   GLOSS_ORDER = [...aliases, ...WORDS];
   for (const word of GLOSS_ORDER) {
     for (const form of wordForms(word)) WORDS_BY_FORM.set(form, [...WORDS_BY_FORM.get(form) || [], word.en]);
-    for (const token of word.cjk) WORDS_BY_TOKEN.set(token, [...WORDS_BY_TOKEN.get(token) || [], word]);
-  }
-  for (const alias of aliases) {
-    for (const code of alias.codes) ALIASES_BY_CODE.set(code, [...ALIASES_BY_CODE.get(code) || [], alias]);
   }
   LONGEST_FORM = Math.max(...[...WORDS_BY_FORM.keys()].map(form => form.split(" ").length));
-  for (const entry of [...WORDS_BY_TOKEN].sort((a, b) => b[0].length - a[0].length)) {
-    TOKENS_BY_FIRST.set(entry[0][0], [...TOKENS_BY_FIRST.get(entry[0][0]) || [], entry]);
+  /** @type {Map<string, AliasWord[]>} */
+  const byToken = new Map();
+  for (const alias of aliases) {
+    for (const token of alias.cjk) byToken.set(token, [...byToken.get(token) || [], alias]);
+    for (const code of alias.codes) ALIASES_BY_CODE.set(code, [...ALIASES_BY_CODE.get(code) || [], alias]);
+  }
+  for (const entry of byToken) {
+    ALIAS_TOKENS_BY_FIRST.set(entry[0][0], [...ALIAS_TOKENS_BY_FIRST.get(entry[0][0]) || [], entry]);
   }
   ALIAS_CODE = ALIASES_BY_CODE.size ? wholeWords(ALIASES_BY_CODE.keys()) : /(?!)/g;
 }
@@ -341,18 +353,27 @@ function setOperatorAliases(file) {
 
 /**
  * Calls `visit` for each token in a title, with its words and where it
- * starts: the table's and the aliases' Chinese tokens, then seller codes.
+ * starts: the table's Chinese tokens, then the aliases' Chinese tokens and
+ * seller codes.
  * @param {string} text a lowercased title with its links blanked
  * @param {(words: Word[], at: number, length: number) => void} visit
  */
 function eachToken(text, visit) {
-  if (HAN_CHARACTER.test(text)) {
+  const han = HAN_CHARACTER.test(text);
+  if (han) {
     for (let at = 0; at < text.length;) {
       let length = 1;
       for (const [token, words] of TOKENS_BY_FIRST.get(text[at]) || NO_TOKENS) {
         if (text.startsWith(token, at)) { length = token.length; visit(words, at, length); break; }
       }
       at += length;
+    }
+  }
+  if (han && ALIAS_TOKENS_BY_FIRST.size) {
+    for (let at = 0; at < text.length; at++) {
+      for (const [token, words] of ALIAS_TOKENS_BY_FIRST.get(text[at]) || NO_TOKENS) {
+        if (text.startsWith(token, at)) visit(words, at, token.length);
+      }
     }
   }
   if (!ALIASES_BY_CODE.size) return;

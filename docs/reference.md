@@ -187,10 +187,11 @@ sellers write in Chinese or as codes. The repository ships none. For example:
 
 `en` is the name you search by, and it prints in the gloss before any word
 from the fixed list. A token with a Chinese character is found anywhere in a
-title; any other token is a seller code, found only as a whole word, so `HW`
-does not match `HWY` or `HW-01`. A seller code or form typed into search
-finds the same titles as `en`; `forms` (optional) are only typed, never read
-from titles. Matching ignores case and full-width forms, and a one-character
+title, even inside a word from the fixed list; any other token is a seller
+code, found only as a whole word outside links, so `HW` does not match `HWY`,
+`HW-01` or `https://hw.example.com`. A seller code or form typed into search
+finds the same titles as `en`, after any album whose item ID it is; `forms`
+(optional) are only typed, never read from titles. Matching ignores case and full-width forms, and a one-character
 Chinese token matches wherever that character appears. Aliases are never
 colour, fit or material filters. The file is read when the page loads, so
 reload after editing it; `lamp snapshot` and `lamp restore` leave it out. A
