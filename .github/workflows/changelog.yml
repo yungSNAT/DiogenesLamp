@@ -6,7 +6,7 @@ name: Changelog
 # skip-changelog label; Dependabot's pull requests are skipped.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+    types: [opened, edited, synchronize, reopened, labeled, unlabeled]
 
 permissions:
   contents: read
@@ -25,24 +25,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Require a changelog line for shipped changes
-        env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
-        run: |
-          # Each git call stands alone, so a git error fails the step instead
-          # of reading as an empty diff.
-          files=$(git -c core.quotePath=false diff --no-renames --name-only "$BASE...$HEAD")
-          shipped=$(grep -E '^(src/|viewer/[^/]+\.(js|html|css|json)$|Cargo\.toml$|rust-toolchain\.toml$)' <<<"$files" || true)
-          if [ -z "$shipped" ]; then
-            echo "No shipped file changed."
-            exit 0
-          fi
-          changelog=$(git diff "$BASE...$HEAD" -- CHANGELOG.md)
-          if sed -n '/^+++ /d; s/^+//p' <<<"$changelog" | grep -q '[^[:space:]]'; then
-            echo "CHANGELOG.md has a new line."
-            exit 0
-          fi
-          echo "Shipped files changed:"
-          echo "$shipped"
-          echo "::error file=CHANGELOG.md::This pull request changes shipped code but adds no line to CHANGELOG.md. Add one under '## Unreleased', or apply the skip-changelog label if no user would notice the change."
-          exit 1
+        uses: yungSNAT/yungSNAT/.github/actions/changelog-line@5cd2765e4c78098b7602809e60830f07373fae44 # main
+        with:
+          shipped: '^(src/|viewer/[^/]+\.(js|html|css|json)$|Cargo\.toml$|rust-toolchain\.toml$)'
+          heading: "'## Unreleased'"
