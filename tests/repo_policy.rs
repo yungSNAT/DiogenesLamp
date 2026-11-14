@@ -16,8 +16,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -74,6 +74,22 @@ jobs:
           path: coverage-rust.lcov
           retention-days: 1
       - run: cargo build --locked --release
+
+  # Catch RustSec advisories before the release gate, using the same pinned
+  # prebuilt tool installer as the test job.
+  audit:
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@<pin>
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - uses: taiki-e/install-action@<pin>
+        with:
+          tool: cargo-audit@0.22.2
+          fallback: none
+      - run: cargo audit --deny warnings
 
   # The upload runs apart from the tests so the OIDC token is never available
   # while test code runs. A Codecov outage fails only this job.
