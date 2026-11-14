@@ -4,8 +4,9 @@
 
 - An album whose purchase-link scan stopped early carries
   `links_truncated: true` in its record, so it stays marked after later runs
-  skip it as unchanged. Before, only that run's summary named it, and nothing
-  did after the next run. A fetch that scans every word clears the mark.
+  skip it as unchanged, and `lamp doctor` counts such albums as
+  `links_truncated`. Before, only that run's summary named it, and nothing did
+  after the next run. A fetch that scans every word clears the mark.
 
 ## 0.1.2 (2026-11-13)
 

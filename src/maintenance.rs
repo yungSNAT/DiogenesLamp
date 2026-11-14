@@ -123,6 +123,7 @@ pub fn diagnose(root: &Path) -> Map {
         ("unpriced", 0),
         ("without_detail_date", 0),
         ("without_description", 0),
+        ("links_truncated", 0),
         ("gone", 0),
         ("detail_failures", 0),
     ];
@@ -191,6 +192,11 @@ pub fn diagnose(root: &Path) -> Map {
                             &mut counts,
                             "without_description",
                             i128::from(!album.contains_key("description")),
+                        );
+                        add(
+                            &mut counts,
+                            "links_truncated",
+                            i128::from(truthy(album, "links_truncated")),
                         );
                         if let Some(Value::Str(thumb)) = album.get("thumb")
                             && !thumb.is_empty()

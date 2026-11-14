@@ -255,7 +255,8 @@ description-only operation.
 
 `doctor` reads files without changing them. It reports invalid or missing
 metadata, duplicate IDs, cover coverage, unknown prices, missing detail dates,
-albums without a recorded description and recorded detail failures. It returns a non-zero exit code for structural
+albums without a recorded description, albums whose purchase-link scan
+stopped early (`links_truncated`) and recorded detail failures. It returns a non-zero exit code for structural
 errors. It does not verify whether a remote listing or extracted price is current.
 
 `snapshot` saves metadata only, excluding images, browser annotations, source
