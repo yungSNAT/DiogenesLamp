@@ -36,6 +36,8 @@ test("an alias finds its Chinese tokens and whole-word seller codes, and glosses
     "https://hw.example.com", "http://hw"]) {
     assert.deepEqual(read(title).gloss, [], title);
   }
+  assert.deepEqual(read("https://hw.example.com、HW 港湾").gloss, ["harbour works"]);
+  assert.deepEqual(wordRanges("https://hw.example.com、hw", new Set(["harbour works"])), [[23, 25]]);
   assert.equal(reason("harbour works", "港湾卫衣"), "Title");
   assert.equal(reason("harbour works hoodie", "港湾卫衣"), "Title");
   assert.equal(reason("hw", "港湾卫衣"), "Title", "a typed code finds the Chinese name");
