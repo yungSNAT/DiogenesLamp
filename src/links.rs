@@ -248,7 +248,9 @@ pub fn item_link(platform: &str, item_id: &str) -> Option<Link> {
     ok.then(|| Link::new(platform, template.replace("{id}", item_id)))
 }
 
-fn unwrap_agent(agent: &str, rest: &str, depth: usize) -> Option<Link> {
+/// The item an agent link names; `scanned` turns false if a wrapped URL
+/// could not be scanned.
+fn unwrap_agent(agent: &str, rest: &str, depth: usize, scanned: &mut bool) -> Option<Link> {
     let rest = strip_fragment(if rest.is_empty() { "/" } else { rest });
     let (path, query) = rest.split_once('?').unwrap_or((rest, ""));
     let mut values: HashMap<String, BTreeSet<String>> = HashMap::new();
@@ -268,7 +270,7 @@ fn unwrap_agent(agent: &str, rest: &str, depth: usize) -> Option<Link> {
         }
         for key in WRAPPED_URL_PARAMS {
             if let Some(wrapped) = param(key).filter(|w| !w.is_empty()) {
-                return wrapped_link(&wrapped, depth + 1);
+                return wrapped_link(&wrapped, depth + 1, scanned);
             }
         }
         return None;
@@ -323,8 +325,12 @@ fn unwrap_agent(agent: &str, rest: &str, depth: usize) -> Option<Link> {
     None
 }
 
-fn wrapped_link(url_text: &str, depth: usize) -> Option<Link> {
-    let caps = URL_FULL_RE.captures(pystr::strip(url_text)).ok()??;
+fn wrapped_link(url_text: &str, depth: usize, scanned: &mut bool) -> Option<Link> {
+    let Ok(caps) = URL_FULL_RE.captures(pystr::strip(url_text)) else {
+        *scanned = false;
+        return None;
+    };
+    let caps = caps?;
     let host = caps.name("host")?.as_str().to_lowercase();
     let cleaned = clean_rest(caps.name("rest").map(|m| m.as_str()));
     let rest = strip_fragment(&cleaned);
@@ -333,7 +339,7 @@ fn wrapped_link(url_text: &str, depth: usize) -> Option<Link> {
         return Some(Link::new(platform, normalize(&host, rest)));
     }
     match agent(&host) {
-        Some(agent) if depth < 2 => unwrap_agent(agent, rest, depth),
+        Some(agent) if depth < 2 => unwrap_agent(agent, rest, depth, scanned),
         _ => None,
     }
 }
@@ -359,7 +365,8 @@ fn clean_rest(rest: Option<&str>) -> String {
 /// word finds exactly the links a scan of the whole text finds. Scanning word
 /// by word bounds the regex engine's backtracking by one word's length: a run
 /// of a few hundred dotted words with no space can still exceed its limit,
-/// which loses only the rest of that word and returns `false`.
+/// which loses only the rest of that word and returns `false`. An agent link
+/// whose wrapped URL exceeds the limit is lost and returns `false` too.
 pub fn extract_links(text: &str) -> (Vec<Link>, bool) {
     let mut seen: HashSet<String> = HashSet::new();
     let mut links = Vec::new();
@@ -370,8 +377,9 @@ pub fn extract_links(text: &str) -> (Vec<Link>, bool) {
     (links, scanned)
 }
 
-/// Adds the new links in one word; `false` if the scan stopped early.
+/// Adds the new links in one word; `false` if any part went unscanned.
 fn scan_word(word: &str, seen: &mut HashSet<String>, links: &mut Vec<Link>) -> bool {
+    let mut scanned = true;
     for caps in URL_RE.captures_iter(word) {
         let Ok(caps) = caps else {
             return false;
@@ -384,7 +392,7 @@ fn scan_word(word: &str, seen: &mut HashSet<String>, links: &mut Vec<Link>) -> b
         let platform = platform(&host);
         let url = if platform == "other" {
             if let Some(agent) = agent(&host) {
-                let Some(link) = unwrap_agent(agent, &rest, 0) else {
+                let Some(link) = unwrap_agent(agent, &rest, 0, &mut scanned) else {
                     continue;
                 };
                 if seen.insert(link.url.clone()) {
@@ -403,5 +411,5 @@ fn scan_word(word: &str, seen: &mut HashSet<String>, links: &mut Vec<Link>) -> b
             links.push(Link::new(platform, url));
         }
     }
-    true
+    scanned
 }
