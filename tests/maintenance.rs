@@ -432,9 +432,14 @@ fn doctor_counts_missing_descriptions_and_rejects_malformed_fields() {
             .unwrap();
         album.insert("description".into(), "kept".into());
         album.insert("description_truncated".into(), true.into());
+        album.insert("links_truncated".into(), true.into());
     }
     validate_metadata(&shard, "catalog/example.json").unwrap();
-    for (field, bad) in [("description", "5"), ("description_truncated", r#""yes""#)] {
+    for (field, bad) in [
+        ("description", "5"),
+        ("description_truncated", r#""yes""#),
+        ("links_truncated", r#""yes""#),
+    ] {
         let mut broken = shard.clone();
         broken
             .as_object_mut()
