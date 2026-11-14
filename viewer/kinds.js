@@ -80,7 +80,7 @@ const mentions = (kind, pattern, text) => pattern.test(text) || kind.cjk.some(to
 // wordRanges.
 /** @param {string} lowered an NFKC-normalised, lowercased title */
 const withoutLinks = lowered => lowered.includes("/")
-  ? lowered.replace(/https?:\/\/[a-z0-9.:-]*(?:\/\S*)?|(?<![a-z0-9.-])[a-z0-9.-]+\.[a-z]{2,}\/\S*/g, link => " ".repeat(link.length))
+  ? lowered.replace(/https?:\/\/[a-z0-9.-]*(?::\d+)?(?:\/\S*)?|(?<![a-z0-9.-])[a-z0-9.-]+\.[a-z]{2,}\/\S*/g, link => " ".repeat(link.length))
   : lowered;
 
 /**

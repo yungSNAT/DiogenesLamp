@@ -46,6 +46,7 @@ test("link removal preserves adjacent title words and handles long domain candid
   // and ends with its host, so a title word after Chinese punctuation still reads.
   assert.equal(kindOf("https://shop.example.com、卫衣"), "hoodies");
   assert.equal(kindOf("https://shop.example.com:8080 卫衣"), "hoodies");
+  assert.equal(kindOf("https://shop.example.com:hoodie"), "hoodies");
 });
 
 test("T恤 reads as a tee: tokens are matched against the lowercased title", () => {
