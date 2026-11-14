@@ -435,6 +435,11 @@ fn doctor_counts_missing_descriptions_and_rejects_malformed_fields() {
         album.insert("links_truncated".into(), true.into());
     }
     validate_metadata(&shard, "catalog/example.json").unwrap();
+    atomic_write_json(&dir.path().join("catalog/example.json"), &shard).unwrap();
+    assert!(matches!(
+        diagnose(dir.path()).get("links_truncated"),
+        Some(Value::Int(1))
+    ));
     for (field, bad) in [
         ("description", "5"),
         ("description_truncated", r#""yes""#),
