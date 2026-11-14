@@ -25,7 +25,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Require a changelog line for shipped changes
-        uses: yungSNAT/yungSNAT/.github/actions/changelog-line@5cd2765e4c78098b7602809e60830f07373fae44 # main
+        uses: yungSNAT/yungSNAT/.github/actions/changelog-line@5cd2765e4c78098b7602809e60830f07373fae44 # v1
         with:
           shipped: '^(src/|viewer/[^/]+\.(js|html|css|json)$|Cargo\.toml$|rust-toolchain\.toml$)'
           heading: "'## Unreleased'"
