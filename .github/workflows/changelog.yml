@@ -1,0 +1,48 @@
+name: Changelog
+
+# Fails a pull request that changes what ships in lamp (src/, the viewer
+# files built into it, Cargo.toml or rust-toolchain.toml) without adding a
+# line to CHANGELOG.md. Waive it for a change no user would notice with the
+# skip-changelog label; Dependabot's pull requests are skipped.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  changelog:
+    name: Changelog line
+    if: >-
+      !contains(github.event.pull_request.labels.*.name, 'skip-changelog') &&
+      github.event.pull_request.user.login != 'dependabot[bot]'
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require a changelog line for shipped changes
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # Each git call stands alone, so a git error fails the step instead
+          # of reading as an empty diff.
+          files=$(git diff --name-only "$BASE...$HEAD")
+          shipped=$(grep -E '^(src/|viewer/[^/]+\.(js|html|css|json)$|Cargo\.toml$|rust-toolchain\.toml$)' <<<"$files" || true)
+          if [ -z "$shipped" ]; then
+            echo "No shipped file changed."
+            exit 0
+          fi
+          changelog=$(git diff "$BASE...$HEAD" -- CHANGELOG.md)
+          if sed -n '/^+++ /d; s/^+//p' <<<"$changelog" | grep -q '[^[:space:]]'; then
+            echo "CHANGELOG.md has a new line."
+            exit 0
+          fi
+          echo "Shipped files changed:"
+          echo "$shipped"
+          echo "::error file=CHANGELOG.md::This pull request changes shipped code but adds no line to CHANGELOG.md. Add one under '## Unreleased', or apply the skip-changelog label if no user would notice the change."
+          exit 1
