@@ -31,6 +31,7 @@ const state = {
   titleKeyCounts: new Map(), // running t:-key counts feeding bannedKeys
   shardAlbums: new Map(), // seller id -> annotated albums, in fetch order
   failedShards: [],    // sellers whose shard could not be fetched
+  aliasNote: "",       // why data/aliases.json was not used in full
   categories: new Set(), // every category seen, collected as shards arrive
   filterVersion: 0,    // bumped whenever `filtered` is rebuilt
   prefs: readPrefs(window), // agent, lookups and currency choices (prefs.js)
@@ -248,14 +249,16 @@ let noteDismissed = false;
 /** @param {boolean} loading */
 function setLoadNote(loading) {
   const failed = state.failedShards.length;
-  if (loading || !failed || noteDismissed) {
+  const notes = state.aliasNote ? [state.aliasNote] : [];
+  if (failed) {
+    notes.unshift(`${failed} ${failed === 1 ? "seller's data is" : "sellers' data is"} missing or ` +
+      `unreadable and ${failed === 1 ? "was" : "were"} left out: ${state.failedShards.join(", ")}.`);
+  }
+  if (loading || !notes.length || noteDismissed) {
     els.note.hidden = true;
     return;
   }
-  const names = state.failedShards.join(", ");
-  els.noteText.textContent =
-    `${failed} ${failed === 1 ? "seller's data is" : "sellers' data is"} missing or ` +
-    `unreadable and ${failed === 1 ? "was" : "were"} left out: ${names}.`;
+  els.noteText.textContent = notes.join(" ");
   els.note.hidden = false;
 }
 
@@ -274,6 +277,27 @@ function showIndexFailure() {
 }
 
 const SHARD_CONCURRENCY = 6;
+const ALIAS_WAIT_MS = 5000;
+
+// The operator's own brand and model names (docs/reference.md), read before
+// any shard so each title's gloss is read once. No file is the usual case;
+// any other failure is named in the load note and the catalogue loads
+// without it. A server that stalls is given ALIAS_WAIT_MS.
+async function loadOperatorAliases() {
+  try {
+    const response = await fetch("data/aliases.json", {signal: AbortSignal.timeout(ALIAS_WAIT_MS)});
+    if (response.status === 404) return;
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const {skipped} = setOperatorAliases(await response.json());
+    if (skipped) {
+      state.aliasNote = `data/aliases.json: ${skipped} ${skipped === 1 ? "entry was" : "entries were"} ` +
+        "skipped for a missing or malformed field or a repeated name.";
+    }
+  } catch (err) {
+    console.error("aliases.json failed to load", err);
+    state.aliasNote = `data/aliases.json was not used: ${err instanceof Error ? err.message : err}.`;
+  }
+}
 
 async function loadAll() {
   /** @type {import("./controller-types.js").CatalogueIndex} */
@@ -302,6 +326,7 @@ async function loadAll() {
   // The seller list only exists now, so a stored seller filter can finally
   // be put back on the control.
   restoreLateFilters();
+  await loadOperatorAliases();
   state.pendingShards = [...index.sellers];
   await Promise.all(
     Array.from({ length: SHARD_CONCURRENCY }, () => shardWorker())
