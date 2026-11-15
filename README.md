@@ -148,6 +148,13 @@ when you press Ctrl+C. It never writes to `data/` or `sources.toml`.
 Flags, scrape behaviour and the viewer's features are in
 [docs/reference.md](docs/reference.md).
 
+Search in English also finds the Chinese words sellers write for garments,
+colours, fits and materials (experimental), and, except on a narrow screen,
+a card glosses up to 2 such words in English before its title. Brand and model names come from an
+optional `aliases.json` of your own, in Chinese or as seller codes; the
+repository ships none. Both are described under
+[Serve and browse](docs/reference.md#serve-and-browse).
+
 ### Refresh on a schedule
 
 Re-runs read every listing page but skip albums whose titles are unchanged
