@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- The viewer reads an optional `aliases.json` in the data directory: your own
+  brand and model names, each with the Chinese names and seller codes your
+  sellers write. Searching a name finds titles that use any of them, and the
+  name prints in the title's gloss. The repository still ships no brand list;
+  `docs/reference.md` gives the format. A malformed file or record is named in
+  the load note and the catalogue loads without it.
+- A title link with a scheme and no path, such as `https://shoes.example.com`,
+  is ignored like other links, so it no longer names a kind, colour, fit or
+  material.
 - An album whose purchase-link scan stopped early carries
   `links_truncated: true` in its record, so it stays marked after later runs
   skip it as unchanged, and `lamp doctor` counts such albums as
