@@ -125,10 +125,14 @@ test("every other failure is named in the load note and loading goes on", async 
     'data/aliases.json was not used: not {"version": 1, "aliases": [...]}.');
   assert.equal((await load(() => json({version: 1, aliases: [FILE.aliases[0], {en: "x"}]}))).note,
     "data/aliases.json: 1 entry was skipped for a missing or malformed field or a repeated name.");
-  // A server that never answers is given up on, not waited for.
+  // A server that never answers is given up on, not waited for. Node unrefs
+  // AbortSignal.timeout's timer, so the stub holds the event loop open, as
+  // a pending request would, until the signal fires.
   let reason;
-  const stalled = await load(signal => new Promise((_, reject) =>
-    signal.addEventListener("abort", () => reject(reason = signal.reason))), 20);
+  const stalled = await load(signal => new Promise((_, reject) => {
+    const pending = setInterval(() => {}, 1000);
+    signal.addEventListener("abort", () => { clearInterval(pending); reject(reason = signal.reason); });
+  }), 20);
   assert.equal(reason?.name, "TimeoutError");
   assert.equal(stalled.note, `data/aliases.json was not used: ${reason.message}.`);
 });
