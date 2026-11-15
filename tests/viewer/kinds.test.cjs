@@ -47,6 +47,14 @@ test("link removal preserves adjacent title words and handles long domain candid
   assert.equal(kindOf("https://shop.example.com、卫衣"), "hoodies");
   assert.equal(kindOf("https://shop.example.com:8080 卫衣"), "hoodies");
   assert.equal(kindOf("https://shop.example.com:hoodie"), "hoodies");
+  // A host in any script is part of the link, with or without a path.
+  assert.equal(kindOf("https://卫衣.example.com"), UNSORTED);
+  assert.equal(kindOf("https://shop.例子.com/hoodie"), UNSORTED);
+  assert.equal(kindOf("https://shop.example.中国/hoodie"), UNSORTED);
+  assert.equal(kindOf("watch https://卫衣.example.com"), "watches");
+  assert.equal(kindOf("https://例子.中国、卫衣"), "hoodies");
+  // As in a browser's address bar, a host runs to the first character that cannot be in one.
+  assert.equal(kindOf("https://shop.example.com卫衣"), UNSORTED);
 });
 
 test("T恤 reads as a tee: tokens are matched against the lowercased title", () => {
@@ -80,5 +88,6 @@ test("titles are read longest token first, links ignored, Latin traits as whole 
   assert.deepEqual(read("Upside Down tee, button down shirt"), {gloss: [], traits: []});
   assert.deepEqual(read("羽绒服"), {gloss: ["puffer", "down"], traits: ["down"]});
   assert.deepEqual(read("卫衣 https://shop.example.com/black-黑色"), {gloss: ["sweatshirt"], traits: []});
+  assert.deepEqual(read("https://黑色.example.com 卫衣"), {gloss: ["sweatshirt"], traits: []});
   assert.equal(read("Plain title").gloss, read("").traits, "titles with no words share one empty list");
 });
