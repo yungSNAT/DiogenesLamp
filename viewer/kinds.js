@@ -75,12 +75,13 @@ const mentions = (kind, pattern, text) => pattern.test(text) || kind.cjk.some(to
 
 // A link needs a slash, so a title with none skips the pattern: after the
 // scheme, or after the host when there is none, so "https://shoes.example.com"
-// names no kind. A link with no path ends with its host, so "、卫衣" after it
-// still reads. Blanking keeps every other character where it was, for
-// wordRanges.
+// names no kind. After a scheme the host is letters and digits in any
+// script, so "https://卫衣.example.com" names none either; a link with no
+// path ends with its host, so "、卫衣" after it still reads. Blanking keeps
+// every other character where it was, for wordRanges.
 /** @param {string} lowered an NFKC-normalised, lowercased title */
 const withoutLinks = lowered => lowered.includes("/")
-  ? lowered.replace(/https?:\/\/[a-z0-9.-]*(?::\d+)?(?:\/\S*)?|(?<![a-z0-9.-])[a-z0-9.-]+\.[a-z]{2,}\/\S*/g, link => " ".repeat(link.length))
+  ? lowered.replace(/https?:\/\/[\p{L}\p{M}\p{N}.-]*(?::\d+)?(?:\/\S*)?|(?<![a-z0-9.-])[a-z0-9.-]+\.[a-z]{2,}\/\S*/gu, link => " ".repeat(link.length))
   : lowered;
 
 /**
