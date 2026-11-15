@@ -261,7 +261,7 @@ errors. It does not verify whether a remote listing or extracted price is curren
 
 `snapshot` saves metadata only, excluding images, browser annotations, source
 lists and debug captures. It requires every indexed shard to exist and pass
-validation before creating an archive. Each archive is limited to 10,000 files and 256 MB
+validation before creating an archive. Each archive is limited to 10,000 files and 256 MiB
 of uncompressed metadata. Snapshots accumulate in `data/snapshots/`; retain the
 ones you need. Restore validates the whole archive before writing, preserves
 the previous metadata in another archive and replaces the index last. Files
