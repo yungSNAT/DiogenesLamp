@@ -11,6 +11,10 @@
 - A title link with a scheme and no path, such as `https://shoes.example.com`,
   is ignored like other links, so it no longer names a kind, colour, fit or
   material.
+- A title link whose host is not all ASCII, such as `https://卫衣.example.com`
+  or `https://shop.example.中国/hoodie`, is ignored as a whole too. Before,
+  the viewer ignored only the ASCII part, so the rest could still name a kind,
+  colour, fit or material.
 - An album whose purchase-link scan stopped early carries
   `links_truncated: true` in its record, so it stays marked after later runs
   skip it as unchanged, and `lamp doctor` counts such albums as
