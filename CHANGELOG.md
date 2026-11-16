@@ -6,6 +6,9 @@
   as Python's argparse does, instead of failing with 'ignored explicit
   argument'. Help text whose long words mix non-ASCII letters and a hyphen
   wraps at a character boundary instead of panicking.
+- `lamp restore` refuses a snapshot that names the same member twice. Before,
+  the ZIP reader kept only one of the 2 entries, so the restore went ahead
+  with whichever it kept.
 - `lamp export [--format csv|json] [--since YYYY-MM-DD]` prints the indexed
   albums with the viewer's CSV columns where they are stored, plus
   `first_seen` and `gone_since`, so a scheduled job can take the catalogue,
