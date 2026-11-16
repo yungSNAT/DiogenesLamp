@@ -51,7 +51,11 @@ fn album(id: &str, title: &str, extra: &str) -> String {
 /// not read it.
 fn catalogue(root: &Path, title: &str) {
     let albums = [
-        album("1", title, &format!(r#", "price": 99, "first_seen": "{RUN}""#)),
+        album(
+            "1",
+            title,
+            &format!(r#", "price": 99, "first_seen": "{RUN}""#),
+        ),
         album(
             "2",
             "Price rise",
@@ -126,7 +130,11 @@ fn rows_are_the_albums_the_run_stored_or_changed_with_its_changes() {
     );
     assert_eq!(rows[2]["gone_since"].as_str(), Some(RUN));
     // Another run's timestamp matches nothing.
-    assert!(run_rows(dir.path(), "2026-11-18T03:47:00+11:00").unwrap().is_empty());
+    assert!(
+        run_rows(dir.path(), "2026-11-18T03:47:00+11:00")
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -134,7 +142,8 @@ fn the_command_gets_the_rows_on_stdin_and_never_in_its_command_line() {
     let dir = common::tmp();
     let marker = dir.path().join("pwned");
     let m = marker.display();
-    let title = format!(r#"x"; touch '{m}'; $(touch '{m}') `touch '{m}'` & echo>"{m}" | %PATH% ^& "#);
+    let title =
+        format!(r#"x"; touch '{m}'; $(touch '{m}') `touch '{m}'` & echo>"{m}" | %PATH% ^& "#);
     catalogue(dir.path(), &title);
     let rows = run_rows(dir.path(), RUN).unwrap();
     let want = pyjson::dumps(
@@ -165,7 +174,10 @@ fn a_failing_command_is_an_error_with_its_status() {
     catalogue(dir.path(), "x");
     let rows = run_rows(dir.path(), RUN).unwrap();
     let error = notify("exit 3", rows).unwrap_err();
-    assert!(error.starts_with("the command failed (") && error.contains('3'), "{error}");
+    assert!(
+        error.starts_with("the command failed (") && error.contains('3'),
+        "{error}"
+    );
 }
 
 /// A command may ignore its input; more than a pipe buffer of rows must not
