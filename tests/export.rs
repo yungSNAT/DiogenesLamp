@@ -212,6 +212,27 @@ fn since_reads_first_seen_as_a_date_and_skips_one_that_is_not() {
             "Day before",
             r#", "first_seen": "2026-11-15T23:59:59+11:00""#,
         ),
+        // Other ISO forms the parser reads, each on 16 November but the last.
+        album("5", "one", "Space", r#", "first_seen": "2026-11-16 08:00""#),
+        album(
+            "6",
+            "one",
+            "Week",
+            r#", "first_seen": "2026-W47-1T00:00:00+11:00""#,
+        ),
+        album(
+            "7",
+            "one",
+            "Midnight",
+            r#", "first_seen": "2026-11-15T24:00:00+11:00""#,
+        ),
+        album("8", "one", "Date only", r#", "first_seen": "2026-11-16""#),
+        album(
+            "9",
+            "one",
+            "Week before",
+            r#", "first_seen": "2026-W46-7T12:00:00""#,
+        ),
     ];
     atomic_write_json(
         &data.join("index.json"),
@@ -235,7 +256,7 @@ fn since_reads_first_seen_as_a_date_and_skips_one_that_is_not() {
         .iter()
         .map(|r| obj(r)["album_id"].py_str())
         .collect();
-    assert_eq!(ids, ["3"]);
+    assert_eq!(ids, ["3", "5", "6", "7", "8"]);
 }
 
 #[test]

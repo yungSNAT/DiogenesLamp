@@ -597,8 +597,8 @@ pub const EXPORT_COLUMNS: [&str; 11] = [
 /// `lamp export`: one row per selected album, in index and shard order, with
 /// the `EXPORT_COLUMNS` fields. `since` (YYYY-MM-DD) keeps the albums whose
 /// `first_seen` date, the local date of the run that first stored them, is
-/// that day or later; a `first_seen` that is not a date and time leaves the
-/// album out. An unknown price, date or text is null.
+/// that day or later; a `first_seen` with no readable date leaves the album
+/// out. An unknown price, date or text is null.
 pub fn export_rows(root: &Path, since: Option<&str>) -> Result<Vec<Map>> {
     let since = match since.map(|day| (day, crate::isodate::parse_date(day))) {
         None => None,
