@@ -251,9 +251,9 @@ unknown'), posting date (or first-seen date when none was recorded), a link
 to its album, and 'no longer listed' once it has gone. So 2 sellers' prices
 for one marketplace item compare in one place. The older listings come from
 the seller shards already loaded, so the list needs no extra request; an
-older index lists them once every shard has loaded. Whilst sellers are
-still loading, or when a seller's shard could not be read, the list says
-it covers only the sellers loaded.
+older index lists them once every shard has loaded. A listing whose seller
+is still loading, or could not be read, is counted in the list's heading,
+and an open preview fills in as sellers load.
 
 Favourites, notes, tags and collections on an older duplicate copy to the
 newest listing when its field has no saved entry. Existing values, including

@@ -164,7 +164,7 @@ test("the preview lists every listing of the item, cheapest first, with price an
   const cheaper = {...album("100"), seller: "one", price: 95, first_seen: "2026-10-02T09:00:00+11:00",
     gone_since: "2026-11-02T09:00:00+11:00"};
   const unpriced = {...album("200"), seller: "two", date_published: "2026-10-20"};
-  h.state.listingCopies = new Map([["300", [unpriced, cheaper]]]);
+  h.state.listingCopies = new Map([["300", [unpriced, cheaper]]]); h.state.albumAliases = {100: "300", 200: "300"};
   h.state.albums = [shown]; h.state.filtered = [shown]; h.context.openPreview("300");
   assert.equal(h.el("preview-copies").hidden, false);
   assert.equal(h.el("preview-copies-note").textContent, "Listed 3 times, cheapest first:");
@@ -174,16 +174,25 @@ test("the preview lists every listing of the item, cheapest first, with price an
     "two · Price unknown · posted 2026-10-20 "]);
   assert.deepEqual(h.el("preview-copies").children.map(li => li.children[0].href),
     ["100", "300", "200"].map(id => `https://one.x.yupoo.com/albums/${id}`));
-  // A list from part of the catalogue never reads as the whole of it.
-  h.el("album-preview").close(); h.state.index = {sellers: [{}, {}, {}, {}]}; h.state.loadedSellers = 3;
-  h.context.openPreview("300");
-  assert.equal(h.el("preview-copies-note").textContent,
-    "Listed 3 times so far, cheapest first (sellers are still loading):");
-  h.el("album-preview").close(); h.state.loadedSellers = 4; h.state.failedShards = ["four"];
-  h.context.openPreview("300");
-  assert.equal(h.el("preview-copies-note").textContent,
-    "Listed 3 times in the sellers that loaded, cheapest first (1 could not be read):");
-  h.el("album-preview").close(); h.state.listingCopies = new Map(); h.context.openPreview("300");
+  // The index names every listing of the item; one not loaded is counted,
+  // not silently left out, and an open preview catches up as shards arrive.
+  h.el("album-preview").close(); h.state.albumAliases = {100: "300", 200: "300", 400: "300"};
+  h.state.index = {sellers: [{}, {}, {}, {}]}; h.state.loadedSellers = 3; h.context.openPreview("300");
+  assert.equal(h.el("preview-copies-note").textContent, "Listed 4 times; 1 still loading. Cheapest first:");
+  assert.equal(h.el("preview-copies").children.length, 3);
+  h.state.loadedSellers = 4; h.state.failedShards = ["four"]; h.context.refreshSavedState(false);
+  assert.equal(h.el("preview-copies-note").textContent, "Listed 4 times; 1 could not be read. Cheapest first:");
+  h.el("album-preview").close(); h.state.albumAliases = {400: "300"}; h.state.listingCopies = new Map();
+  h.state.loadedSellers = 3; h.state.failedShards = []; h.context.openPreview("300");
+  assert.equal(h.el("preview-copies").hidden, false);
+  assert.equal(h.el("preview-copies-note").textContent, "Listed 2 times; 1 still loading. Cheapest first:");
+  assert.deepEqual(h.el("preview-copies").children.map(li => li.textContent), ["three · CNY 120 · posted 2026-11-01 · shown here "]);
+  const later = {...album("400"), seller: "four", price: 80, date_published: "2026-10-05"};
+  h.state.listingCopies = new Map([["300", [later]]]); h.state.loadedSellers = 4; h.context.refreshSavedState(false);
+  assert.equal(h.el("preview-copies-note").textContent, "Listed 2 times, cheapest first:");
+  assert.deepEqual(h.el("preview-copies").children.map(li => li.textContent),
+    ["four · CNY 80 · posted 2026-10-05 ", "three · CNY 120 · posted 2026-11-01 · shown here "]);
+  h.el("album-preview").close(); h.state.albumAliases = {}; h.state.listingCopies = new Map(); h.context.openPreview("300");
   assert.equal(h.el("preview-copies").hidden, true);
   assert.equal(h.el("preview-copies-note").hidden, true);
   assert.deepEqual(h.el("preview-copies").children, []);
