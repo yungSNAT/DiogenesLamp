@@ -271,6 +271,13 @@ pub fn write_index(
         return value("duplicate album ID across shards");
     }
     let (selected, aliases) = newest_listings(&captures);
+    let mut by_seller: std::collections::HashMap<String, Vec<&Map>> =
+        std::collections::HashMap::new();
+    for album in &selected {
+        if let Some(seller) = album.get("seller") {
+            by_seller.entry(seller.py_str()).or_default().push(album);
+        }
+    }
     let mut indexed = Vec::new();
     for seller in sellers {
         let id = seller_id_of(seller);
@@ -278,10 +285,7 @@ pub fn write_index(
             indexed.push(Value::Object(seller.clone()));
             continue;
         }
-        let albums: Vec<&Map> = selected
-            .iter()
-            .filter(|a| a.get("seller").map(Value::py_str).as_deref() == Some(id.as_str()))
-            .collect();
+        let albums = by_seller.get(&id).map_or(&[][..], Vec::as_slice);
         let mut entry = seller.clone();
         entry.insert(
             "album_ids".into(),
