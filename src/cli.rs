@@ -41,6 +41,29 @@ fn int(text: &str) -> Result<Value, Option<String>> {
     pystr::parse_int(text).map(Value::Int).ok_or(None)
 }
 
+fn export_format(text: &str) -> Result<Value, Option<String>> {
+    match text {
+        "csv" | "json" => Ok(Value::Str(text.into())),
+        _ => Err(Some("must be csv or json".into())),
+    }
+}
+
+/// A calendar date as YYYY-MM-DD.
+fn day(text: &str) -> Result<Value, Option<String>> {
+    let shape = text.len() == 10
+        && text.bytes().enumerate().all(|(i, b)| {
+            if i == 4 || i == 7 {
+                b == b'-'
+            } else {
+                b.is_ascii_digit()
+            }
+        });
+    if !shape || crate::isodate::parse_date(text).is_none() {
+        return Err(Some("must be a date as YYYY-MM-DD".into()));
+    }
+    Ok(Value::Str(text.into()))
+}
+
 fn match_limit(text: &str) -> Result<Value, Option<String>> {
     let value = pystr::parse_int(text).ok_or(None)?;
     if !(1..=20).contains(&value) {
@@ -173,6 +196,24 @@ pub fn build_parser() -> Parser {
         Some("most albums to list, 1 to 20"),
     );
 
+    let mut export = Parser::new("lamp export", None);
+    export.store(
+        "--format",
+        export_format,
+        "_export_format",
+        Value::Str("csv".into()),
+        Some("csv|json"),
+        Some("csv (the viewer's columns) or json"),
+    );
+    export.store(
+        "--since",
+        day,
+        "_day",
+        Value::Str(String::new()),
+        Some("YYYY-MM-DD"),
+        Some("only albums first stored on this date or later"),
+    );
+
     let choice = |name: &str, help: &str, p: Parser| (name.to_string(), Some(help.to_string()), p);
     parser.subparsers(
         "command",
@@ -211,6 +252,7 @@ pub fn build_parser() -> Parser {
                 "list albums whose cover looks like an image file",
                 find_photo,
             ),
+            choice("export", "print the indexed albums as CSV or JSON", export),
         ],
     );
     parser
@@ -529,6 +571,21 @@ fn maintenance(command: &str, args: &Args) -> Result<i32, Error> {
         "snapshot" => {
             let path = crate::maintenance::snapshot(&data)?;
             out::out(&pyerr::path_str(&path)).map_err(out::os_error)?;
+        }
+        "export" => {
+            let since = args.str("since");
+            let since = Some(since.as_str()).filter(|s| !s.is_empty());
+            let rows = crate::maintenance::export_rows(&data, since)?;
+            if args.str("format") == "json" {
+                let rows = rows.into_iter().map(pyjson::Value::Object).collect();
+                out::out(&pyjson::dumps(
+                    &pyjson::Value::Array(rows),
+                    Style::Indent(2),
+                ))
+            } else {
+                out::out_bytes(crate::maintenance::export_csv(&rows).as_bytes())
+            }
+            .map_err(out::os_error)?;
         }
         "find-photo" => {
             let limit = usize::try_from(args.int("limit")).unwrap_or(8);

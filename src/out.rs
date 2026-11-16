@@ -141,6 +141,12 @@ pub fn out_raw(text: &str) {
     let _ = stdout().write_all(translate(text).as_bytes());
 }
 
+/// Bytes written to stdout as they are, without newline translation, for a
+/// file format that fixes its own line endings (CSV's CRLF).
+pub fn out_bytes(data: &[u8]) -> io::Result<()> {
+    stdout().write_all(data)
+}
+
 /// `print(text, file=sys.stderr)`. Its OSError went uncaught, and the
 /// traceback could not be written either.
 pub fn err(text: &str) {

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `lamp export [--format csv|json] [--since YYYY-MM-DD]` prints the indexed
+  albums with the viewer's CSV columns where they are stored, plus
+  `first_seen` and `gone_since`, so a scheduled job can take the catalogue,
+  or only what a scrape added, without opening the viewer.
 - `lamp find-photo IMAGE [--limit N]` lists the indexed albums whose cover
   fingerprint is within 8 bits of the image's, nearest first, as a JSON
   report. It finds the same picture resized or recompressed, not crops or
