@@ -96,6 +96,44 @@ fn snapshot_restores_corrupt_metadata_and_keeps_previous_bytes() {
 }
 
 #[test]
+fn restore_rejects_a_snapshot_with_a_duplicate_member() {
+    let dir = common::tmp();
+    catalogue(dir.path());
+    let archive = snapshot(dir.path()).unwrap();
+    let index = zip_member(&archive, "index.json");
+    let shard = zip_member(&archive, "catalog/example.json");
+    // The zip writer refuses a repeated name, so write a placeholder of the
+    // same length and rename it in the local and central headers.
+    let bad = dir.path().join("bad.zip");
+    make_zip(
+        &bad,
+        &[
+            ("index.json", index),
+            ("catalog/example.json", shard),
+            ("catalog/examplX.json", b"{}".to_vec()),
+        ],
+    );
+    let bytes = std::fs::read(&bad).unwrap();
+    let (from, to) = (b"catalog/examplX.json", b"catalog/example.json");
+    let mut renamed = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i..].starts_with(from) {
+            renamed.extend_from_slice(to);
+            i += from.len();
+        } else {
+            renamed.push(bytes[i]);
+            i += 1;
+        }
+    }
+    assert_ne!(renamed, bytes);
+    std::fs::write(&bad, renamed).unwrap();
+    let before = tree(dir.path());
+    assert!(restore(dir.path(), &bad).is_err());
+    assert_eq!(tree(dir.path()), before);
+}
+
+#[test]
 fn snapshot_rejects_a_missing_indexed_shard() {
     let dir = common::tmp();
     catalogue(dir.path());
