@@ -31,6 +31,8 @@ fancy-regex = "0.20.0"
 flate2 = "1.1"
 getrandom = "0.4.3"
 idna = "1.1.0"
+# The unicode-rs back end, not ICU4X (about 20 crates), for idna's UTS 46.
+idna_adapter = "~1.1"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 indexmap = "2.14.2"
 regex = "1.13.1"
