@@ -45,7 +45,7 @@ fn album(id: &str, seller: &str, cover_hash: Option<&str>, gone: bool) -> String
     )
 }
 
-/// 2 sellers: `one` selects 7 of its 8 albums, `two` has an older index entry
+/// 2 sellers: `one` selects 9 of its 10 albums, `two` has an older index entry
 /// without `album_ids`, so all of its albums count.
 fn catalogue(root: &Path, hash: u64) {
     let one = [

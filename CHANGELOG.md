@@ -10,6 +10,9 @@
   fingerprint is within 8 bits of the image's, nearest first, as a JSON
   report. It finds the same picture resized or recompressed, not crops or
   other angles. An image it cannot fingerprint is named with the reason.
+- The viewer's colour contrast and page structure checks are Rust tests in
+  `tests/viewer.rs`, so they run without Node.js; the 2 Node test files they
+  replace are removed.
 - The viewer reads an optional `aliases.json` in the data directory: your own
   brand and model names, each with the Chinese names and seller codes your
   sellers write. Searching a name finds titles that use any of them, and the
@@ -28,6 +31,8 @@
   skip it as unchanged, and `lamp doctor` counts such albums as
   `links_truncated`. Before, only that run's summary named it, and nothing did
   after the next run. A fetch that scans every word clears the mark.
+- Non-ASCII hostnames are converted with the `idna` crate's unicode-rs back
+  end instead of ICU4X, so `Cargo.lock` lists 153 packages instead of 171.
 - An agent link whose wrapped `url=` value exceeds the link pattern's
   backtracking limit marks its album partly scanned and `links_truncated`.
   Before, the link was dropped and the album counted as fully scanned.
