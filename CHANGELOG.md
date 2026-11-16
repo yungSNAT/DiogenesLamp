@@ -26,6 +26,10 @@
 - `lamp serve` and `lamp demo` write their `serving on` line at once when
   stdout is redirected to a file or pipe. Before, it waited in the output
   buffer until the server stopped.
+- Writing the index no longer compares every seller with every album, and a
+  scrape no longer reads each seller's shard twice to write it. `lamp
+  reindex` over 400 sellers of 200 albums took 2.3 to 2.5 s instead of 7.6 to
+  10.0 s, with the same `index.json`.
 
 ## 0.1.2 (2026-11-13)
 
