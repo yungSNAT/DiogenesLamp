@@ -692,3 +692,106 @@ pub fn export_csv(rows: &[Map]) -> String {
     }
     csv
 }
+
+/// What `lamp export --site` wrote.
+pub struct Site {
+    pub sellers: usize,
+    pub covers: usize,
+    /// Covers the shards name that are not cached; the viewer shows none.
+    pub missing_covers: usize,
+}
+
+/// `lamp export --site`: the viewer and the catalogue it reads as static
+/// files for a web host, such as one a phone can reach. `dir` gets the
+/// bundled viewer, its index.html carrying the policy `lamp serve` sends as
+/// a header, and under data/ the index, every indexed shard, the cached
+/// covers the shards name and the operator's aliases.json when there is one;
+/// snapshots, run summaries and sources stay behind. The catalogue is locked
+/// and checked before anything is written. `dir` must be new or empty and
+/// outside the data directory.
+pub fn export_site(root: &Path, dir: &Path) -> Result<Site> {
+    let _lock = CatalogueLock::acquire(root)?;
+    if pyerr::is_relative_to(&pyerr::resolve(dir), &pyerr::resolve(root)) {
+        return value("the site folder must be outside the data directory");
+    }
+    match std::fs::read_dir(dir) {
+        Ok(mut entries) if entries.next().is_some() => {
+            return value(format!("{}: folder is not empty", pyerr::path_str(dir)));
+        }
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(Error::Os(pyerr::os_error(&e, Call::Os, dir))),
+    }
+    let index = data_path(root, "index.json", false)?;
+    let sellers = sellers_of(&read_metadata(&index, "index.json")?);
+    let mut copies = vec![(index, "index.json".to_string())];
+    let mut covers = std::collections::BTreeSet::new();
+    let mut missing = std::collections::BTreeSet::new();
+    for seller in &sellers {
+        let relative = seller.get("shard").map(Value::py_str).unwrap_or_default();
+        let shard = data_path(root, &relative, false)?;
+        for album in albums_of(&read_metadata(&shard, &relative)?) {
+            if let Some(Value::Str(thumb)) = album.get("thumb")
+                && !thumb.is_empty()
+            {
+                if data_path(root, thumb, true)?.is_file() {
+                    covers.insert(thumb.clone());
+                } else {
+                    missing.insert(thumb.clone());
+                }
+            }
+        }
+        copies.push((shard, relative));
+    }
+    let aliases = root.join("aliases.json");
+    if aliases.is_file() {
+        if stat_len(&aliases)? > MAX_METADATA_BYTES {
+            return value("aliases.json exceeds 256 MB");
+        }
+        copies.push((aliases, "aliases.json".into()));
+    }
+    for cover in &covers {
+        copies.push((data_path(root, cover, true)?, cover.clone()));
+    }
+    let made = |path: &Path| -> Result<()> {
+        let parent = path.parent().unwrap_or(dir);
+        std::fs::create_dir_all(parent)
+            .map_err(|e| Error::Os(pyerr::os_error(&e, Call::Os, parent)))
+    };
+    const CHARSET: &str = "<meta charset=\"utf-8\">";
+    for (name, bytes) in crate::viewer::FILES {
+        let target = dir.join(name);
+        made(&target)?;
+        let policy;
+        let bytes = if *name == "index.html" {
+            let html = std::str::from_utf8(bytes)
+                .ok()
+                .filter(|html| html.contains(CHARSET))
+                .ok_or_else(|| Error::Value("viewer index.html has no charset tag".into()))?;
+            policy = html.replacen(
+                CHARSET,
+                &format!(
+                    "{CHARSET}\n<meta http-equiv=\"Content-Security-Policy\" content=\"{}\">",
+                    crate::serve::CSP
+                ),
+                1,
+            );
+            policy.as_bytes()
+        } else {
+            bytes
+        };
+        std::fs::write(&target, bytes)
+            .map_err(|e| Error::Os(pyerr::os_error(&e, Call::Open, &target)))?;
+    }
+    for (source, relative) in &copies {
+        let target = dir.join("data").join(relative);
+        made(&target)?;
+        std::fs::copy(source, &target)
+            .map_err(|e| Error::Os(pyerr::os_error(&e, Call::Open, &target)))?;
+    }
+    Ok(Site {
+        sellers: sellers.len(),
+        covers: covers.len(),
+        missing_covers: missing.len(),
+    })
+}

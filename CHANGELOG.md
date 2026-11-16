@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `lamp export --site DIR` writes the viewer and the catalogue as static
+  files, so a phone can open the catalogue from any web host. The page
+  carries the content security policy `lamp serve` sends as a header.
 - A scrape notices when an album's card in the seller's listing shows a
   different photo count from the last run, without fetching the album: the
   album's `photo_count` takes the new figure, its history records the change

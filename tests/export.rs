@@ -1,7 +1,8 @@
 // Copyright 2026 Ryan Duguid
 // SPDX-License-Identifier: Apache-2.0
 
-//! `lamp export`: the indexed albums as CSV or JSON on stdout.
+//! `lamp export`: the indexed albums as CSV or JSON on stdout, or the viewer
+//! and catalogue as a static site.
 mod common;
 
 use std::path::Path;
@@ -365,4 +366,145 @@ fn csv_cells_match_the_viewers_csv_cell() {
         let want = format!("{},\"CNY\",", cell.py_str());
         assert!(rest.starts_with(&want), "{line} against {cell:?}");
     }
+}
+
+/// The catalogue with 2 cached covers, an aliases.json and the files a site
+/// must leave behind; returns the data directory.
+fn site_catalogue(root: &Path) -> std::path::PathBuf {
+    let data = root.join("data");
+    catalogue(&data);
+    common::write(&data.join("thumbs/one/11.jpg"), b"cover 11");
+    common::write(&data.join("thumbs/two/21.jpg"), b"cover 21");
+    common::write(&data.join("aliases.json"), br#"{"brands": {}}"#);
+    common::write(&data.join("runs/one.json"), b"{}");
+    common::write(&data.join("snapshots/old.zip"), b"zip");
+    data
+}
+
+/// Every file under `dir`, as slash-separated relative paths.
+fn tree(dir: &Path) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(next) = stack.pop() {
+        for entry in std::fs::read_dir(&next).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                let relative = path.strip_prefix(dir).unwrap().to_string_lossy();
+                found.push(relative.replace('\\', "/"));
+            }
+        }
+    }
+    found.sort();
+    found
+}
+
+#[test]
+fn a_site_holds_the_viewer_and_the_catalogue_it_reads_and_nothing_else() {
+    let dir = common::tmp();
+    let data = site_catalogue(dir.path());
+    let site = dir.path().join("site");
+    let (code, stdout, stderr) = export(dir.path(), &["--site", site.to_str().unwrap()]);
+    assert_eq!(code, 0, "{stderr}");
+    let stdout = String::from_utf8(stdout).unwrap();
+    assert!(
+        stdout.contains("2 sellers and 2 covers (4 not cached"),
+        "{stdout}"
+    );
+    let mut expected: Vec<String> = lamp::viewer::FILES
+        .iter()
+        .map(|(name, _)| name.to_string())
+        .chain(
+            [
+                "aliases.json",
+                "catalog/one.json",
+                "catalog/two.json",
+                "index.json",
+                "thumbs/one/11.jpg",
+                "thumbs/two/21.jpg",
+            ]
+            .map(|f| format!("data/{f}")),
+        )
+        .collect();
+    expected.sort();
+    assert_eq!(tree(&site), expected);
+    for name in [
+        "index.json",
+        "catalog/one.json",
+        "thumbs/two/21.jpg",
+        "aliases.json",
+    ] {
+        assert_eq!(
+            std::fs::read(site.join("data").join(name)).unwrap(),
+            std::fs::read(data.join(name)).unwrap(),
+            "{name}"
+        );
+    }
+    for (name, bytes) in lamp::viewer::FILES {
+        let written = std::fs::read(site.join(name)).unwrap();
+        if *name != "index.html" {
+            assert_eq!(&written, bytes, "{name}");
+        }
+    }
+    // A static host sends no policy header, so the page carries the one
+    // `lamp serve` sends, before any script or style loads.
+    let html = std::fs::read_to_string(site.join("index.html")).unwrap();
+    let policy = format!(
+        "<meta charset=\"utf-8\">\n<meta http-equiv=\"Content-Security-Policy\" content=\"{}\">",
+        lamp::serve::CSP
+    );
+    assert!(html.contains(&policy), "{html}");
+    assert!(html.find(&policy) < html.find("<script"));
+    assert_eq!(
+        html.replacen(&policy, "<meta charset=\"utf-8\">", 1)
+            .as_bytes(),
+        lamp::viewer::get("index.html").unwrap()
+    );
+}
+
+#[test]
+fn a_site_needs_a_new_or_empty_folder_outside_the_data_directory() {
+    let dir = common::tmp();
+    let data = site_catalogue(dir.path());
+    let site = dir.path().join("site");
+    common::write(&site.join("keep.txt"), b"mine");
+    let (code, stdout, stderr) = export(dir.path(), &["--site", site.to_str().unwrap()]);
+    assert_eq!(code, 1, "{stderr}");
+    assert!(
+        stdout.is_empty() && stderr.contains("folder is not empty"),
+        "{stderr}"
+    );
+    assert_eq!(tree(&site), ["keep.txt"]);
+
+    let inside = data.join("site");
+    let (code, _, stderr) = export(dir.path(), &["--site", inside.to_str().unwrap()]);
+    assert_eq!(code, 1, "{stderr}");
+    assert!(stderr.contains("outside the data directory"), "{stderr}");
+    assert!(!inside.exists());
+
+    let empty = dir.path().join("empty");
+    std::fs::create_dir(&empty).unwrap();
+    let args = ["--site", empty.to_str().unwrap(), "--since", "2026-11-16"];
+    let (code, _, stderr) = export(dir.path(), &args);
+    assert_eq!(code, 1, "{stderr}");
+    assert!(stderr.contains("leave out --since"), "{stderr}");
+    let (code, _, stderr) = export(dir.path(), &args[..2]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(empty.join("data/index.json").is_file());
+}
+
+#[test]
+fn a_bad_catalogue_writes_no_site() {
+    let dir = common::tmp();
+    let data = site_catalogue(dir.path());
+    std::fs::remove_file(data.join("catalog/two.json")).unwrap();
+    let site = dir.path().join("site");
+    let (code, stdout, stderr) = export(dir.path(), &["--site", site.to_str().unwrap()]);
+    assert_eq!(code, 1, "{stderr}");
+    assert!(
+        stdout.is_empty() && stderr.starts_with("error: "),
+        "{stderr}"
+    );
+    assert!(!site.exists());
 }

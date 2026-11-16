@@ -270,6 +270,22 @@ later, by the local date in `first_seen`; after a scheduled scrape it gives
 what the scrape added. A missing or corrupt shard stops the export with an
 error and nothing printed.
 
+### On a phone
+
+    lamp --data data export --site lamp-site
+
+`--site DIR` writes the viewer and the catalogue it reads (the index, every
+seller's shard, the cached covers and your `aliases.json`) as static files
+in a new or empty folder outside `data/`. Put the folder on a web host your
+phone can reach, such as a static site host or a web server on your home
+network, and open its address. Opening `index.html` straight from the folder
+does not work in most browsers, which stop a page reading the files beside
+it. Anyone who can open the address can read the catalogue and its seller
+list, so choose a host only you can reach. The site is a copy: export again
+after a scrape. Favourites, notes and tags stay in each browser, so the
+phone keeps its own. Snapshots, run summaries and `sources.toml` are not
+copied.
+
 ### Diagnostics and recovery
 
     lamp --data data doctor
