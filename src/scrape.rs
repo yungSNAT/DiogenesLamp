@@ -83,11 +83,13 @@ pub struct SellerSummary {
     pub listing_complete: bool,
     pub resolved_ids: Vec<String>,
     pub short_missing: Vec<String>,
-    /// Albums this run stored for the first time, and albums listed again
-    /// after being marked gone. Reported, not written to the run summary:
-    /// the shard's `first_seen` and availability history already record them.
+    /// Albums this run stored for the first time, albums listed again after
+    /// being marked gone, and albums whose listing shows a different photo
+    /// count. Reported, not written to the run summary: the shard's
+    /// `first_seen` and history already record them.
     pub new_ids: Vec<String>,
     pub returned_ids: Vec<String>,
+    pub recounted_ids: Vec<String>,
     /// Albums with a word whose purchase-link scan stopped early, so links
     /// later in that word, or an agent link's wrapped URL, were not stored.
     /// Reported and kept in the run summary.

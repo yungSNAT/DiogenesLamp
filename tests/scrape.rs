@@ -762,6 +762,63 @@ fn each_run_reports_the_albums_it_stored_first_and_those_listed_again() {
 }
 
 #[test]
+fn a_listing_photo_count_change_is_recorded_without_a_detail_fetch() {
+    let dir = common::tmp();
+    let none: Vec<String> = Vec::new();
+    let summary = run_once(&paged(&[(101, 106)]), dir.path(), T1, opts());
+    assert_eq!(summary.recounted_ids, none);
+
+    // 103 gains photos, 104's card loses its count, 105 is retitled and
+    // loses photos; the rest are unchanged.
+    let client = paged(&[(101, 106)]);
+    let listing = (101..=106)
+        .map(|id| {
+            let item = match id {
+                105 => list_item("105", "Item 105 restocked"),
+                _ => list_item(&id.to_string(), &format!("Item {id}")),
+            };
+            match id {
+                103 => item.replace(">3</span>", ">5</span>"),
+                104 => item.replace("<span class=\"album__count\">3</span>", ""),
+                105 => item.replace(">3</span>", ">2</span>"),
+                _ => item,
+            }
+        })
+        .collect();
+    client.set("albums?page=1", listing);
+    client.set("/albums/105", album_page("Item 105 restocked", ""));
+    let summary = run_once(&client, dir.path(), T2, opts());
+    assert_eq!(summary.recounted_ids, vec!["103", "105"]);
+    assert!(!client.called("/albums/103?"));
+    assert!(client.called("/albums/105?"));
+    let albums = shard(dir.path());
+    let change = |id: &str| match albums[id].get("history") {
+        Some(Value::Array(items)) => items.iter().map(Value::py_str).collect::<Vec<_>>(),
+        _ => Vec::new(),
+    };
+    let event = |before: i64, after: i64| {
+        json(&format!(
+            r#"{{"at": "{T2}", "field": "photo count", "before": {before}, "after": {after}}}"#
+        ))
+        .py_str()
+    };
+    assert_eq!(change("103"), vec![event(3, 5)]);
+    assert_eq!(change("105"), vec![event(3, 2)]);
+    assert_eq!(change("104"), Vec::<String>::new());
+    assert_eq!(get(&albums, "103", "photo_count").py_str(), "5");
+    assert_eq!(get(&albums, "105", "photo_count").py_str(), "2");
+    assert_eq!(get(&albums, "104", "photo_count").py_str(), "3");
+
+    // A later run with the same counts records nothing more.
+    let summary = run_once(&client, dir.path(), "2026-08-19T12:00:00+10:00", opts());
+    assert_eq!(summary.recounted_ids, none);
+    assert_eq!(
+        shard(dir.path())["103"]["history"].py_str(),
+        albums["103"]["history"].py_str()
+    );
+}
+
+#[test]
 fn a_blocked_run_does_not_confirm_a_short_listing() {
     let dir = common::tmp();
     run_once(&paged(&[(101, 106), (107, 112)]), dir.path(), T1, opts());
