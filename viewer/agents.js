@@ -191,17 +191,16 @@ function unwrapAgentLink(raw, depth = 0) {
   /** @param {string} key */
   const param = key => values.get(key)?.values().next().value || "";
   if (WRAPPED_AGENTS.has(agent.id)) {
-    if (ambiguous(WRAPPED_PARAMS)) return null;
-    for (const key of WRAPPED_PARAMS) {
-      const inner = param(key);
-      if (!inner) continue;
-      // URLSearchParams decoded the one layer the agent applied; an agent
-      // quoting another agent is one more unwrap, and nothing deeper.
-      const item = AGENT_DEDUP.marketplaceItem(inner) ||
-        AGENT_DEDUP.marketplaceItem(unwrapAgentLink(inner, depth + 1) || "");
-      return item ? AGENT_DEDUP.marketplaceUrl(item) : null;
-    }
-    return null;
+    // One wrapped URL, under any of the names: 2 different ones name no
+    // single item.
+    const wrapped = new Set(WRAPPED_PARAMS.flatMap(key => [...(values.get(key) || [])]));
+    if (wrapped.size !== 1) return null;
+    const [inner] = wrapped;
+    // URLSearchParams decoded the one layer the agent applied; an agent
+    // quoting another agent is one more unwrap, and nothing deeper.
+    const item = AGENT_DEDUP.marketplaceItem(inner) ||
+      AGENT_DEDUP.marketplaceItem(unwrapAgentLink(inner, depth + 1) || "");
+    return item ? AGENT_DEDUP.marketplaceUrl(item) : null;
   }
   /** @param {Marketplace | undefined} platform @param {string} itemId */
   const item = (platform, itemId) => platform && /^[0-9]{1,24}$/.test(itemId)

@@ -170,6 +170,9 @@ test("unwrapping refuses ambiguity, other sites and deep nesting", () => {
     "https://www.fishgoo.com/#/home?productLink=" + WD,
     "https://www.fishgoo.com/?x=1#/product?productLink=" + WD,
     "https://www.fishgoo.com/#/product?productLink=" + WD + "&productLink=" + encodeURIComponent("https://weidian.com/item.html?itemID=5"),
+    // Two different wrapped URLs under different names name no single item.
+    "https://www.fishgoo.com/#/product?productLink=" + WD + "&url=" + TB,
+    "https://www.kakobuy.com/item/details?url=" + WD + "&productLink=" + TB,
     "https://notkakobuy.com/item/details?url=" + WD,
     "https://weidian.com/item.html?itemID=7652831688",
     "not a url",
@@ -186,4 +189,12 @@ test("unwrapping refuses ambiguity, other sites and deep nesting", () => {
   assert.equal(unwrapAgentLink(deeper), null);
   const routed = "https://www.kakobuy.com/item/details?url=" + encodeURIComponent("https://www.fishgoo.com/#/product?productLink=" + WD);
   assert.equal(unwrapAgentLink(routed), "https://weidian.com/item.html?itemID=7652831688");
+  // The fragment route ends at a second '#'; an encoded '#' stays in the
+  // wrapped URL; a missing slash before the route is the root path.
+  for (const url of [
+    "https://www.fishgoo.com/#/product?productLink=" + WD + "#&url=" + TB,
+    "https://www.fishgoo.com/#/product?productLink=" + WD + "%23x",
+    "https://www.fishgoo.com#/product?productLink=" + WD,
+    "https://www.kakobuy.com/item/details?url=" + WD + "&link=" + WD,
+  ]) assert.equal(unwrapAgentLink(url), "https://weidian.com/item.html?itemID=7652831688", url);
 });

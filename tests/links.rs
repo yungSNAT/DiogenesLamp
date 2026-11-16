@@ -269,6 +269,7 @@ const WD: &str = "https://weidian.com/item.html?itemID=7652831688";
 const TB: &str = "https://item.taobao.com/item.htm?id=560198996624";
 const ALI: &str = "https://detail.1688.com/offer/691234567890.html";
 const WD_ENC: &str = "https%3A%2F%2Fweidian.com%2Fitem.html%3FitemID%3D7652831688";
+const TB_ENC: &str = "https%3A%2F%2Fitem.taobao.com%2Fitem.htm%3Fid%3D560198996624";
 
 #[test]
 fn agent_links_unwrap_to_the_marketplace_item() {
@@ -315,6 +316,13 @@ fn agent_links_unwrap_to_the_marketplace_item() {
         (format!("https://www.fishgoo.com/#/product?productLink={WD_ENC}"), wd()),
         ("https://fishgoo.com/#/product?productLink=https%3A%2F%2Fdetail.1688.com%2Foffer%2F691234567890.html".into(), ali()),
         (format!("https://www.kakobuy.com/item/details?url=https%3A%2F%2Fwww.fishgoo.com%2F%23%2Fproduct%3FproductLink%3D{}", WD_ENC.replace('%', "%25")), wd()),
+        (format!("https://www.fishgoo.com/#/product?productLink={TB_ENC}"), tb()),
+        (format!("https://www.fishgoo.com#/product?productLink={WD_ENC}"), wd()),
+        (format!("https://www.fishgoo.com/#/product?productLink={WD_ENC}#&url={TB_ENC}"), wd()),
+        (format!("https://www.fishgoo.com/#/product?productLink={WD_ENC}%23x"), wd()),
+        (format!("https://www.kakobuy.com/item/details?url={WD_ENC}&link={WD_ENC}"), wd()),
+        (format!("https://www.fishgoo.com/#/product?productLink={WD_ENC}&url={TB_ENC}"), none()),
+        (format!("https://www.kakobuy.com/item/details?url={WD_ENC}&productLink={TB_ENC}"), none()),
         ("https://www.ponybuy.com/products/1/560198996624".into(), none()),
         ("https://www.ponybuy.com/product/3/7652831688".into(), none()),
         ("https://hoobuy.com/products/2/7652831688".into(), none()),

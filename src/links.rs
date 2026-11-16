@@ -104,7 +104,7 @@ fn url_pattern() -> String {
         .collect();
     let label = format!("[{PY_LETTERS}0-9-]");
     format!(
-        r#"(?<![{PY_LETTERS}0-9@-])(?:{h}{t}{t}{p}{s}?://)?(?P<host>(?:{label}+\.)*(?:{alt}))(?!\.?{label}|@)(?P<rest>/[^{PY_SPACE}'"<>]*|\?[^{PY_SPACE}'"<>]*)?"#,
+        r#"(?<![{PY_LETTERS}0-9@-])(?:{h}{t}{t}{p}{s}?://)?(?P<host>(?:{label}+\.)*(?:{alt}))(?!\.?{label}|@)(?P<rest>[/?#][^{PY_SPACE}'"<>]*)?"#,
         h = ignorecase_literal("h"),
         t = ignorecase_literal("t"),
         p = ignorecase_literal("p"),
@@ -263,7 +263,14 @@ pub fn item_link(platform: &str, item_id: &str) -> Option<Link> {
 /// The item an agent link names; `scanned` turns false if a wrapped URL
 /// could not be scanned.
 fn unwrap_agent(agent: &str, rest: &str, depth: usize, scanned: &mut bool) -> Option<Link> {
-    let rest = if rest.is_empty() { "/" } else { rest };
+    // An empty path is the root, as a URL parser reads it: `host#x` is `host/#x`.
+    let rooted;
+    let rest = if rest.is_empty() || rest.starts_with('#') {
+        rooted = format!("/{rest}");
+        &rooted
+    } else {
+        rest
+    };
     let routed;
     let rest = match FRAGMENT_ROUTES.iter().find(|(a, _)| *a == agent) {
         Some((_, route)) => {
@@ -286,15 +293,17 @@ fn unwrap_agent(agent: &str, rest: &str, depth: usize, scanned: &mut bool) -> Op
     };
     let param = |key: &str| values.get(key).and_then(|v| v.iter().next()).cloned();
     if WRAPPED_AGENTS.contains(&agent) {
-        if ambiguous(&WRAPPED_URL_PARAMS) {
-            return None;
-        }
-        for key in WRAPPED_URL_PARAMS {
-            if let Some(wrapped) = param(key).filter(|w| !w.is_empty()) {
-                return wrapped_link(&wrapped, depth + 1, scanned);
-            }
-        }
-        return None;
+        // One wrapped URL, under any of the names: 2 different ones name no
+        // single item.
+        let wrapped: BTreeSet<&String> = WRAPPED_URL_PARAMS
+            .iter()
+            .filter_map(|k| values.get(*k))
+            .flatten()
+            .collect();
+        return match Vec::from_iter(wrapped)[..] {
+            [wrapped] => wrapped_link(wrapped, depth + 1, scanned),
+            _ => None,
+        };
     }
     if let Some((id_key, channel_key)) = agent_query(agent) {
         let ids: HashSet<String> = ID_PARAMS.iter().filter_map(|k| param(k)).collect();
