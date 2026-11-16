@@ -20,6 +20,8 @@
   skip it as unchanged, and `lamp doctor` counts such albums as
   `links_truncated`. Before, only that run's summary named it, and nothing did
   after the next run. A fetch that scans every word clears the mark.
+- Non-ASCII hostnames are converted with the `idna` crate's unicode-rs back
+  end instead of ICU4X, so `Cargo.lock` lists 153 packages instead of 171.
 - An agent link whose wrapped `url=` value exceeds the link pattern's
   backtracking limit marks its album partly scanned and `links_truncated`.
   Before, the link was dropped and the album counted as fully scanned.
