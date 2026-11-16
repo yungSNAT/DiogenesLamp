@@ -321,7 +321,13 @@ pub fn cover_facts(path: &Path) -> Map {
     let Ok(image) = opened.decode() else {
         return result;
     };
-    let (w, h, luma) = to_luma(&image);
+    result.insert("cover_hash".into(), difference_hash(&opened, &image).into());
+    result
+}
+
+/// The 64-bit difference hash of a decoded image, as 16 hex digits.
+fn difference_hash(opened: &Opened, image: &DynamicImage) -> String {
+    let (w, h, luma) = to_luma(image);
     let (w, h, luma) = orient_luma(w, h, luma, opened.orientation);
     let pixels = resize_luma(w as usize, h as usize, &luma, 9, 8);
     let mut bits: u64 = 0;
@@ -330,8 +336,32 @@ pub fn cover_facts(path: &Path) -> Map {
             bits = (bits << 1) | u64::from(pixels[row * 9 + col] > pixels[row * 9 + col + 1]);
         }
     }
-    result.insert("cover_hash".into(), format!("{bits:016x}").into());
-    result
+    format!("{bits:016x}")
+}
+
+/// A user's image fingerprinted as `cover_facts` fingerprints a cover, under
+/// the same limits, or why it cannot be.
+pub fn image_hash(path: &Path) -> std::result::Result<String, String> {
+    let meta = std::fs::metadata(path).map_err(|e| e.to_string())?;
+    if !meta.is_file() {
+        return Err("not a file".into());
+    }
+    if meta.len() > 8 * 1024 * 1024 {
+        return Err("larger than 8 MiB".into());
+    }
+    let opened = open(path).map_err(|e| e.to_string())?;
+    if !opened.supported() {
+        let name = opened.format.extensions_str().first().copied();
+        return Err(format!(
+            "a {} image; only JPEG, PNG and WebP are read",
+            name.unwrap_or("unknown").to_uppercase()
+        ));
+    }
+    if opened.too_large() {
+        return Err("over 20 megapixels or 8192 pixels on an edge".into());
+    }
+    let image = opened.decode()?;
+    Ok(difference_hash(&opened, &image))
 }
 
 /// `Image.thumbnail` target size: fit within the box, keep the aspect ratio.
