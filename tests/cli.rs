@@ -273,7 +273,8 @@ fn serve_warns_when_there_is_no_index_and_needs_no_source_tree() {
             let _ = child.kill();
             let output = child.wait_with_output().unwrap();
             eprintln!(
-                "port {port}: no serving line ({line:?}); stderr: {}",
+                "port {port}: no serving line ({line:?}); {}; stderr: {}",
+                output.status,
                 String::from_utf8_lossy(&output.stderr)
             );
             None
