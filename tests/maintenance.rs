@@ -103,14 +103,15 @@ fn restore_rejects_a_snapshot_with_a_duplicate_member() {
     let index = zip_member(&archive, "index.json");
     let shard = zip_member(&archive, "catalog/example.json");
     // The zip writer refuses a repeated name, so write a placeholder of the
-    // same length and rename it in the local and central headers.
+    // same length and rename it in the local and central headers. Both
+    // copies are valid, so only the repeated name can make restore refuse.
     let bad = dir.path().join("bad.zip");
     make_zip(
         &bad,
         &[
             ("index.json", index),
-            ("catalog/example.json", shard),
-            ("catalog/examplX.json", b"{}".to_vec()),
+            ("catalog/example.json", shard.clone()),
+            ("catalog/examplX.json", shard),
         ],
     );
     let bytes = std::fs::read(&bad).unwrap();
