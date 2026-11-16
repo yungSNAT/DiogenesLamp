@@ -169,7 +169,12 @@ pub fn merge_album(old: Option<&Map>, new: &Map, run_ts: &str) -> Map {
         if truthy(old, "gone_since") {
             merged.insert("gone_since".into(), old["gone_since"].clone());
         }
-        for key in ["thumb_version", "cover_hash", "cover_prepared"] {
+        for key in [
+            "thumb_version",
+            "cover_hash",
+            "cover_prepared",
+            "list_photo_count",
+        ] {
             if !merged.contains_key(key)
                 && let Some(v) = old.get(key)
             {

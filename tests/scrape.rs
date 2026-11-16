@@ -787,7 +787,8 @@ fn a_listing_photo_count_change_is_recorded_without_a_detail_fetch() {
         .collect();
     client.set("albums?page=1", listing);
     client.set("/albums/105", album_page("Item 105 restocked", ""));
-    let summary = run_once(&client, dir.path(), T2, opts());
+    let mut summary = run_once(&client, dir.path(), T2, opts());
+    summary.recounted_ids.sort();
     assert_eq!(summary.recounted_ids, vec!["103", "105"]);
     assert!(!client.called("/albums/103?"));
     assert!(client.called("/albums/105?"));

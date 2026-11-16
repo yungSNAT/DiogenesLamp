@@ -407,6 +407,9 @@ pub fn report_line(s: &SellerSummary, reported: usize, total: usize, dry_run: bo
     if !s.returned_ids.is_empty() {
         line.push_str(&format!(", {} returned", s.returned_ids.len()));
     }
+    if !s.recounted_ids.is_empty() {
+        line.push_str(&format!(", {} recounted", s.recounted_ids.len()));
+    }
     if !s.partly_scanned_ids.is_empty() {
         line.push_str(&format!(", {} partly scanned", s.partly_scanned_ids.len()));
     }
@@ -415,6 +418,7 @@ pub fn report_line(s: &SellerSummary, reported: usize, total: usize, dry_run: bo
         ("failed", &s.failed_ids),
         ("new", &s.new_ids),
         ("returned", &s.returned_ids),
+        ("recounted", &s.recounted_ids),
         ("partly scanned", &s.partly_scanned_ids),
     ] {
         if !ids.is_empty() {
