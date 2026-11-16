@@ -11,6 +11,7 @@ export type ViewerAlbum = Omit<CatalogueAlbum, 'links'> & {
   links: {platform: string; url: string}[];
   last_seen?: string;
   thumb_version?: string;
+  date_published?: string;
   date_modified?: string;
   description?: string;
   description_truncated?: boolean;
