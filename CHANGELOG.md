@@ -20,6 +20,9 @@
   skip it as unchanged, and `lamp doctor` counts such albums as
   `links_truncated`. Before, only that run's summary named it, and nothing did
   after the next run. A fetch that scans every word clears the mark.
+- `lamp serve` and `lamp demo` write their `serving on` line at once when
+  stdout is redirected to a file or pipe. Before, it waited in the output
+  buffer until the server stopped.
 
 ## 0.1.2 (2026-11-13)
 
