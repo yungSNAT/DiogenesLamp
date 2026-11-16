@@ -381,6 +381,25 @@ fn a_word_that_exceeds_the_backtracking_limit_loses_only_itself() {
 }
 
 #[test]
+fn a_wrapped_link_that_exceeds_the_backtracking_limit_is_reported() {
+    // The agent link's wrapped URL, dotted labels that never reach a known
+    // host, exceeds the limit on its own. That link is lost, the next word's
+    // link is kept, and the scan says it stopped early.
+    let dotted = "a.".repeat(40_000);
+    let text = format!(
+        "https://www.kakobuy.com/item/details?url={dotted}/weidian.com/item.html?itemID=3 \
+         https://weidian.com/item.html?itemID=1"
+    );
+    assert_eq!(
+        extract_links(&text),
+        (
+            vec![l("weidian", "https://weidian.com/item.html?itemID=1")],
+            false
+        )
+    );
+}
+
+#[test]
 fn item_link_builds_only_well_formed_items() {
     assert_eq!(
         item_link("taobao", "1").map(|l| l.url),
