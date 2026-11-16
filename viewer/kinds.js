@@ -73,11 +73,15 @@ const PARTS_PATTERN = latinPattern(PARTS);
 /** @param {Kind} kind @param {RegExp} pattern @param {string} text */
 const mentions = (kind, pattern, text) => pattern.test(text) || kind.cjk.some(token => text.includes(token));
 
-// A link needs a slash, so a title with none skips the pattern. Blanking
-// keeps every other character where it was, for wordRanges.
+// A link needs a slash, so a title with none skips the pattern: after the
+// scheme, or after the host when there is none, so "https://shoes.example.com"
+// names no kind. After a scheme the host is letters and digits in any
+// script, so "https://卫衣.example.com" names none either; a link with no
+// path ends with its host, so "、卫衣" after it still reads. Blanking keeps
+// every other character where it was, for wordRanges.
 /** @param {string} lowered an NFKC-normalised, lowercased title */
 const withoutLinks = lowered => lowered.includes("/")
-  ? lowered.replace(/(?:https?:\/\/|(?<![a-z0-9.-]))[a-z0-9.-]+\.[a-z]{2,}\/\S*/g, link => " ".repeat(link.length))
+  ? lowered.replace(/https?:\/\/[\p{L}\p{M}\p{N}.-]*(?::\d+)?(?:\/\S*)?|(?<![a-z0-9.-])[a-z0-9.-]+\.[a-z]{2,}\/\S*/gu, link => " ".repeat(link.length))
   : lowered;
 
 /**
@@ -105,15 +109,17 @@ function kindOf(title) {
 // hyphen joins rather than separates ("off-white" names no colour).
 // Single Chinese characters are too loose to list: 包 is in 包邮, free
 // postage. No brand or model names: aliases for those belong in the
-// operator's own notes, not in the repository.
+// operator's own data/aliases.json (setOperatorAliases), not in the repository.
 
-/** @typedef {"garment" | "colour" | "fit" | "material"} Facet */
+/** @typedef {"garment" | "colour" | "fit" | "material"} TableFacet */
+/** @typedef {TableFacet | "alias"} Facet */
 /** @typedef {{facet: Facet, en: string, latin: string[], cjk: string[]}} Word */
+/** @typedef {Word & {facet: TableFacet}} TableWord */
 
-/** @param {Facet} facet @param {[string, string[], string[]][]} rows @returns {Word[]} */
+/** @param {TableFacet} facet @param {[string, string[], string[]][]} rows @returns {TableWord[]} */
 const wordRows = (facet, rows) => rows.map(([en, latin, cjk]) => ({ facet, en, latin, cjk }));
 
-/** @type {Word[]} */
+/** @type {TableWord[]} */
 const WORDS = [
   ...wordRows("garment", [
     ["sweatshirt", ["sweatshirts", "hoodie", "hoodies", "hoody", "crewneck"], ["卫衣"]],
@@ -209,10 +215,7 @@ const WORDS = [
 const wordForms = word => [word.en, ...word.latin];
 /** @type {Map<string, string[]>} */
 const WORDS_BY_FORM = new Map();
-for (const word of WORDS) {
-  for (const form of wordForms(word)) WORDS_BY_FORM.set(form, [...WORDS_BY_FORM.get(form) || [], word.en]);
-}
-const LONGEST_FORM = Math.max(...[...WORDS_BY_FORM.keys()].map(form => form.split(" ").length));
+let LONGEST_FORM = 1;
 
 /** @typedef {{literals: string[], words: readonly string[]}} SearchTerm */
 
@@ -241,8 +244,15 @@ function searchTerms(query) {
 // filling, so only its Chinese reads as the material.
 const TRAIT_BY_FORM = new Map(WORDS.filter(word => word.facet !== "garment")
   .flatMap(word => wordForms(word).filter(form => form !== "down").map(form => [form, word.en])));
-const LATIN_TRAIT = new RegExp("(?<![a-z0-9-])(" + [...TRAIT_BY_FORM.keys()]
+/** @param {Iterable<string>} forms */
+const wholeWords = forms => new RegExp("(?<![a-z0-9-])(" + [...forms]
   .sort((a, b) => b.length - a.length).map(escapeToken).join("|") + ")(?![a-z0-9-])", "g");
+const LATIN_TRAIT = wholeWords(TRAIT_BY_FORM.keys());
+const HAN_CHARACTER = /\p{Script=Han}/u;
+/** @type {readonly string[]} */
+const NO_WORDS = Object.freeze([]);
+/** @type {readonly [string, Word[]][]} */
+const NO_TOKENS = Object.freeze([]);
 // A title is read left to right, taking the longest token at each place,
 // so 粉红色 is pink and not red as well. A token that means 2 words, such
 // as 牛仔裤 (jeans, denim), is listed under both.
@@ -256,26 +266,121 @@ for (const word of WORDS) {
 for (const entry of [...WORDS_BY_TOKEN].sort((a, b) => b[0].length - a[0].length)) {
   TOKENS_BY_FIRST.set(entry[0][0], [...TOKENS_BY_FIRST.get(entry[0][0]) || [], entry]);
 }
-const HAN_CHARACTER = /\p{Script=Han}/u;
-/** @type {readonly string[]} */
-const NO_WORDS = Object.freeze([]);
-/** @type {readonly [string, Word[]][]} */
-const NO_TOKENS = Object.freeze([]);
+
+// The operator's aliases: brand and model names from data/aliases.json,
+// read like the table's words but never a colour, fit or material. A
+// title token with a Chinese character is found anywhere, even inside or
+// across the table's tokens, so its own index is read at every place; one
+// without is a seller code, found only as a whole Latin word. `forms` are
+// only typed, like the table's Latin forms.
+/** @typedef {Word & {facet: "alias", codes: string[]}} AliasWord */
+/** @type {Map<string, [string, AliasWord[]][]>} */
+const ALIAS_TOKENS_BY_FIRST = new Map();
+/** @type {Map<string, AliasWord[]>} */
+const ALIASES_BY_CODE = new Map();
+let ALIAS_CODE = /(?!)/g;
+/** @type {Word[]} the gloss order: the operator's aliases, then the table */
+let GLOSS_ORDER = WORDS;
+
+/** @param {AliasWord[]} aliases */
+function indexWords(aliases) {
+  WORDS_BY_FORM.clear();
+  ALIAS_TOKENS_BY_FIRST.clear();
+  ALIASES_BY_CODE.clear();
+  GLOSS_ORDER = [...aliases, ...WORDS];
+  for (const word of GLOSS_ORDER) {
+    for (const form of wordForms(word)) WORDS_BY_FORM.set(form, [...WORDS_BY_FORM.get(form) || [], word.en]);
+  }
+  LONGEST_FORM = Math.max(...[...WORDS_BY_FORM.keys()].map(form => form.split(" ").length));
+  /** @type {Map<string, AliasWord[]>} */
+  const byToken = new Map();
+  for (const alias of aliases) {
+    for (const token of alias.cjk) byToken.set(token, [...byToken.get(token) || [], alias]);
+    for (const code of alias.codes) ALIASES_BY_CODE.set(code, [...ALIASES_BY_CODE.get(code) || [], alias]);
+  }
+  for (const entry of byToken) {
+    ALIAS_TOKENS_BY_FIRST.set(entry[0][0], [...ALIAS_TOKENS_BY_FIRST.get(entry[0][0]) || [], entry]);
+  }
+  ALIAS_CODE = ALIASES_BY_CODE.size ? wholeWords(ALIASES_BY_CODE.keys()) : /(?!)/g;
+}
+indexWords([]);
+
+/** @param {unknown} value @returns {value is Record<string, unknown>} */
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+/** @param {unknown} value @returns {string} "" unless a string with text */
+const aliasText = value => typeof value === "string"
+  ? value.normalize("NFKC").toLowerCase().split(/\s+/).filter(Boolean).join(" ") : "";
+/** @param {unknown} value @returns {string[] | null} null unless a list of strings with text */
+const aliasList = value => {
+  if (!Array.isArray(value)) return null;
+  const items = value.map(aliasText);
+  return items.every(Boolean) ? items : null;
+};
 
 /**
- * Calls `visit` for each table token in a title, with its words and where
- * it starts.
+ * Replaces the operator's aliases with those in a parsed data/aliases.json,
+ * {"version": 1, "aliases": [{"en", "tokens", "forms"?}]}. A file of any
+ * other shape throws and changes nothing. A record with a missing or
+ * malformed field, or an `en` an earlier record already used, is skipped
+ * and counted, so the operator can be told.
+ * @param {unknown} file
+ * @returns {{loaded: number, skipped: number}}
+ */
+function setOperatorAliases(file) {
+  if (!isRecord(file) || file.version !== 1 || !Array.isArray(file.aliases)) {
+    throw new TypeError('not {"version": 1, "aliases": [...]}');
+  }
+  /** @type {AliasWord[]} */
+  const aliases = [];
+  const seen = new Set();
+  let skipped = 0;
+  for (const record of file.aliases) {
+    const en = isRecord(record) ? aliasText(record.en) : "";
+    const tokens = isRecord(record) ? aliasList(record.tokens) : null;
+    const forms = isRecord(record) ? aliasList(record.forms ?? []) : null;
+    if (!en || !tokens?.length || !forms || seen.has(en)) {
+      skipped++;
+      continue;
+    }
+    seen.add(en);
+    const codes = tokens.filter(token => !HAN_CHARACTER.test(token));
+    aliases.push({ facet: "alias", en, latin: [...forms, ...codes], codes,
+      cjk: tokens.filter(token => HAN_CHARACTER.test(token)) });
+  }
+  indexWords(aliases);
+  return { loaded: aliases.length, skipped };
+}
+
+/**
+ * Calls `visit` for each token in a title, with its words and where it
+ * starts: the table's Chinese tokens, then the aliases' Chinese tokens and
+ * seller codes.
  * @param {string} text a lowercased title with its links blanked
  * @param {(words: Word[], at: number, length: number) => void} visit
  */
 function eachToken(text, visit) {
-  if (!HAN_CHARACTER.test(text)) return;
-  for (let at = 0; at < text.length;) {
-    let length = 1;
-    for (const [token, words] of TOKENS_BY_FIRST.get(text[at]) || NO_TOKENS) {
-      if (text.startsWith(token, at)) { length = token.length; visit(words, at, length); break; }
+  const han = HAN_CHARACTER.test(text);
+  if (han) {
+    for (let at = 0; at < text.length;) {
+      let length = 1;
+      for (const [token, words] of TOKENS_BY_FIRST.get(text[at]) || NO_TOKENS) {
+        if (text.startsWith(token, at)) { length = token.length; visit(words, at, length); break; }
+      }
+      at += length;
     }
-    at += length;
+  }
+  if (han && ALIAS_TOKENS_BY_FIRST.size) {
+    for (let at = 0; at < text.length; at++) {
+      for (const [token, words] of ALIAS_TOKENS_BY_FIRST.get(text[at]) || NO_TOKENS) {
+        if (text.startsWith(token, at)) visit(words, at, token.length);
+      }
+    }
+  }
+  if (!ALIASES_BY_CODE.size) return;
+  for (const match of text.matchAll(ALIAS_CODE)) {
+    visit(/** @type {AliasWord[]} */ (ALIASES_BY_CODE.get(match[1])), /** @type {number} */ (match.index), match[1].length);
   }
 }
 
@@ -295,10 +400,10 @@ function wordRanges(lowered, words) {
 }
 
 /**
- * The English words a title carries: `gloss` for its Chinese tokens, in
- * table order, and `traits`, the colour, fit and material words read from
- * its Chinese tokens or its Latin words. Shared and frozen when empty, as
- * most titles in a Latin catalogue are.
+ * The English words a title carries: `gloss` for its tokens, the
+ * operator's aliases first and then table order, and `traits`, the colour,
+ * fit and material words read from its Chinese tokens or its Latin words.
+ * Shared and frozen when empty, as most titles in a Latin catalogue are.
  * @param {string} lowered an NFKC-normalised, lowercased title
  * @returns {{gloss: readonly string[], traits: readonly string[]}}
  */
@@ -307,12 +412,13 @@ function readWords(lowered) {
   /** @type {Set<Word>} */
   const found = new Set();
   eachToken(text, words => { for (const word of words) found.add(word); });
-  const gloss = found.size ? WORDS.filter(word => found.has(word)) : [];
-  const traits = new Set(gloss.filter(word => word.facet !== "garment").map(word => word.en));
+  const gloss = found.size ? GLOSS_ORDER.filter(word => found.has(word)) : [];
+  const traits = new Set(gloss.filter(word => word.facet !== "garment" && word.facet !== "alias").map(word => word.en));
   for (const match of text.matchAll(LATIN_TRAIT)) traits.add(/** @type {string} */ (TRAIT_BY_FORM.get(match[1])));
-  return { gloss: gloss.length ? gloss.map(word => word.en) : NO_WORDS, traits: traits.size ? [...traits] : NO_WORDS };
+  return { gloss: gloss.length ? [...new Set(gloss.map(word => word.en))] : NO_WORDS,
+    traits: traits.size ? [...traits] : NO_WORDS };
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { KINDS, KIND_IDS, UNSORTED, kindOf, WORDS, searchTerms, readWords, wordRanges };
+  module.exports = { KINDS, KIND_IDS, UNSORTED, kindOf, WORDS, searchTerms, readWords, wordRanges, setOperatorAliases };
 }

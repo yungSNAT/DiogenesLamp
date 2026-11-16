@@ -52,3 +52,27 @@ test("status regions stay silent while shards stream and speak once loaded", () 
     ["coverage", "polite"], ["status", "polite"],
   ]);
 });
+
+test("a failed index load ends the status region's silence and says so", () => {
+  // Records the live setting and the text of each write.
+  const writes = [], attrs = {};
+  const status = {
+    setAttribute(key, value) { attrs[key] = value; },
+    replaceChildren() { writes.push([attrs["aria-live"], ""]); },
+    set textContent(text) { writes.push([attrs["aria-live"], text]); },
+  };
+  const els = {status, message: {hidden: true, textContent: ""}, progress: {style: {}, parentElement: {hidden: false}},
+    grid: {setAttribute() {}}, filtersClear: {}};
+  const state = {loadedSellers: 0, filtered: [], albums: [], failedShards: [], dupHidden: 0, view: {groupKey: ""}};
+  const writers = new Function("state", "els", "tallyFigure", "tallySeparator", "anyFilterActive",
+    "currentFilters", "setGridMessage", "setLoadNote",
+    ["catalogueLoading", "setLive", "setStatus", "showIndexFailure"].map(lift).join("") +
+    "\nreturn {setStatus, showIndexFailure};"
+  )(state, els, () => "", () => "", () => false, () => ({}), () => {}, () => {});
+
+  writers.setStatus();
+  writers.showIndexFailure();
+  assert.deepEqual(writes, [["off", ""], ["polite", "Catalogue not loaded"]]);
+  assert.equal(els.message.hidden, false);
+  assert.equal(els.progress.parentElement.hidden, true);
+});

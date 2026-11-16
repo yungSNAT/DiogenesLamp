@@ -45,8 +45,8 @@ You need only a browser, or the commands below, which use tools every Windows
 and Linux machine has. Each stops if the download does not match
 `SHA256SUMS`. On Windows, in PowerShell:
 
-    $base = 'https://github.com/yungSNAT/DiogenesLamp/releases/download/v0.1.1'
-    $asset = 'diogenes-lamp-0.1.1-x86_64-pc-windows-msvc.zip'
+    $base = 'https://github.com/yungSNAT/DiogenesLamp/releases/download/v0.1.2'
+    $asset = 'diogenes-lamp-0.1.2-x86_64-pc-windows-msvc.zip'
     Invoke-WebRequest "$base/$asset" -OutFile $asset
     Invoke-WebRequest "$base/SHA256SUMS" -OutFile SHA256SUMS
     $sum = (Select-String -Path SHA256SUMS -SimpleMatch $asset).Line.Split(' ')[0]
@@ -56,8 +56,8 @@ and Linux machine has. Each stops if the download does not match
 
 Add that folder to your `PATH` to type `lamp` alone. On Linux:
 
-    base=https://github.com/yungSNAT/DiogenesLamp/releases/download/v0.1.1
-    asset=diogenes-lamp-0.1.1-x86_64-unknown-linux-musl.tar.gz
+    base=https://github.com/yungSNAT/DiogenesLamp/releases/download/v0.1.2
+    asset=diogenes-lamp-0.1.2-x86_64-unknown-linux-musl.tar.gz
     curl -fsSLO "$base/$asset" && curl -fsSLO "$base/SHA256SUMS" &&
       awk -v f="$asset" '$2 == f' SHA256SUMS | sha256sum --check &&
       mkdir -p ~/.local/bin && tar -xzf "$asset" -C ~/.local/bin lamp &&
@@ -78,8 +78,8 @@ With the [GitHub CLI](https://cli.github.com/) signed in (`gh auth login`),
 these commands also check the signed provenance, which shows the file was built
 from this repository's tagged source by its release workflow. On Linux:
 
-    tag=v0.1.1
-    asset=diogenes-lamp-0.1.1-x86_64-unknown-linux-musl.tar.gz
+    tag=v0.1.2
+    asset=diogenes-lamp-0.1.2-x86_64-unknown-linux-musl.tar.gz
     gh release download "$tag" --repo yungSNAT/DiogenesLamp --pattern "$asset" --pattern SHA256SUMS &&
       awk -v f="$asset" '$2 == f' SHA256SUMS | sha256sum --check &&
       gh attestation verify "$asset" --repo yungSNAT/DiogenesLamp \
@@ -89,8 +89,8 @@ from this repository's tagged source by its release workflow. On Linux:
 
 On Windows, in PowerShell:
 
-    $tag = 'v0.1.1'
-    $asset = 'diogenes-lamp-0.1.1-x86_64-pc-windows-msvc.zip'
+    $tag = 'v0.1.2'
+    $asset = 'diogenes-lamp-0.1.2-x86_64-pc-windows-msvc.zip'
     gh release download $tag --repo yungSNAT/DiogenesLamp --pattern $asset --pattern SHA256SUMS
     if ($LASTEXITCODE) { throw 'download failed' }
     $sum = (Select-String -Path SHA256SUMS -SimpleMatch $asset).Line.Split(' ')[0]
@@ -147,6 +147,13 @@ when you press Ctrl+C. It never writes to `data/` or `sources.toml`.
 
 Flags, scrape behaviour and the viewer's features are in
 [docs/reference.md](docs/reference.md).
+
+Search in English also finds the Chinese words sellers write for garments,
+colours, fits and materials (experimental), and, except on a narrow screen,
+a card glosses up to 2 such words in English before its title. Brand and model names come from an
+optional `aliases.json` of your own, in Chinese or as seller codes; the
+repository ships none. Both are described under
+[Serve and browse](docs/reference.md#serve-and-browse).
 
 ### Refresh on a schedule
 
@@ -255,12 +262,13 @@ description-only operation.
 
 `doctor` reads files without changing them. It reports invalid or missing
 metadata, duplicate IDs, cover coverage, unknown prices, missing detail dates,
-albums without a recorded description and recorded detail failures. It returns a non-zero exit code for structural
+albums without a recorded description, albums whose purchase-link scan
+stopped early (`links_truncated`) and recorded detail failures. It returns a non-zero exit code for structural
 errors. It does not verify whether a remote listing or extracted price is current.
 
 `snapshot` saves metadata only, excluding images, browser annotations, source
 lists and debug captures. It requires every indexed shard to exist and pass
-validation before creating an archive. Each archive is limited to 10,000 files and 256 MB
+validation before creating an archive. Each archive is limited to 10,000 files and 256 MiB
 of uncompressed metadata. Snapshots accumulate in `data/snapshots/`; retain the
 ones you need. Restore validates the whole archive before writing, preserves
 the previous metadata in another archive and replaces the index last. Files
@@ -279,9 +287,11 @@ detail refreshes.
 
 This command processes cached covers locally, saves a metadata snapshot before
 it changes the first cover and reports byte counts and failures. Repeat it to
-process the next batch; prepared covers are skipped. From the release after
-v0.1.1, a batch with nothing left to prepare saves no snapshot (its report
-shows `"snapshot": null`); v0.1.1 saves one for every batch.
+process the next batch; prepared covers are skipped, and a batch with nothing
+left to prepare saves no snapshot (its report shows `"snapshot": null`).
+Covers missing from disk are skipped too, without counting against `--limit`,
+and counted in the report's `missing_covers` (only those the batch passes
+before it fills); `lamp scrape` fetches them again.
 Resizing replaces the cached image with a smaller copy, so preserve original
 images separately if you need them. Metadata snapshots do not restore original
 cover pixels. The command makes no network requests.

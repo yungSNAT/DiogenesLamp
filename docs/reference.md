@@ -82,6 +82,9 @@ word is not scanned, so a link later in the same word is not stored, whilst
 links in every other word are. The
 line counts and names such albums as partly scanned, and the run summary
 lists them as `partly_scanned_ids`. A re-scrape stops at the same place.
+The album's record carries `links_truncated: true`, so the mark outlasts
+later runs that skip the album as unchanged; a fetch that scans every word
+clears it.
 
 ## Serve and browse
 
@@ -102,7 +105,8 @@ searched after titles and named as the match reason; the panel under
 **More filters and saved work** says how many loaded albums have one
 recorded. An English garment, colour, fit or material word also finds a
 title with the Chinese words sellers write for it, so `hoodie` finds 卫衣
-and `jacket` finds 外套 (experimental, English to Chinese only). Press `/`
+and `jacket` finds 外套 (experimental, English to Chinese only). Brand and
+model names come from your own aliases file, described below. Press `/`
 to focus search.
 Filter by seller, category or posting age, and sort by price, photo count or
 newest first. **More filters and saved work** includes minimum and maximum
@@ -169,6 +173,31 @@ table prints up to 2 of them in English before the title, garments first,
 except on a narrow screen, and its preview lists them all; the title button's accessible name
 includes them. The words are a fixed list in `viewer/kinds.js` with no brand
 or model names, and their precision on real catalogues is unmeasured.
+
+**Your own aliases.** The viewer also reads an optional `aliases.json` in the
+data directory, beside `index.json`, for the brand and model names your
+sellers write in Chinese or as codes. The repository ships none. For example:
+
+```json
+{"version": 1, "aliases": [
+  {"en": "harbour works", "tokens": ["港湾", "HW"]},
+  {"en": "north peak", "tokens": ["北峰"], "forms": ["northpeak"]}
+]}
+```
+
+`en` is the name you search by, and it prints in the gloss before any word
+from the fixed list. A token with a Chinese character is found anywhere in a
+title, even inside a word from the fixed list; any other token is a seller
+code, found only as a whole word outside links, so `HW` does not match `HWY`,
+`HW-01` or `https://hw.example.com`. A seller code or form typed into search
+finds the same titles as `en`, after any album whose item ID it is; `forms`
+(optional) are only typed, never read from titles. Matching ignores case and full-width forms, and a one-character
+Chinese token matches wherever that character appears. Aliases are never
+colour, fit or material filters. The file is read when the page loads, so
+reload after editing it; `lamp snapshot` and `lamp restore` leave it out. A
+record with a missing or malformed field, or an `en` already used, is
+skipped; a file that is not valid JSON or not version 1 is not used. Either
+way the note under the header says so and the catalogue loads as usual.
 
 **Links and prices** holds three choices that stay in this browser:
 

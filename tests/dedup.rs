@@ -550,6 +550,23 @@ fn many_sellers_index_in_linear_time() {
     );
 }
 
+/// An album ID that loses twice keeps its first alias position and takes the
+/// later winner, as a dict assignment does.
+#[test]
+fn a_repeated_alias_keeps_its_first_position_and_last_target() {
+    let albums = [
+        titled(1, "one", "Alpha jacket first", "2026-01-01"),
+        titled(2, "one", "Alpha jacket first", "2026-02-01"),
+        titled(5, "one", "Beta jacket second", "2026-01-01"),
+        titled(6, "one", "Beta jacket second", "2026-02-01"),
+        titled(1, "one", "Gamma jacket third", "2026-01-01"),
+        titled(3, "one", "Gamma jacket third", "2026-02-01"),
+    ];
+    let (selected, aliases) = newest_listings(&albums);
+    assert_eq!(ids(&selected), ["2", "6", "3"]);
+    assert_eq!(pairs(&aliases), [("1", "3"), ("5", "6")]);
+}
+
 #[test]
 fn invalid_index_ids_or_aliases_are_rejected() {
     for (ids, aliases) in [
