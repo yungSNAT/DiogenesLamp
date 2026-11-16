@@ -19,6 +19,10 @@ export type ViewerAlbum = Omit<CatalogueAlbum, 'links'> & {
   price_evidence?: {token?: string; rule?: string; field?: string; candidates?: unknown[]};
   history?: {at: string; field?: string; before?: unknown; after?: unknown}[];
 };
+// What the preview's list of an item's listings shows; an unselected
+// album keeps only this.
+export type ListingCopy = Pick<ViewerAlbum, 'id' | 'seller' | 'price' | 'date_published' | 'first_seen'
+  | 'gone_since' | 'album_url'>;
 export type Seller = {id: string; name: string; album_count: number; shard: string;
   album_ids?: string[];
   run?: {last_success?: string; failed_ids?: string[]}};
@@ -45,8 +49,8 @@ export type ViewerState = {
   bannedKeys: Set<string>;
   titleKeyCounts: Map<string, number>;
   shardAlbums: Map<string, ViewerAlbum[]>;
-  unselectedAlbums: Map<string, ViewerAlbum[]>;
-  listingCopies: Map<string, ViewerAlbum[]>;
+  unselectedAlbums: Map<string, ListingCopy[]>;
+  listingCopies: Map<string, ListingCopy[]>;
   failedShards: string[];
   aliasNote: string;
   categories: Set<string>;

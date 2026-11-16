@@ -321,12 +321,16 @@ function admittedCatalogueShard(raw, seller) {
 // shows once. An older index without album_ids selects in the viewer, which
 // keeps every album, so it has none here.
 /** @param {unknown} raw @param {{id: string, album_ids?: string[]}} seller
- * @returns {import("./controller-types.js").ViewerAlbum[]} */
+ * @returns {import("./controller-types.js").ListingCopy[]} */
 function unselectedShardAlbums(raw, seller) {
   const albums = /** @type {{albums?: unknown}} */ (raw || {}).albums;
   if (seller.album_ids === undefined || !Array.isArray(albums)) return [];
   const selected = new Set(seller.album_ids);
-  return albums.filter(album => album && !selected.has(album.id) && validCatalogueShard({albums: [album]}, seller.id));
+  // Only the fields the preview's list shows are kept, so the whole
+  // catalogue's descriptions and histories do not stay in memory.
+  return albums.filter(album => album && !selected.has(album.id) && validCatalogueShard({albums: [album]}, seller.id))
+    .map(album => ({id: album.id, seller: album.seller, price: album.price, date_published: album.date_published,
+      first_seen: album.first_seen, gone_since: album.gone_since, album_url: album.album_url}));
 }
 
 // Each shown listing's other listings, by the aliases that map an older

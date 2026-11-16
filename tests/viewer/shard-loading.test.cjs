@@ -81,6 +81,12 @@ test("an indexed shard keeps the albums it did not select, each checked as a sel
     record("300", {album_url: "http://one.x.yupoo.com/albums/300"}), record("400", {seller: "two"}),
     record("500", {price: -1}), null]};
   assert.deepEqual(unselectedShardAlbums(shard, seller).map(a => a.id), ["100"]);
+  // Only what the preview's list shows is kept, not descriptions or history.
+  const full = record("600", {price: 80, date_published: "2026-10-01", first_seen: "2026-10-02T09:00:00+11:00",
+    gone_since: "2026-11-01T09:00:00+11:00", description: "long", history: [{at: "x"}]});
+  assert.deepEqual(unselectedShardAlbums({albums: [full]}, seller), [{id: "600", seller: "one", price: 80,
+    date_published: "2026-10-01", first_seen: "2026-10-02T09:00:00+11:00", gone_since: "2026-11-01T09:00:00+11:00",
+    album_url: "https://one.x.yupoo.com/albums/600"}]);
   assert.deepEqual(unselectedShardAlbums(shard, {id: "one", shard: "catalog/one.json"}), []);
   assert.deepEqual(unselectedShardAlbums(null, seller), []);
 });

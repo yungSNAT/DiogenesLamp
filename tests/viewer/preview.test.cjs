@@ -174,6 +174,15 @@ test("the preview lists every listing of the item, cheapest first, with price an
     "two · Price unknown · posted 2026-10-20 "]);
   assert.deepEqual(h.el("preview-copies").children.map(li => li.children[0].href),
     ["100", "300", "200"].map(id => `https://one.x.yupoo.com/albums/${id}`));
+  // A list from part of the catalogue never reads as the whole of it.
+  h.el("album-preview").close(); h.state.index = {sellers: [{}, {}, {}, {}]}; h.state.loadedSellers = 3;
+  h.context.openPreview("300");
+  assert.equal(h.el("preview-copies-note").textContent,
+    "Listed 3 times so far, cheapest first (sellers are still loading):");
+  h.el("album-preview").close(); h.state.loadedSellers = 4; h.state.failedShards = ["four"];
+  h.context.openPreview("300");
+  assert.equal(h.el("preview-copies-note").textContent,
+    "Listed 3 times in the sellers that loaded, cheapest first (1 could not be read):");
   h.el("album-preview").close(); h.state.listingCopies = new Map(); h.context.openPreview("300");
   assert.equal(h.el("preview-copies").hidden, true);
   assert.equal(h.el("preview-copies-note").hidden, true);
