@@ -768,9 +768,9 @@ pub fn scrape_all(
         Some(CatalogueLock::acquire(data_dir)?)
     };
     // `--notify` finds the run's changes by its timestamp, which has
-    // 1-second resolution: a run in the same second as the last scrape
+    // 1-second resolution: a run in the same second as an earlier scrape
     // would report that scrape's changes as its own, so it does not start.
-    if options.run_rows && !options.dry_run && last_scrape(data_dir).as_deref() == Some(run_ts) {
+    if options.run_rows && !options.dry_run && stamped(data_dir, run_ts) {
         return Err(Error::Busy(format!(
             "a scrape already ran at {run_ts}; run again"
         )));
@@ -935,15 +935,46 @@ pub fn scrape_all(
     })
 }
 
-/// The timestamp of the run that last wrote index.json, if it can be read.
-fn last_scrape(data_dir: &Path) -> Option<String> {
-    let text = std::fs::read_to_string(data_dir.join("index.json")).ok()?;
-    let index = crate::pyjson::loads(&text).ok()?;
-    index
-        .as_object()?
-        .get("generated_at")?
-        .as_str()
-        .map(String::from)
+/// Whether a scrape already wrote `run_ts`: index.json's `generated_at`, or
+/// an album's `updated_at` or history entry in any shard, which a scrape that
+/// failed before writing the index leaves behind. A file that cannot be read
+/// counts as unstamped; the scrape itself reports it.
+fn stamped(data_dir: &Path, run_ts: &str) -> bool {
+    let read = |path: &Path| {
+        let text = std::fs::read_to_string(path).ok()?;
+        crate::pyjson::loads(&text).ok()
+    };
+    let is_run = |value: Option<&Value>| value.and_then(Value::as_str) == Some(run_ts);
+    if read(&data_dir.join("index.json"))
+        .is_some_and(|index| is_run(index.as_object().and_then(|i| i.get("generated_at"))))
+    {
+        return true;
+    }
+    let Ok(entries) = std::fs::read_dir(data_dir.join("catalog")) else {
+        return false;
+    };
+    entries
+        .flatten()
+        .filter_map(|entry| read(&entry.path()))
+        .any(|shard| {
+            shard
+                .as_object()
+                .and_then(|s| s.get("albums"))
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_object)
+                .any(|album| {
+                    is_run(album.get("updated_at"))
+                        || album
+                            .get("history")
+                            .and_then(Value::as_array)
+                            .into_iter()
+                            .flatten()
+                            .filter_map(Value::as_object)
+                            .any(|entry| is_run(entry.get("at")))
+                })
+        })
 }
 
 fn eprint_unexpected(seller: &str, text: &str) {

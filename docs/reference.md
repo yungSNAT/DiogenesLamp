@@ -98,8 +98,9 @@ stored and changed nothing, a dry run and a run stopped with Ctrl+C run no
 command. If the command cannot start or exits with a failure status, lamp
 reports it and exits with status 1; the scrape's data is already saved.
 Changes are matched to a run by its timestamp, to the second, so a
-`--notify` run that starts in the same second as the last scrape stops
-before fetching anything and asks to be run again.
+`--notify` run that starts in the same second as an earlier scrape,
+including one that stopped before finishing, stops before fetching
+anything and asks to be run again.
 
 Purchase links are found word by word, between whitespace. A word of a few
 hundred dotted parts with no space, such as `a.a.a.`, that never reaches a

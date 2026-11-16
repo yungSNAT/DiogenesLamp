@@ -1870,6 +1870,30 @@ fn a_notify_run_in_the_same_second_as_the_last_scrape_is_refused() {
     assert_eq!(scrape_rows(dir.path(), T1, opts()).unwrap(), []);
 }
 
+/// A scrape that saved shards but failed before writing the index leaves
+/// records stamped with its second whilst the index names the run before:
+/// a notifying run in that second is refused as well.
+#[test]
+fn a_notify_run_in_the_second_of_a_scrape_that_never_wrote_its_index_is_refused() {
+    let dir = common::tmp();
+    scrape_rows(dir.path(), T1, opts()).unwrap();
+    let full = Options {
+        full: true,
+        ..opts()
+    };
+    scrape_rows(dir.path(), T2, full).unwrap();
+    assert_eq!(get(&shard(dir.path()), "101", "updated_at").py_str(), T2);
+    let index = dir.path().join("index.json");
+    let mut stored = obj(&read_json(&index)).clone();
+    stored.insert("generated_at".into(), T1.into());
+    lamp::storage::atomic_write_json(&index, &Value::Object(stored)).unwrap();
+    let error = scrape_rows(dir.path(), T2, notifying()).unwrap_err();
+    assert!(
+        matches!(&error, lamp::errors::Error::Busy(m) if m.contains("already ran at")),
+        "{error}"
+    );
+}
+
 #[test]
 fn each_seller_is_reported_as_it_finishes() {
     let dir = common::tmp();
