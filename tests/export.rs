@@ -455,7 +455,11 @@ fn a_site_holds_the_viewer_and_the_catalogue_it_reads_and_nothing_else() {
         lamp::serve::CSP
     );
     assert!(html.contains(&policy), "{html}");
-    assert!(html.find(&policy) < html.find("<script"));
+    let at = html.find(&policy).unwrap();
+    assert!(html.find("<head>").unwrap() < at && at < html.find("</head>").unwrap());
+    for load in ["<link", "<script", "<style"] {
+        assert!(html.find(load).is_none_or(|first| at < first), "{load}");
+    }
     assert_eq!(
         html.replacen(&policy, "<meta charset=\"utf-8\">", 1)
             .as_bytes(),
@@ -507,4 +511,95 @@ fn a_bad_catalogue_writes_no_site() {
         "{stderr}"
     );
     assert!(!site.exists());
+}
+
+/// A folder that reaches the data directory through `..` is inside it.
+#[test]
+fn a_site_folder_reaching_the_data_directory_through_dot_dot_is_refused() {
+    let dir = common::tmp();
+    let data = site_catalogue(dir.path());
+    let sneaky = data.join("..").join("data").join("site");
+    let (code, _, stderr) = export(dir.path(), &["--site", sneaky.to_str().unwrap()]);
+    assert_eq!(code, 1, "{stderr}");
+    assert!(stderr.contains("outside the data directory"), "{stderr}");
+    assert!(!data.join("site").exists());
+}
+
+/// aliases.json must be a regular file: a folder in its place is an error,
+/// not a site without it.
+#[test]
+fn an_aliases_entry_that_is_not_a_file_writes_no_site() {
+    let dir = common::tmp();
+    let data = site_catalogue(dir.path());
+    std::fs::remove_file(data.join("aliases.json")).unwrap();
+    std::fs::create_dir(data.join("aliases.json")).unwrap();
+    let site = dir.path().join("site");
+    let (code, _, stderr) = export(dir.path(), &["--site", site.to_str().unwrap()]);
+    assert_eq!(code, 1, "{stderr}");
+    assert!(
+        stderr.contains("aliases.json is not a regular file"),
+        "{stderr}"
+    );
+    assert!(!site.exists());
+}
+
+/// A link may not carry a file from outside the data directory into the
+/// site, nor take the site into the data directory.
+#[cfg(unix)]
+#[test]
+fn links_cannot_carry_files_in_or_out_of_the_data_directory() {
+    use std::os::unix::fs::symlink;
+    let dir = common::tmp();
+    let data = site_catalogue(dir.path());
+    let secret = dir.path().join("sources.toml");
+    common::write(&secret, b"secret");
+    let site = dir.path().join("site");
+    let refused = |what: &str| {
+        let (code, stdout, stderr) = export(dir.path(), &["--site", site.to_str().unwrap()]);
+        assert_eq!((code, stdout.is_empty()), (1, true), "{what}: {stderr}");
+        assert!(!site.exists(), "{what}");
+    };
+    std::fs::remove_file(data.join("aliases.json")).unwrap();
+    symlink(&secret, data.join("aliases.json")).unwrap();
+    refused("aliases.json linked outside");
+    std::fs::remove_file(data.join("aliases.json")).unwrap();
+    std::fs::remove_file(data.join("thumbs/one/11.jpg")).unwrap();
+    symlink(&secret, data.join("thumbs/one/11.jpg")).unwrap();
+    refused("a cover linked outside");
+    std::fs::remove_file(data.join("thumbs/one/11.jpg")).unwrap();
+
+    let into_data = dir.path().join("into-data");
+    symlink(&data, &into_data).unwrap();
+    let through = into_data.join("site");
+    let (code, _, stderr) = export(dir.path(), &["--site", through.to_str().unwrap()]);
+    assert_eq!(code, 1, "{stderr}");
+    assert!(stderr.contains("outside the data directory"), "{stderr}");
+    assert!(!data.join("site").exists());
+}
+
+/// A copy that fails partway removes what the export wrote: a new folder
+/// goes, an empty one is left empty, and the next export can use it.
+#[cfg(unix)]
+#[test]
+fn a_failed_copy_leaves_no_partial_site() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = common::tmp();
+    let data = site_catalogue(dir.path());
+    let cover = data.join("thumbs/two/21.jpg");
+    std::fs::set_permissions(&cover, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read(&cover).is_ok() {
+        return; // root reads any file, so the failure cannot be staged
+    }
+    let site = dir.path().join("site");
+    let (code, stdout, stderr) = export(dir.path(), &["--site", site.to_str().unwrap()]);
+    assert_eq!((code, stdout.is_empty()), (1, true), "{stderr}");
+    assert!(!site.exists());
+    std::fs::create_dir(&site).unwrap();
+    let (code, _, stderr) = export(dir.path(), &["--site", site.to_str().unwrap()]);
+    assert_eq!(code, 1, "{stderr}");
+    assert!(tree(&site).is_empty(), "{:?}", tree(&site));
+    std::fs::set_permissions(&cover, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let (code, _, stderr) = export(dir.path(), &["--site", site.to_str().unwrap()]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(site.join("data/thumbs/two/21.jpg").is_file());
 }

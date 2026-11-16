@@ -714,15 +714,18 @@ pub fn export_site(root: &Path, dir: &Path) -> Result<Site> {
     if pyerr::is_relative_to(&pyerr::resolve(dir), &pyerr::resolve(root)) {
         return value("the site folder must be outside the data directory");
     }
-    match std::fs::read_dir(dir) {
-        Ok(mut entries) => {
-            if entries.next().is_some() {
+    let os = |e: std::io::Error, path: &Path| Error::Os(pyerr::os_error(&e, Call::Os, path));
+    let existed = match std::fs::read_dir(dir) {
+        Ok(mut entries) => match entries.next() {
+            None => true,
+            Some(Ok(_)) => {
                 return value(format!("{}: folder is not empty", pyerr::path_str(dir)));
             }
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => return Err(Error::Os(pyerr::os_error(&e, Call::Os, dir))),
-    }
+            Some(Err(e)) => return Err(os(e, dir)),
+        },
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+        Err(e) => return Err(os(e, dir)),
+    };
     let index = data_path(root, "index.json", false)?;
     let sellers = sellers_of(&read_metadata(&index, "index.json")?);
     let mut copies = vec![(index, "index.json".to_string())];
@@ -744,16 +747,54 @@ pub fn export_site(root: &Path, dir: &Path) -> Result<Site> {
         }
         copies.push((shard, relative));
     }
+    // Not followed through a link: the site may carry only the data
+    // directory's own file.
     let aliases = root.join("aliases.json");
-    if aliases.is_file() {
-        if stat_len(&aliases)? > MAX_METADATA_BYTES {
-            return value("aliases.json exceeds 256 MB");
+    match std::fs::symlink_metadata(&aliases) {
+        Ok(meta) if meta.is_file() => {
+            if meta.len() > MAX_METADATA_BYTES {
+                return value("aliases.json exceeds 256 MB");
+            }
+            copies.push((aliases, "aliases.json".into()));
         }
-        copies.push((aliases, "aliases.json".into()));
+        Ok(_) => return value("aliases.json is not a regular file"),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(os(e, &aliases)),
     }
     for cover in &covers {
         copies.push((data_path(root, cover, true)?, cover.clone()));
     }
+    if !existed {
+        if let Some(parent) = dir.parent().filter(|p| !p.as_os_str().is_empty()) {
+            std::fs::create_dir_all(parent).map_err(|e| os(e, parent))?;
+        }
+        std::fs::create_dir(dir).map_err(|e| os(e, dir))?;
+    }
+    // A failure partway removes what this export wrote: the folder it made,
+    // or everything in the empty folder it was given.
+    write_site(dir, &copies).inspect_err(|_| {
+        if existed {
+            for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+                let path = entry.path();
+                let _ = if entry.file_type().is_ok_and(|t| t.is_dir()) {
+                    std::fs::remove_dir_all(&path)
+                } else {
+                    std::fs::remove_file(&path)
+                };
+            }
+        } else {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    })?;
+    Ok(Site {
+        sellers: sellers.len(),
+        covers: covers.len(),
+        missing_covers: missing.len(),
+    })
+}
+
+/// The viewer, its index.html carrying the policy, and `copies` under data/.
+fn write_site(dir: &Path, copies: &[(PathBuf, String)]) -> Result<()> {
     let made = |path: &Path| -> Result<()> {
         let parent = path.parent().unwrap_or(dir);
         std::fs::create_dir_all(parent)
@@ -784,15 +825,11 @@ pub fn export_site(root: &Path, dir: &Path) -> Result<Site> {
         std::fs::write(&target, bytes)
             .map_err(|e| Error::Os(pyerr::os_error(&e, Call::Open, &target)))?;
     }
-    for (source, relative) in &copies {
+    for (source, relative) in copies {
         let target = dir.join("data").join(relative);
         made(&target)?;
         std::fs::copy(source, &target)
             .map_err(|e| Error::Os(pyerr::os_error(&e, Call::Open, &target)))?;
     }
-    Ok(Site {
-        sellers: sellers.len(),
-        covers: covers.len(),
-        missing_covers: missing.len(),
-    })
+    Ok(())
 }
