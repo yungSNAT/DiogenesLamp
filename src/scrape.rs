@@ -3,7 +3,7 @@
 
 //! Scrape Yupoo sellers into catalogue shards.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
@@ -83,11 +83,13 @@ pub struct SellerSummary {
     pub listing_complete: bool,
     pub resolved_ids: Vec<String>,
     pub short_missing: Vec<String>,
-    /// Albums this run stored for the first time, and albums listed again
-    /// after being marked gone. Reported, not written to the run summary:
-    /// the shard's `first_seen` and availability history already record them.
+    /// Albums this run stored for the first time, albums listed again after
+    /// being marked gone, and albums whose listing shows a different photo
+    /// count. Reported, not written to the run summary: the shard's
+    /// `first_seen` and history already record them.
     pub new_ids: Vec<String>,
     pub returned_ids: Vec<String>,
+    pub recounted_ids: Vec<String>,
     /// Albums with a word whose purchase-link scan stopped early, so links
     /// later in that word, or an agent link's wrapped URL, were not stored.
     /// Reported and kept in the run summary.
@@ -342,7 +344,10 @@ pub fn scrape_seller(
             return Ok(summary);
         }
     };
-    let listed: HashSet<String> = stubs.iter().map(|s| s.id.clone()).collect();
+    let listed: HashMap<String, i128> = stubs
+        .iter()
+        .map(|s| (s.id.clone(), s.photo_count))
+        .collect();
     // Known albums the listing no longer carries, including failed ones that
     // never got a record.
     let missing: HashSet<String> = shard
@@ -350,7 +355,7 @@ pub fn scrape_seller(
         .filter(|(_, album)| !album.get("gone_since").is_some_and(Value::truthy))
         .map(|(id, _)| id)
         .chain(&pending_failures)
-        .filter(|id| !listed.contains(*id))
+        .filter(|id| !listed.contains_key(*id))
         .cloned()
         .collect();
     let mut stubs = stubs;
@@ -532,10 +537,12 @@ pub fn scrape_seller(
                 )
             })
             .collect();
-        let photo_count = if detail.photo_count != 0 {
-            detail.photo_count
-        } else {
+        // The card's count, which recounts compare, so a refetch agrees with
+        // them; the album page's only when the card shows none.
+        let photo_count = if stub.photo_count != 0 {
             stub.photo_count
+        } else {
+            detail.photo_count
         };
         let mut record = crate::obj! {
             "id" => stub.id.as_str(),
@@ -627,24 +634,44 @@ pub fn scrape_seller(
         summary.error = format!("all {} album fetches failed", summary.failed);
     }
     if !options.dry_run {
-        summary.returned_ids = stamp_listing(&mut shard, &listed, &absent, run_ts);
+        (summary.returned_ids, summary.recounted_ids) =
+            stamp_listing(&mut shard, &listed, &absent, run_ts);
         write_shard(data_dir, &source.id, &shard)?;
     }
     Ok(summary)
 }
 
-/// Record which albums the seller's listing still carries, and mark the
-/// confirmed absent ones gone. Returns the gone albums listed again.
+/// Record which albums the seller's listing still carries, with the photo
+/// count each card shows, and mark the confirmed absent ones gone. Returns
+/// the gone albums listed again and the albums whose listed count changed.
 fn stamp_listing(
     shard: &mut Shard,
-    listed: &HashSet<String>,
+    listed: &HashMap<String, i128>,
     absent: &HashSet<String>,
     run_ts: &str,
-) -> Vec<String> {
+) -> (Vec<String>, Vec<String>) {
     let mut returned = Vec::new();
+    let mut recounted = Vec::new();
     for (album_id, album) in shard.iter_mut() {
-        if listed.contains(album_id) {
+        if let Some(&count) = listed.get(album_id) {
             album.insert("last_seen".into(), run_ts.into());
+            // A card without a count says nothing about the album's photos.
+            if count > 0 {
+                let before = album.insert("list_photo_count".into(), Value::Int(count));
+                if let Some(Value::Int(before)) = before
+                    && before != count
+                {
+                    recounted.push(album_id.clone());
+                    album.insert("photo_count".into(), Value::Int(count));
+                    record_change(
+                        album,
+                        "photo count",
+                        Value::Int(before),
+                        Value::Int(count),
+                        run_ts,
+                    );
+                }
+            }
             let gone = album.shift_remove("gone_since");
             if gone.is_some_and(|g| g.truthy()) {
                 returned.push(album_id.clone());
@@ -667,7 +694,7 @@ fn stamp_listing(
             album.insert("gone_since".into(), run_ts.into());
         }
     }
-    returned
+    (returned, recounted)
 }
 
 /// Ctrl+C presses, counted. The first stops queued sellers and lets running
