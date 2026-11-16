@@ -404,7 +404,10 @@ function rebuildAlbums() {
   state.albums = selected.albums;
   state.albumAliases = inheritableAliases(state.index || {}, state.albums, selected.aliases,
     state.loadedSellers === state.index?.sellers.length && !state.failedShards?.length);
-  state.listingCopies = listingCopies(state.albumAliases, [loaded, ...state.unselectedAlbums.values()]);
+  // An older index names no listings, so the preview lists those the
+  // grid hid, even whilst saved work waits for every seller.
+  state.listingCopies = listingCopies(state.index?.selection_version === 1 ? state.albumAliases : selected.aliases,
+    [loaded, ...state.unselectedAlbums.values()]);
 }
 
 // Descriptions arrive as albums are refetched, so for a long while the

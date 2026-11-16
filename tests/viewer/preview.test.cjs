@@ -180,6 +180,8 @@ test("the preview lists every listing of the item, cheapest first, with price an
   h.state.index = {sellers: [{}, {}, {}, {}]}; h.state.loadedSellers = 3; h.context.openPreview("300");
   assert.equal(h.el("preview-copies-note").textContent, "Listed 4 times; 1 still loading. Cheapest first:");
   assert.equal(h.el("preview-copies").children.length, 3);
+  h.state.failedShards = ["five"]; h.context.refreshSavedState(false);
+  assert.equal(h.el("preview-copies-note").textContent, "Listed 4 times; 1 still loading or could not be read. Cheapest first:");
   h.state.loadedSellers = 4; h.state.failedShards = ["four"]; h.context.refreshSavedState(false);
   assert.equal(h.el("preview-copies-note").textContent, "Listed 4 times; 1 could not be read. Cheapest first:");
   h.el("album-preview").close(); h.state.albumAliases = {400: "300"}; h.state.listingCopies = new Map();
@@ -192,6 +194,14 @@ test("the preview lists every listing of the item, cheapest first, with price an
   assert.equal(h.el("preview-copies-note").textContent, "Listed 2 times, cheapest first:");
   assert.deepEqual(h.el("preview-copies").children.map(li => li.textContent),
     ["four · CNY 80 · posted 2026-10-05 ", "three · CNY 120 · posted 2026-11-01 · shown here "]);
+  // An older index names no listings, so with a seller unread the count
+  // covers only the sellers read.
+  h.state.albumAliases = {}; h.state.failedShards = ["five"]; h.context.refreshSavedState(false);
+  assert.equal(h.el("preview-copies-note").textContent, "Listed 2 times in the sellers read, cheapest first:");
+  h.state.index = {selection_version: 1, sellers: [{}, {}, {}, {}]}; h.state.albumAliases = {400: "300"};
+  h.context.refreshSavedState(false);
+  assert.equal(h.el("preview-copies-note").textContent, "Listed 2 times, cheapest first:");
+  h.state.failedShards = [];
   h.el("album-preview").close(); h.state.albumAliases = {}; h.state.listingCopies = new Map(); h.context.openPreview("300");
   assert.equal(h.el("preview-copies").hidden, true);
   assert.equal(h.el("preview-copies-note").hidden, true);

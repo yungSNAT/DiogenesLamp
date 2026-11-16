@@ -47,6 +47,15 @@ test("newest selection precedes seller and favourite filters in a legacy catalog
     assert.deepEqual(selectCatalogue(view, {albums: state.albums,
       favorites: new Set(["100"]), bannedKeys: new Set()}).filtered, []);
   }
+  // With a seller unread, saved work is not moved between listings, but the
+  // grid still hides the older listing, so the preview still lists it.
+  for (const partial of [{loadedSellers: 3, failedShards: ["three"]}, {loadedSellers: 2}]) {
+    Object.assign(state, {index: {sellers: [{id: "one"}, {id: "two"}, {id: "three"}]}, failedShards: []}, partial);
+    rebuild();
+    assert.deepEqual(state.albums, [latest]);
+    assert.deepEqual(state.albumAliases, {});
+    assert.deepEqual(state.listingCopies.get("200"), [old], JSON.stringify(partial));
+  }
 });
 
 test("indexed shards publish only selected records and report missing selections", async () => {

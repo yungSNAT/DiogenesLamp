@@ -294,8 +294,11 @@ function showListingCopies(album) {
   listings.replaceChildren();
   listings.hidden = workEl("preview-copies-note").hidden = !copies.length && !missing;
   const loading = state.loadedSellers < (state.index?.sellers.length ?? 0);
+  const failed = state.failedShards.length > 0;
+  const why = loading && failed ? "still loading or could not be read" : loading ? "still loading" : "could not be read";
   workEl("preview-copies-note").textContent = listings.hidden ? ""
-    : missing ? `Listed ${copies.length + missing + 1} times; ${missing} ${loading ? "still loading" : "could not be read"}. Cheapest first:`
+    : missing ? `Listed ${copies.length + missing + 1} times; ${missing} ${why}. Cheapest first:`
+    : state.index?.selection_version !== 1 && (loading || failed) ? `Listed ${copies.length + 1} times in the sellers read, cheapest first:`
     : `Listed ${copies.length + 1} times, cheapest first:`;
   /** @param {{price?: number | null}} listing */
   const priced = listing => typeof listing.price === "number" && listing.price > 0;

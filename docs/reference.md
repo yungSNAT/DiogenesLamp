@@ -250,10 +250,11 @@ of the item, cheapest first: each with its seller, price (or 'Price
 unknown'), posting date (or first-seen date when none was recorded), a link
 to its album, and 'no longer listed' once it has gone. So 2 sellers' prices
 for one marketplace item compare in one place. The older listings come from
-the seller shards already loaded, so the list needs no extra request; an
-older index lists them once every shard has loaded. A listing whose seller
-is still loading, or could not be read, is counted in the list's heading,
-and an open preview fills in as sellers load.
+the seller shards already loaded, so the list needs no extra request. The
+index names every listing, so one whose seller is still loading, or could
+not be read, is counted in the list's heading; an older index names none,
+so until every seller is read the heading counts only the sellers read. An
+open preview fills in as sellers load.
 
 Favourites, notes, tags and collections on an older duplicate copy to the
 newest listing when its field has no saved entry. Existing values, including
