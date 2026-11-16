@@ -515,11 +515,13 @@ pub fn prepare_covers(root: &Path, limit: i128) -> Result<Map> {
 /// still be suggested; the viewer's Similar covers uses the same threshold.
 const FIND_PHOTO_DISTANCE: u32 = 8;
 
-/// A fingerprint other than 16 hex digits, or a uniform one (all 0 or all
-/// 1 bits, a blank picture), says nothing about layout.
+/// A fingerprint other than 16 lower-case hex digits, as the viewer reads
+/// them, or a uniform one (all 0 or all 1 bits, a blank picture), says
+/// nothing about layout.
 fn layout_hash(hash: &str) -> Option<u64> {
-    let bits = u64::from_str_radix(hash, 16).ok()?;
-    (hash.len() == 16 && bits != 0 && bits != u64::MAX).then_some(bits)
+    let digits = hash.len() == 16 && hash.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
+    let bits = u64::from_str_radix(hash, 16).ok().filter(|_| digits)?;
+    (bits != 0 && bits != u64::MAX).then_some(bits)
 }
 
 /// `lamp find-photo`: the selected albums whose cover fingerprint is within
