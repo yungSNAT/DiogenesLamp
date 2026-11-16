@@ -385,3 +385,44 @@ fn the_embedded_viewer_matches_the_viewer_directory() {
         );
     }
 }
+
+/// With stdout redirected, the URL line arrives whilst the server runs, not
+/// when it stops: a 128 KiB buffer otherwise held it until exit.
+#[test]
+fn a_redirected_stdout_gets_the_url_whilst_serving() {
+    let dir = common::tmp();
+    let data = dir.path().join("data");
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
+        .to_string();
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_lamp"))
+        .args(["--data", &data.to_string_lossy()])
+        .args(["serve", "--no-browser", "--port", &port])
+        .env_remove("PYTHONUNBUFFERED")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdout = child.stdout.take().unwrap();
+    let (sent, received) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut line = Vec::new();
+        let mut byte = [0u8];
+        while stdout.read(&mut byte).is_ok_and(|n| n == 1) && byte[0] != b'\n' {
+            line.push(byte[0]);
+        }
+        let _ = sent.send(line);
+    });
+    let line = received.recv_timeout(std::time::Duration::from_secs(30));
+    child.kill().unwrap();
+    child.wait().unwrap();
+    let line =
+        String::from_utf8_lossy(&line.expect("no line on stdout whilst serving")).into_owned();
+    assert_eq!(
+        line.trim_end(),
+        format!("serving on http://127.0.0.1:{port}/ (Ctrl+C to stop)")
+    );
+}
