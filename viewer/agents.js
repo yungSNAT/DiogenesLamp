@@ -8,7 +8,8 @@
 // and the URL templates that rebuild a link for an agent still trading.
 // Every template is built from the bare marketplace item, never copied
 // from a pasted link, so no referral code survives. Formats were read from
-// the public link converters on 27 September 2026; `checked` records that.
+// the public link converters on 27 September 2026, and agents added later
+// were opened on the date they record; `checked` records that.
 // An agent that shut down keeps its parse rules and a `retired` date, so
 // old links still resolve while the agent leaves the preference menu.
 
@@ -92,6 +93,14 @@ const AGENTS = [
       (channel, id) => `https://hipobuy.com/product/${channel}/${id}${channel === 0 ? ".html" : ""}`) },
   { id: "gtbuy", name: "GTBuy", host: "gtbuy.com", checked: "2026-09-27",
     build: channelled({ "1688": 0, taobao: 1, weidian: "weidian" }, (channel, id) => `https://www.gtbuy.com/product/${channel}/${id}`) },
+  { id: "orientdig", name: "OrientDig", host: "orientdig.com", checked: "2026-11-16",
+    build: channelled({ "1688": "ali_1688", taobao: "taobao", weidian: "weidian" },
+      (channel, id) => `https://orientdig.com/product/?shop_type=${channel}&id=${id}`) },
+  // PonyBuy's taobao code did not open an item when checked, so it builds none.
+  { id: "ponybuy", name: "PonyBuy", host: "ponybuy.com", checked: "2026-11-16",
+    build: channelled({ "1688": 2, weidian: 3 }, (channel, id) => `https://www.ponybuy.com/products/${channel}/${id}`) },
+  { id: "fishgoo", name: "Fishgoo", host: "fishgoo.com", checked: "2026-11-16",
+    build: item => `https://www.fishgoo.com/#/product?productLink=${wrapped(item)}` },
   { id: "cnfans", name: "CNFans", host: "cnfans.com", checked: "2026-09-27", retired: "2026-08" },
   { id: "allchinabuy", name: "AllChinaBuy", host: "allchinabuy.com", checked: "2026-09-27", retired: "2026-08" },
   { id: "pandabuy", name: "Pandabuy", host: "pandabuy.com", checked: "2026-09-27", retired: "2024-04" },
@@ -119,11 +128,12 @@ const HOOBUY_CHANNELS = { "0": "1688", "1": "taobao", "2": "weidian" };
 const USFANS_CHANNELS = { "1": "1688", "2": "taobao", "3": "weidian" };
 /** @type {Record<string, Marketplace>} */
 const NAMED_CHANNELS = { "0": "1688", "1": "taobao", weidian: "weidian" };
-// Agents that name the marketplace in the path, /product/<channel>/<id>, and
-// how each numbers or names its channels. links.rs keeps the same maps.
+// Agents that name the marketplace in the path, /product/<channel>/<id>
+// (PonyBuy alone: /products/), and how each numbers or names its channels.
+// links.rs keeps the same maps.
 /** @type {Record<string, Record<string, Marketplace>>} */
 const PATH_CHANNELS = { hoobuy: HOOBUY_CHANNELS, vigorbuy: HOOBUY_CHANNELS, usfans: USFANS_CHANNELS,
-  litbuy: NAMED_CHANNELS, hipobuy: NAMED_CHANNELS, gtbuy: NAMED_CHANNELS };
+  litbuy: NAMED_CHANNELS, hipobuy: NAMED_CHANNELS, gtbuy: NAMED_CHANNELS, ponybuy: { "2": "1688", "3": "weidian" } };
 /** @type {Record<string, Marketplace>} */
 const RIZZITGO_SOURCES = { "1": "taobao", "2": "1688", "3": "weidian" };
 // Each agent names its item one way only: wrapped agents carry the whole
@@ -131,10 +141,14 @@ const RIZZITGO_SOURCES = { "1": "taobao", "2": "1688", "3": "weidian" };
 // in the two parameters listed here, path agents are in PATH_CHANNELS and
 // cssbuy spells the marketplace in its file name. links.rs keeps the same.
 const WRAPPED_AGENTS = new Set(["kakobuy", "superbuy", "sugargoo", "loongbuy", "pikobuy", "itaobuy", "bbdbuy",
-  "allchinabuy", "pandabuy"]);
+  "allchinabuy", "pandabuy", "fishgoo"]);
+// Agents whose item page is a route in the URL fragment: the item is read
+// from the query after this prefix, and from nowhere else.
+/** @type {Record<string, string>} */
+const FRAGMENT_ROUTES = { fishgoo: "#/product?" };
 /** @type {Record<string, [string, string]>} */
 const AGENT_QUERY = { oopbuy: ["id", "channel"], ootdbuy: ["id", "channel"], mulebuy: ["id", "shop_type"],
-  joyagoo: ["id", "shop_type"], cnfans: ["id", "shop_type"], lovegobuy: ["id", "shop_type"],
+  joyagoo: ["id", "shop_type"], cnfans: ["id", "shop_type"], lovegobuy: ["id", "shop_type"], orientdig: ["id", "shop_type"],
   cnshopper: ["keyword", "platform"], alleurobuy: ["id", "type"], rizzitgo: ["goodsid", "source"] };
 const WRAPPED_PARAMS = ["url", "productlink", "producturl", "link"];
 const ID_PARAMS = ["id", "itemid", "goodsid", "keyword"];
@@ -156,11 +170,14 @@ function unwrapAgentLink(raw, depth = 0) {
   try { url = new URL(raw); } catch { return null; }
   const agent = agentFor(url.hostname.toLowerCase());
   if (!agent || depth >= 2) return null;
+  const route = FRAGMENT_ROUTES[agent.id];
+  if (route && (url.pathname !== "/" || url.search || !url.hash.startsWith(route))) return null;
+  const params = route ? new URLSearchParams(url.hash.slice(route.length).split("#")[0]) : url.searchParams;
   // A parameter repeated with different values names no single item:
   // refuse the ambiguity rather than trust whichever came first.
   /** @type {Map<string, Set<string>>} */
   const values = new Map();
-  for (const [k, v] of url.searchParams) {
+  for (const [k, v] of params) {
     if (!v) continue;
     const key = k.toLowerCase();
     values.set(key, (values.get(key) || new Set()).add(v));
@@ -201,8 +218,8 @@ function unwrapAgentLink(raw, depth = 0) {
   }
   const codes = PATH_CHANNELS[agent.id];
   if (codes) {
-    const match = /^\/product\/([A-Za-z0-9]+)\/([0-9]+)(?:\.html)?\/?$/.exec(url.pathname);
-    if (match) return item(codes[match[1].toLowerCase()], match[2]);
+    const match = /^\/(products?)\/([A-Za-z0-9]+)\/([0-9]+)(?:\.html)?\/?$/.exec(url.pathname);
+    if (match && (match[1] === "products") === (agent.id === "ponybuy")) return item(codes[match[2].toLowerCase()], match[3]);
   }
   if (agent.id === "cssbuy") {
     const match = /^\/item-(micro-|1688-)?([0-9]+)\.html$/.exec(url.pathname);

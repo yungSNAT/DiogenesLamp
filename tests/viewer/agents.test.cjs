@@ -14,7 +14,8 @@ const TB = "https%3A%2F%2Fitem.taobao.com%2Fitem.htm%3Fid%3D560198996624";
 const ALI = "https%3A%2F%2Fdetail.1688.com%2Foffer%2F691234567890.html";
 
 // Read from rep.tools' public converter on 27 September 2026, minus its
-// KakoBuy referral code.
+// KakoBuy referral code. OrientDig, PonyBuy and Fishgoo were opened on
+// 16 November 2026; PonyBuy's taobao code did not open, so it offers none.
 const OBSERVED = {
   weidian: {
     kakobuy: `https://www.kakobuy.com/item/details?url=${WD}`,
@@ -39,6 +40,9 @@ const OBSERVED = {
     litbuy: "https://www.litbuy.com/product/weidian/7652831688",
     hipobuy: "https://hipobuy.com/product/weidian/7652831688",
     gtbuy: "https://www.gtbuy.com/product/weidian/7652831688",
+    orientdig: "https://orientdig.com/product/?shop_type=weidian&id=7652831688",
+    ponybuy: "https://www.ponybuy.com/products/3/7652831688",
+    fishgoo: `https://www.fishgoo.com/#/product?productLink=${WD}`,
   },
   taobao: {
     kakobuy: `https://www.kakobuy.com/item/details?url=${TB}`,
@@ -63,6 +67,9 @@ const OBSERVED = {
     litbuy: "https://www.litbuy.com/product/1/560198996624",
     hipobuy: "https://hipobuy.com/product/1/560198996624",
     gtbuy: "https://www.gtbuy.com/product/1/560198996624",
+    orientdig: "https://orientdig.com/product/?shop_type=taobao&id=560198996624",
+    ponybuy: "",
+    fishgoo: `https://www.fishgoo.com/#/product?productLink=${TB}`,
   },
   "1688": {
     kakobuy: `https://www.kakobuy.com/item/details?url=${ALI}`,
@@ -87,6 +94,9 @@ const OBSERVED = {
     litbuy: "https://www.litbuy.com/product/0/691234567890",
     hipobuy: "https://hipobuy.com/product/0/691234567890.html",
     gtbuy: "https://www.gtbuy.com/product/0/691234567890",
+    orientdig: "https://orientdig.com/product/?shop_type=ali_1688&id=691234567890",
+    ponybuy: "https://www.ponybuy.com/products/2/691234567890",
+    fishgoo: `https://www.fishgoo.com/#/product?productLink=${ALI}`,
   },
 };
 
@@ -103,6 +113,7 @@ test("built links unwrap back to the item they were built from", () => {
   for (const agent of ACTIVE_AGENTS) {
     for (const [platform, id] of Object.entries(IDS)) {
       const item = { platform, id };
+      if (OBSERVED[platform][agent.id] === "") continue;
       assert.deepEqual(marketplaceItem(unwrapAgentLink(agentLink(agent.id, item))), item, `${agent.id} ${platform}`);
     }
     // A tmall link is offered only where the format keeps the tmall
@@ -110,7 +121,7 @@ test("built links unwrap back to the item they were built from", () => {
     const link = agentLink(agent.id, { platform: "tmall", id: "77" });
     if (link) assert.deepEqual(marketplaceItem(unwrapAgentLink(link)), { platform: "tmall", id: "77" }, agent.id);
     else assert.ok(["hoobuy", "oopbuy", "mulebuy", "joyagoo", "cssbuy", "ootdbuy", "lovegobuy", "cnshopper",
-      "alleurobuy", "rizzitgo", "vigorbuy", "usfans", "litbuy", "hipobuy", "gtbuy"].includes(agent.id), agent.id);
+      "alleurobuy", "rizzitgo", "vigorbuy", "usfans", "litbuy", "hipobuy", "gtbuy", "orientdig", "ponybuy"].includes(agent.id), agent.id);
   }
   assert.equal(agentLink("hoobuy", { platform: "tmall", id: "77" }), "");
   assert.equal(agentLink("kakobuy", { platform: "tmall", id: "77" }),
@@ -150,6 +161,15 @@ test("unwrapping refuses ambiguity, other sites and deep nesting", () => {
     "https://oopbuy.com/goods/details?url=" + WD,
     "https://oopbuy.com/goods/details?id=7652831688&keyword=6&channel=weidian",
     "https://www.cssbuy.com/item-abc.html",
+    // PonyBuy's taobao code is unconfirmed; the plural path is PonyBuy's alone.
+    "https://www.ponybuy.com/products/1/560198996624",
+    "https://www.ponybuy.com/product/3/7652831688",
+    "https://hoobuy.com/products/2/7652831688",
+    // Fishgoo names its item only in the fragment route #/product.
+    "https://www.fishgoo.com/?productLink=" + WD,
+    "https://www.fishgoo.com/#/home?productLink=" + WD,
+    "https://www.fishgoo.com/?x=1#/product?productLink=" + WD,
+    "https://www.fishgoo.com/#/product?productLink=" + WD + "&productLink=" + encodeURIComponent("https://weidian.com/item.html?itemID=5"),
     "https://notkakobuy.com/item/details?url=" + WD,
     "https://weidian.com/item.html?itemID=7652831688",
     "not a url",
@@ -164,4 +184,6 @@ test("unwrapping refuses ambiguity, other sites and deep nesting", () => {
   assert.equal(unwrapAgentLink(nested), "https://weidian.com/item.html?itemID=7652831688");
   const deeper = "https://www.kakobuy.com/item/details?url=" + encodeURIComponent(nested);
   assert.equal(unwrapAgentLink(deeper), null);
+  const routed = "https://www.kakobuy.com/item/details?url=" + encodeURIComponent("https://www.fishgoo.com/#/product?productLink=" + WD);
+  assert.equal(unwrapAgentLink(routed), "https://weidian.com/item.html?itemID=7652831688");
 });
