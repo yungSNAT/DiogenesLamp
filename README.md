@@ -234,9 +234,10 @@ stdin: the `lamp export --format json` fields plus `new` and `changes`
 no request of its own: the command decides where the alert goes. Scraped
 text reaches it only on stdin, never in its command line.
 
-The recipes below are scripts, so the scheduled command stays short:
+The recipes below are scripts, so the scheduled command stays short. The
+command is run by the shell, so quote a path inside it as well:
 
-    lamp --sources "$HOME/lamp/sources.toml" --data "$HOME/lamp/data" scrape --notify "$HOME/lamp/notify.sh"
+    lamp --sources "$HOME/lamp/sources.toml" --data "$HOME/lamp/data" scrape --notify '"$HOME/lamp/notify.sh"'
 
 <details>
 <summary>Phone alert with ntfy (Linux and macOS: jq and curl)</summary>
@@ -264,7 +265,7 @@ use your own ntfy server.
 <summary>Windows: ntfy from PowerShell</summary>
 
 Save as `notify.ps1` in your `lamp` folder and pass
-`--notify "pwsh -NoProfile -File C:\Users\you\lamp\notify.ps1"` (with
+`--notify 'pwsh -NoProfile -File "C:\Users\you\lamp\notify.ps1"'` (with
 Windows PowerShell 5.1, whose default policy runs no scripts:
 `powershell -NoProfile -ExecutionPolicy Bypass -File ...`):
 

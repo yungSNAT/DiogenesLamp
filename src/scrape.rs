@@ -182,6 +182,9 @@ pub struct Options {
     pub refresh_days: i128,
     pub refresh_limit: i128,
     pub retry_failed: bool,
+    /// Read the albums the run stored or changed (`--notify`'s rows) before
+    /// the catalogue lock is released, so a later run cannot change them.
+    pub run_rows: bool,
 }
 
 impl Default for Options {
@@ -193,6 +196,7 @@ impl Default for Options {
             refresh_days: 0,
             refresh_limit: 100,
             retry_failed: false,
+            run_rows: false,
         }
     }
 }
@@ -716,11 +720,14 @@ impl Interrupt {
 
 pub type ClientFactory = Arc<dyn Fn() -> Box<dyn ScrapeClient> + Send + Sync>;
 
-/// What `scrape_all` returns: summaries, and whether the run was interrupted
-/// (Python raises KeyboardInterrupt after writing the index).
+/// What `scrape_all` returns: summaries, whether the run was interrupted
+/// (Python raises KeyboardInterrupt after writing the index), and the rows
+/// `Options::run_rows` asked for (none after a dry or interrupted run), or
+/// why they could not be read; the scrape's own data is saved either way.
 pub struct RunOutcome {
     pub summaries: Vec<SellerSummary>,
     pub interrupted: bool,
+    pub rows: Result<Vec<Map>>,
 }
 
 fn panic_text(payload: &(dyn std::any::Any + Send)) -> String {
@@ -903,10 +910,16 @@ pub fn scrape_all(
         finish();
         return Err(error);
     }
+    let rows = if options.run_rows && !options.dry_run && !interrupted {
+        crate::maintenance::run_rows(data_dir, run_ts)
+    } else {
+        Ok(Vec::new())
+    };
     finish();
     Ok(RunOutcome {
         summaries,
         interrupted,
+        rows,
     })
 }
 

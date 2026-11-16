@@ -1767,6 +1767,60 @@ fn a_stopped_seller_saves_nothing_it_has_not_listed() {
     assert!(!dir.path().join("catalog/sellerx.json").exists());
 }
 
+/// `scrape_all` for sellerx with `--notify`'s rows asked for or not, as
+/// (album_id, new) pairs.
+fn run_rows(dir: &Path, run_ts: &str, run_rows: bool, dry_run: bool) -> Vec<(String, bool)> {
+    let options = Options {
+        run_rows,
+        dry_run,
+        ..opts()
+    };
+    scrape_all(
+        &sources(&[seller()]),
+        dir,
+        run_ts,
+        &options,
+        1,
+        8.0,
+        None,
+        Some(make_client().factory()),
+        &mut |_| {},
+        &Interrupt::default(),
+    )
+    .unwrap()
+    .rows
+    .unwrap()
+    .iter()
+    .map(|row| {
+        (
+            row["album_id"].py_str(),
+            matches!(row["new"], Value::Bool(true)),
+        )
+    })
+    .collect()
+}
+
+#[test]
+fn a_run_asked_for_its_rows_returns_the_albums_it_stored_or_changed() {
+    let dir = common::tmp();
+    assert_eq!(run_rows(dir.path(), T1, false, false), []);
+    assert_eq!(
+        run_rows(common::tmp().path(), T1, true, true),
+        [],
+        "a dry run stores nothing"
+    );
+    let fresh = common::tmp();
+    assert_eq!(
+        run_rows(fresh.path(), T1, true, false),
+        [("101".to_string(), true), ("102".to_string(), true)]
+    );
+    assert_eq!(
+        run_rows(fresh.path(), T2, true, false),
+        [],
+        "a run that changes nothing"
+    );
+}
+
 #[test]
 fn each_seller_is_reported_as_it_finishes() {
     let dir = common::tmp();

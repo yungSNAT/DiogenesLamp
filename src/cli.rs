@@ -491,6 +491,7 @@ fn cmd_scrape(args: &Args) -> i32 {
         refresh_days: args.int("refresh_details_days"),
         refresh_limit: args.int("refresh_limit"),
         retry_failed: args.flag("retry_failed"),
+        run_rows: !args.str("notify").is_empty(),
     };
     let interrupt = Arc::new(Interrupt::default());
     {
@@ -559,15 +560,13 @@ fn cmd_scrape(args: &Args) -> i32 {
         outcome.summaries.len()
     ))
     .unwrap_or_else(|e| out::uncaught(&e));
-    let command = args.str("notify");
-    if !command.is_empty() && !dry_run {
-        let sent = crate::maintenance::run_rows(&args.path("data"), &run_ts)
-            .map_err(|e| e.to_string())
-            .and_then(|rows| notify(&command, rows));
-        if let Err(e) = sent {
-            out::err(&format!("error: --notify: {e}"));
-            return 1;
-        }
+    let sent = outcome
+        .rows
+        .map_err(|e| e.to_string())
+        .and_then(|rows| notify(&args.str("notify"), rows));
+    if let Err(e) = sent {
+        out::err(&format!("error: --notify: {e}"));
+        return 1;
     }
     i32::from(errored > 0)
 }
