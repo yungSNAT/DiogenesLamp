@@ -156,7 +156,7 @@ fn path_channel(agent: &str, code: &str) -> Option<&'static str> {
     )
 }
 
-const WRAPPED_AGENTS: [&str; 9] = [
+const WRAPPED_AGENTS: [&str; 10] = [
     "kakobuy.com",
     "superbuy.com",
     "sugargoo.com",
