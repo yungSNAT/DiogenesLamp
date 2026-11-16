@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `lamp find-photo IMAGE [--limit N]` lists the indexed albums whose cover
+  fingerprint is within 8 bits of the image's, nearest first, as a JSON
+  report. It finds the same picture resized or recompressed, not crops or
+  other angles. An image it cannot fingerprint is named with the reason.
 - The viewer's colour contrast and page structure checks are Rust tests in
   `tests/viewer.rs`, so they run without Node.js; the 2 Node test files they
   replace are removed.
