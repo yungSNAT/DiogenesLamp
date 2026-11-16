@@ -537,10 +537,12 @@ pub fn scrape_seller(
                 )
             })
             .collect();
-        let photo_count = if detail.photo_count != 0 {
-            detail.photo_count
-        } else {
+        // The card's count, which recounts compare, so a refetch agrees with
+        // them; the album page's only when the card shows none.
+        let photo_count = if stub.photo_count != 0 {
             stub.photo_count
+        } else {
+            detail.photo_count
         };
         let mut record = crate::obj! {
             "id" => stub.id.as_str(),

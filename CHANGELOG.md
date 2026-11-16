@@ -6,7 +6,9 @@
   different photo count from the last run, without fetching the album: the
   album's `photo_count` takes the new figure, its history records the change
   (so **Changed since review** shows it) and the seller's result line counts
-  and names it as recounted.
+  and names it as recounted. An album's `photo_count` is the card's count,
+  or the album page's when the card shows none, so a later fetch of the album
+  agrees with the recount.
 - `lamp export [--format csv|json] [--since YYYY-MM-DD]` prints the indexed
   albums with the viewer's CSV columns where they are stored, plus
   `first_seen` and `gone_since`, so a scheduled job can take the catalogue,
