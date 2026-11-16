@@ -20,6 +20,8 @@
   skip it as unchanged, and `lamp doctor` counts such albums as
   `links_truncated`. Before, only that run's summary named it, and nothing did
   after the next run. A fetch that scans every word clears the mark.
+- Non-ASCII hostnames are converted with the `idna` crate's unicode-rs back
+  end instead of ICU4X: the build has 153 crates instead of 171.
 
 ## 0.1.2 (2026-11-13)
 
