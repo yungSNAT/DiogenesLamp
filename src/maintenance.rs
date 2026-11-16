@@ -597,18 +597,24 @@ pub const EXPORT_COLUMNS: [&str; 11] = [
 /// `lamp export`: one row per selected album, in index and shard order, with
 /// the `EXPORT_COLUMNS` fields. `since` (YYYY-MM-DD) keeps the albums whose
 /// `first_seen` date, the local date of the run that first stored them, is
-/// that day or later. An unknown price, date or text is null.
+/// that day or later; a `first_seen` that is not a date and time leaves the
+/// album out. An unknown price, date or text is null.
 pub fn export_rows(root: &Path, since: Option<&str>) -> Result<Vec<Map>> {
+    let since = match since.map(|day| (day, crate::isodate::parse_date(day))) {
+        None => None,
+        Some((_, Some(date))) => Some(date.ordinal),
+        Some((day, None)) => return value(format!("not a date: {day}")),
+    };
     let mut rows = Vec::new();
     for album in selected_albums(root)? {
         let field = |key: &str| album.get(key).cloned().unwrap_or(Value::Null);
         if let Some(since) = since {
-            let first_seen = album.get("first_seen").map(Value::py_str);
-            if first_seen
-                .as_deref()
-                .and_then(|f| f.get(..10))
-                .is_none_or(|day| day < since)
-            {
+            let first_day = match album.get("first_seen") {
+                Some(Value::Str(text)) => crate::isodate::parse_datetime(text)
+                    .map(|(local, _)| local.div_euclid(86_400_000_000)),
+                _ => None,
+            };
+            if first_day.is_none_or(|day| day < since) {
                 continue;
             }
         }
@@ -673,7 +679,13 @@ fn csv_cell(value: &Value) -> String {
 pub fn export_csv(rows: &[Map]) -> String {
     let header: Vec<Value> = EXPORT_COLUMNS.iter().map(|c| Value::from(*c)).collect();
     let mut csv = String::from("\u{feff}");
-    for cells in std::iter::once(header).chain(rows.iter().map(|r| r.values().cloned().collect())) {
+    let row = |r: &Map| {
+        EXPORT_COLUMNS
+            .iter()
+            .map(|c| r.get(*c).cloned().unwrap_or(Value::Null))
+            .collect()
+    };
+    for cells in std::iter::once(header).chain(rows.iter().map(row)) {
         let line: Vec<String> = cells.iter().map(csv_cell).collect();
         csv.push_str(&line.join(","));
         csv.push_str("\r\n");

@@ -326,7 +326,7 @@ To start from a picture instead, such as a screenshot of a listing:
 
 It prints a JSON report of the indexed albums whose cover fingerprint is
 within the same 8 bits, nearest first, up to `--limit N` of them (8 by default,
-at most 20). Paste an `id` into the viewer's search to open the album. It
+at most 20). Paste an `id` into the viewer's search to find the album. It
 finds the same picture, resized, recompressed or slightly brightened; crops,
 other angles and heavy edits are missed. The image is read under the cover
 limits (JPEG, PNG or WebP, at most 8 MiB and 20 megapixels), and nothing is
