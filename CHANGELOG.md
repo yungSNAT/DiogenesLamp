@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The viewer's colour contrast and page structure checks are Rust tests in
+  `tests/viewer.rs`, so they run without Node.js; the 2 Node test files they
+  replace are removed.
 - The viewer reads an optional `aliases.json` in the data directory: your own
   brand and model names, each with the Chinese names and seller codes your
   sellers write. Searching a name finds titles that use any of them, and the
