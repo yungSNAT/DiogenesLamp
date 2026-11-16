@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `lamp find-photo IMAGE [--limit N]` lists the indexed albums whose cover
+  fingerprint is within 8 bits of the image's, nearest first, as a JSON
+  report. It finds the same picture resized or recompressed, not crops or
+  other angles. An image it cannot fingerprint is named with the reason.
 - The viewer reads an optional `aliases.json` in the data directory: your own
   brand and model names, each with the Chinese names and seller codes your
   sellers write. Searching a name finds titles that use any of them, and the

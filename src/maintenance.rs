@@ -115,6 +115,34 @@ fn truthy(map: &Map, key: &str) -> bool {
     map.get(key).is_some_and(Value::truthy)
 }
 
+/// The albums the index selects, seller by seller in index and shard order:
+/// those in a seller's `album_ids`, or all of its shard's albums in an
+/// older index without them. A missing or invalid index or shard, or an
+/// indexed album missing from its shard, is an error, so a reader never
+/// works from part of the catalogue.
+pub fn selected_albums(root: &Path) -> Result<Vec<Map>> {
+    let index = read_metadata(&data_path(root, "index.json", false)?, "index.json")?;
+    let mut selected = Vec::new();
+    for seller in sellers_of(&index) {
+        let relative = seller.get("shard").map(Value::py_str).unwrap_or_default();
+        let albums = albums_of(&read_metadata(
+            &data_path(root, &relative, false)?,
+            &relative,
+        )?);
+        let Some(Value::Array(ids)) = seller.get("album_ids") else {
+            selected.extend(albums);
+            continue;
+        };
+        let ids: std::collections::HashSet<String> = ids.iter().map(Value::py_str).collect();
+        let before = selected.len();
+        selected.extend(albums.into_iter().filter(|a| ids.contains(&id_of(a))));
+        if selected.len() - before != ids.len() {
+            return value(format!("{relative}: indexed album missing from shard"));
+        }
+    }
+    Ok(selected)
+}
+
 pub fn diagnose(root: &Path) -> Map {
     let mut counts: Vec<(&str, i128)> = vec![
         ("albums", 0),
@@ -481,4 +509,69 @@ pub fn prepare_covers(root: &Path, limit: i128) -> Result<Map> {
         snapshot_path.map_or(Value::Null, |p| pyerr::path_str(&p).into()),
     );
     Ok(result)
+}
+
+/// Most bits in which a cover's fingerprint may differ from the image's and
+/// still be suggested; the viewer's Similar covers uses the same threshold.
+const FIND_PHOTO_DISTANCE: u32 = 8;
+
+/// A fingerprint other than 16 hex digits, or a uniform one (all 0 or all
+/// 1 bits, a blank picture), says nothing about layout.
+fn layout_hash(hash: &str) -> Option<u64> {
+    let bits = u64::from_str_radix(hash, 16).ok()?;
+    (hash.len() == 16 && bits != 0 && bits != u64::MAX).then_some(bits)
+}
+
+/// `lamp find-photo`: the selected albums whose cover fingerprint is within
+/// `FIND_PHOTO_DISTANCE` bits of the image's, nearest first, then by ID, at
+/// most `limit` of them. Suggestions only: nothing is merged or written.
+pub fn find_photo(root: &Path, image: &Path, limit: usize) -> Result<Map> {
+    let unusable = |reason: String| {
+        Error::Value(format!(
+            "cannot fingerprint {}: {reason}",
+            pyerr::path_str(image)
+        ))
+    };
+    let hash = crate::covers::image_hash(image).map_err(unusable)?;
+    let Some(bits) = layout_hash(&hash) else {
+        return Err(unusable("it is a blank or single-colour picture".into()));
+    };
+    let (mut searched, mut without_hash) = (0usize, 0usize);
+    let mut matches: Vec<(u32, String, Map)> = Vec::new();
+    for album in selected_albums(root)? {
+        let Some(cover) = album
+            .get("cover_hash")
+            .and_then(|h| layout_hash(&h.py_str()))
+        else {
+            without_hash += 1;
+            continue;
+        };
+        searched += 1;
+        let distance = (bits ^ cover).count_ones();
+        if distance <= FIND_PHOTO_DISTANCE {
+            matches.push((distance, id_of(&album), album));
+        }
+    }
+    matches.sort_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
+    matches.truncate(limit);
+    let field = |album: &Map, key: &str| album.get(key).cloned().unwrap_or(Value::Null);
+    let matches = matches
+        .into_iter()
+        .map(|(distance, id, album)| {
+            Value::Object(crate::obj! {
+                "id" => id,
+                "seller" => field(&album, "seller"),
+                "distance" => Value::Int(i128::from(distance)),
+                "title" => field(&album, "title"),
+                "album_url" => field(&album, "album_url"),
+                "gone_since" => field(&album, "gone_since"),
+            })
+        })
+        .collect();
+    Ok(crate::obj! {
+        "image_hash" => hash,
+        "searched" => searched,
+        "without_hash" => without_hash,
+        "matches" => Value::Array(matches),
+    })
 }

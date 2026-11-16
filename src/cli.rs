@@ -41,6 +41,14 @@ fn int(text: &str) -> Result<Value, Option<String>> {
     pystr::parse_int(text).map(Value::Int).ok_or(None)
 }
 
+fn match_limit(text: &str) -> Result<Value, Option<String>> {
+    let value = pystr::parse_int(text).ok_or(None)?;
+    if !(1..=20).contains(&value) {
+        return Err(Some("must be between 1 and 20".into()));
+    }
+    Ok(Value::Int(value))
+}
+
 fn port(text: &str) -> Result<Value, Option<String>> {
     let value = pystr::parse_int(text).ok_or(None)?;
     if !(1..=65535).contains(&value) {
@@ -154,6 +162,17 @@ pub fn build_parser() -> Parser {
         None,
     );
 
+    let mut find_photo = Parser::new("lamp find-photo", None);
+    find_photo.positional("image", as_path, "Path");
+    find_photo.store(
+        "--limit",
+        match_limit,
+        "_match_limit",
+        Value::Int(8),
+        Some("N"),
+        Some("most albums to list, 1 to 20"),
+    );
+
     let choice = |name: &str, help: &str, p: Parser| (name.to_string(), Some(help.to_string()), p);
     parser.subparsers(
         "command",
@@ -186,6 +205,11 @@ pub fn build_parser() -> Parser {
                 "prepare-covers",
                 "resize and fingerprint cached covers locally",
                 covers,
+            ),
+            choice(
+                "find-photo",
+                "list albums whose cover looks like an image file",
+                find_photo,
             ),
         ],
     );
@@ -505,6 +529,11 @@ fn maintenance(command: &str, args: &Args) -> Result<i32, Error> {
         "snapshot" => {
             let path = crate::maintenance::snapshot(&data)?;
             out::out(&pyerr::path_str(&path)).map_err(out::os_error)?;
+        }
+        "find-photo" => {
+            let limit = usize::try_from(args.int("limit")).unwrap_or(8);
+            let report = crate::maintenance::find_photo(&data, &args.path("image"), limit)?;
+            out::out(&pyjson::dumps(&report.into(), Style::Indent(2))).map_err(out::os_error)?;
         }
         "restore" => {
             let previous = crate::maintenance::restore(&data, &args.path("archive"))?;

@@ -304,6 +304,18 @@ Shared photography can produce false positives; crops and different angles can
 be missed. The threshold has synthetic regression coverage, not a measured
 accuracy rate on real products.
 
+To start from a picture instead, such as a screenshot of a listing:
+
+    lamp --data data find-photo screenshot.jpg
+
+It prints a JSON report of the indexed albums whose cover fingerprint is
+within the same 8 bits, nearest first, up to `--limit N` of them (8 by default,
+at most 20). Paste an `id` into the viewer's search to open the album. It
+finds the same picture, resized, recompressed or slightly brightened; crops,
+other angles and heavy edits are missed. The image is read under the cover
+limits (JPEG, PNG or WebP, at most 8 MiB and 20 megapixels), and nothing is
+written or fetched.
+
 ## Politeness and scope
 
 - Global cap of 8 requests/second by default (tune with `--rps`), 1
@@ -329,7 +341,8 @@ needs:
   [Yupa](https://joinyupa.com/en) is a hosted search across Yupoo stores
   (220 stores on its home page on 8 November 2026), with sizes, prices in
   euros and a delivered-price calculator.
-- **Search by photo, or Taobao, 1688 and Weidian as well as Yupoo:**
+- **Search by a photo of a different shot, or Taobao, 1688 and Weidian as well
+  as Yupoo:**
   [OpenClothingSearch](https://github.com/SergeSerb2/OpenClothingSearch) runs
   locally, ranks listings by how closely their photos match and translates
   titles. It needs uv, Node.js and Chrome, and uses an AI provider you connect
