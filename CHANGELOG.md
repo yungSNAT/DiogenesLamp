@@ -20,6 +20,9 @@
   skip it as unchanged, and `lamp doctor` counts such albums as
   `links_truncated`. Before, only that run's summary named it, and nothing did
   after the next run. A fetch that scans every word clears the mark.
+- An agent link whose wrapped `url=` value exceeds the link pattern's
+  backtracking limit marks its album partly scanned and `links_truncated`.
+  Before, the link was dropped and the album counted as fully scanned.
 
 ## 0.1.2 (2026-11-13)
 
