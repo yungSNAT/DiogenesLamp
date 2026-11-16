@@ -1894,6 +1894,28 @@ fn a_notify_run_in_the_second_of_a_scrape_that_never_wrote_its_index_is_refused(
     );
 }
 
+/// A failed run that only marked albums gone or recounted leaves history
+/// entries at its second without touching `updated_at`: refused as well.
+#[test]
+fn a_notify_run_in_the_second_of_history_a_failed_scrape_left_is_refused() {
+    let dir = common::tmp();
+    scrape_rows(dir.path(), T1, opts()).unwrap();
+    let path = dir.path().join("catalog/sellerx.json");
+    let mut stored = obj(&read_json(&path)).clone();
+    if let Some(Value::Array(albums)) = stored.get_mut("albums")
+        && let Some(Value::Object(album)) = albums.first_mut()
+    {
+        lamp::storage::record_change(album, "availability", "listed".into(), "gone".into(), T2);
+    }
+    lamp::storage::atomic_write_json(&path, &Value::Object(stored)).unwrap();
+    assert_eq!(get(&shard(dir.path()), "102", "updated_at").py_str(), T1);
+    let error = scrape_rows(dir.path(), T2, notifying()).unwrap_err();
+    assert!(
+        matches!(&error, lamp::errors::Error::Busy(m) if m.contains("already ran at")),
+        "{error}"
+    );
+}
+
 #[test]
 fn each_seller_is_reported_as_it_finishes() {
     let dir = common::tmp();
