@@ -395,90 +395,104 @@ impl Parser {
                         )
                     );
                 }
-                let (action_index, option_string, explicit, has_sep) = tuples[0].clone();
-                let Some(action_index) = action_index else {
+                let (action_index, mut option_string, explicit_arg, mut has_sep) =
+                    tuples[0].clone();
+                let Some(mut action_index) = action_index else {
                     extras.push(args[start].clone());
                     start += 1;
                     continue;
                 };
-                let action = &self.actions[action_index];
-                let takes_value = matches!(action.kind, Kind::Store { .. });
-                let (value, stop) = match explicit {
-                    Some(explicit) => {
-                        if !takes_value {
+                let mut explicit = explicit_arg.as_deref();
+                let mut actions = Vec::new();
+                // Validate the whole cluster before applying its actions. A later
+                // missing value must fail even when an earlier action is help.
+                let stop = loop {
+                    let action = &self.actions[action_index];
+                    let takes_value = matches!(action.kind, Kind::Store { .. });
+                    let (value, stop, tail) = match explicit.take() {
+                        Some(explicit) if !takes_value => {
                             let single_dash = option_string.chars().nth(1) != Some('-');
                             if single_dash
                                 && !explicit.is_empty()
                                 && !(has_sep || explicit.starts_with('-'))
                             {
-                                // -hx: x would be another flag; none exist here.
-                                let leftover: String = format!("-{explicit}");
-                                let char0 = option_string.chars().next().unwrap_or('-');
-                                let next_option =
-                                    format!("{char0}{}", explicit.chars().next().unwrap_or(' '));
-                                if self.option_actions().iter().all(|(s, _)| *s != next_option) {
-                                    // Run the flag, then keep the rest as an extra.
-                                    seen.push(action_index);
-                                    if matches!(action.kind, Kind::Help) {
-                                        return Err(Exit {
-                                            code: 0,
-                                            stdout: self.format_help(),
-                                            stderr: String::new(),
-                                        });
-                                    }
-                                    namespace.insert(action.dest.clone(), Value::Bool(true));
-                                    extras.push(leftover);
-                                    start += 1;
-                                    continue;
+                                (None, start + 1, Some(explicit))
+                            } else {
+                                fail!(
+                                    Some(action_index),
+                                    format!("ignored explicit argument {}", pystr::repr(explicit))
+                                );
+                            }
+                        }
+                        Some(explicit) => (Some(explicit), start + 1, None),
+                        None => {
+                            if takes_value {
+                                if pattern.get(start + 1) != Some(&'A') {
+                                    fail!(Some(action_index), "expected one argument".to_string());
                                 }
+                                (Some(args[start + 1].as_str()), start + 2, None)
+                            } else {
+                                (None, start + 1, None)
                             }
-                            fail!(
-                                Some(action_index),
-                                format!("ignored explicit argument {}", pystr::repr(&explicit))
-                            );
                         }
-                        (Some(explicit), start + 1)
-                    }
-                    None => {
-                        if takes_value {
-                            if pattern.get(start + 1) != Some(&'A') {
-                                fail!(Some(action_index), "expected one argument".to_string());
-                            }
-                            (Some(args[start + 1].clone()), start + 2)
+                    };
+                    actions.push((action_index, value));
+                    if let Some(tail) = tail {
+                        let mut suffix = tail.chars();
+                        let next_option = format!("-{}", suffix.next().unwrap_or_default());
+                        if let Some(next_index) = self
+                            .actions
+                            .iter()
+                            .position(|action| action.option_strings.contains(&next_option))
+                        {
+                            action_index = next_index;
+                            option_string = next_option;
+                            let rest = suffix.as_str();
+                            has_sep = rest.starts_with('=');
+                            explicit = if has_sep {
+                                Some(&rest[1..])
+                            } else {
+                                (!rest.is_empty()).then_some(rest)
+                            };
+                            continue;
                         } else {
-                            (None, start + 1)
+                            extras.push(format!("-{tail}"));
                         }
                     }
+                    break stop;
                 };
-                seen.push(action_index);
-                match &action.kind {
-                    Kind::Help => {
-                        return Err(Exit {
-                            code: 0,
-                            stdout: self.format_help(),
-                            stderr: String::new(),
-                        });
+                for (action_index, value) in actions {
+                    let action = &self.actions[action_index];
+                    seen.push(action_index);
+                    match &action.kind {
+                        Kind::Help => {
+                            return Err(Exit {
+                                code: 0,
+                                stdout: self.format_help(),
+                                stderr: String::new(),
+                            });
+                        }
+                        Kind::Version(text) => {
+                            return Err(Exit {
+                                code: 0,
+                                stdout: format!("{text}\n"),
+                                stderr: String::new(),
+                            });
+                        }
+                        Kind::StoreTrue => {
+                            namespace.insert(action.dest.clone(), Value::Bool(true));
+                        }
+                        Kind::Store { convert, type_name } => {
+                            let converted = self.convert(
+                                action_index,
+                                *convert,
+                                type_name,
+                                value.unwrap_or_default(),
+                            )?;
+                            namespace.insert(action.dest.clone(), converted);
+                        }
+                        _ => {}
                     }
-                    Kind::Version(text) => {
-                        return Err(Exit {
-                            code: 0,
-                            stdout: format!("{text}\n"),
-                            stderr: String::new(),
-                        });
-                    }
-                    Kind::StoreTrue => {
-                        namespace.insert(action.dest.clone(), Value::Bool(true));
-                    }
-                    Kind::Store { convert, type_name } => {
-                        let converted = self.convert(
-                            action_index,
-                            *convert,
-                            type_name,
-                            &value.unwrap_or_default(),
-                        )?;
-                        namespace.insert(action.dest.clone(), converted);
-                    }
-                    _ => {}
                 }
                 start = stop;
             }
@@ -842,14 +856,12 @@ fn wrap(text: &str, width: usize) -> Vec<String> {
             let space_left = if width > cur { width - cur } else { 1 };
             let chars: Vec<char> = chunk.chars().collect();
             let mut end = space_left;
-            if chars.len() > space_left {
-                let head: String = chars[..space_left].iter().collect();
-                if let Some(hyphen) = head.rfind('-')
-                    && hyphen > 0
-                    && chars[..hyphen].iter().any(|&c| c != '-')
-                {
-                    end = hyphen + 1;
-                }
+            if chars.len() > space_left
+                && let Some(hyphen) = chars[..space_left].iter().rposition(|&c| c == '-')
+                && hyphen > 0
+                && chars[..hyphen].iter().any(|&c| c != '-')
+            {
+                end = hyphen + 1;
             }
             line.push(chars[..end.min(chars.len())].iter().collect());
             let rest: String = chars[end.min(chars.len())..].iter().collect();
@@ -869,6 +881,141 @@ fn wrap(text: &str, width: usize) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_short_flag_is_applied_before_its_unknown_suffix_is_reported() {
+        let mut parser = Parser::new("lamp", None);
+        parser.flag("-q", None);
+        let args = ["-qx"].map(str::to_string);
+        let mut parsed = Namespace::new();
+        let extras = parser.parse_known_args(&args, &mut parsed).unwrap();
+        assert_eq!(parsed["q"], Value::Bool(true));
+        assert_eq!(extras, ["-x"]);
+    }
+
+    #[test]
+    fn short_option_clusters_apply_each_action_and_keep_attached_values() {
+        let mut parser = Parser::new("lamp", None);
+        parser.flag("-q", None);
+        parser.flag("-r", None);
+        parser.store(
+            "-n",
+            |value| value.parse().map(Value::Int).map_err(|_| None),
+            "int",
+            Value::Int(0),
+            None,
+            None,
+        );
+        for arguments in [
+            vec!["-qqrrn7"],
+            vec!["-qrn", "7"],
+            vec!["-rqn7"],
+            vec!["-qqrn=7"],
+        ] {
+            let parsed = parser
+                .parse_args(
+                    &arguments
+                        .iter()
+                        .map(|arg| (*arg).into())
+                        .collect::<Vec<_>>(),
+                )
+                .unwrap();
+            assert_eq!(parsed["q"], Value::Bool(true));
+            assert_eq!(parsed["r"], Value::Bool(true));
+            assert_eq!(parsed["n"], Value::Int(7));
+        }
+        let parsed = parser.parse_args(&["-qn-7".into()]).unwrap();
+        assert_eq!(parsed["q"], Value::Bool(true));
+        assert_eq!(parsed["r"], Value::Bool(false));
+        assert_eq!(parsed["n"], Value::Int(-7));
+        for arg in ["-qqxy", "-qqxq"] {
+            let mut namespace = Namespace::new();
+            let extras = parser
+                .parse_known_args(&[arg.into()], &mut namespace)
+                .unwrap();
+            assert_eq!(namespace["q"], Value::Bool(true));
+            assert_eq!(extras, [format!("-{}", &arg[3..])]);
+        }
+    }
+
+    #[test]
+    fn short_option_clusters_stop_at_help_or_version() {
+        let mut parser = Parser::new("lamp", None);
+        parser.flag("-q", None);
+        parser.version("-v", "PUBLIC version");
+        for arg in ["-hh", "-hq", "-qh", "-qqh", "-hx"] {
+            let exit = parser.parse_args(&[arg.into()]).unwrap_err();
+            assert_eq!(exit.code, 0, "{arg}: {exit:?}");
+            assert_eq!(exit.stdout, parser.format_help());
+            assert!(exit.stderr.is_empty());
+        }
+        for arg in ["-qv", "-vq", "-vx"] {
+            let exit = parser.parse_args(&[arg.into()]).unwrap_err();
+            assert_eq!(exit.code, 0, "{arg}: {exit:?}");
+            assert_eq!(exit.stdout, "PUBLIC version\n");
+            assert!(exit.stderr.is_empty());
+        }
+        for arg in ["-h-h", "-h=", "-v=1", "-q=1"] {
+            let exit = parser.parse_args(&[arg.into()]).unwrap_err();
+            assert_eq!(exit.code, 2, "{arg}: {exit:?}");
+            assert!(exit.stdout.is_empty());
+            assert!(exit.stderr.contains("ignored explicit argument"));
+        }
+    }
+
+    #[test]
+    fn cluster_syntax_is_checked_before_help_but_later_conversion_is_not() {
+        let mut parser = Parser::new("lamp", None);
+        parser.flag("-q", None);
+        parser.store(
+            "-n",
+            |value| value.parse().map(Value::Int).map_err(|_| None),
+            "int",
+            Value::Int(0),
+            None,
+            None,
+        );
+        parser.version("-v", "PUBLIC version");
+        for (arg, message) in [
+            ("-hqn", "argument -n: expected one argument"),
+            ("-vq=1", "argument -q: ignored explicit argument '1'"),
+            ("-qv=1", "argument -v: ignored explicit argument '1'"),
+            (
+                "-hh-h",
+                "argument -h/--help: ignored explicit argument '-h'",
+            ),
+        ] {
+            let mut namespace = Namespace::new();
+            let exit = parser
+                .parse_known_args(&[arg.into()], &mut namespace)
+                .unwrap_err();
+            assert_eq!(exit.code, 2, "{arg}: {exit:?}");
+            assert!(exit.stdout.is_empty());
+            assert!(exit.stderr.ends_with(&format!("lamp: error: {message}\n")));
+            assert_eq!(namespace["q"], Value::Bool(false));
+        }
+        for (arg, expected) in [
+            ("-hqnBAD", parser.format_help()),
+            ("-vqnBAD", "PUBLIC version\n".into()),
+        ] {
+            let exit = parser.parse_args(&[arg.into()]).unwrap_err();
+            assert_eq!(exit.code, 0, "{arg}: {exit:?}");
+            assert_eq!(exit.stdout, expected);
+            assert!(exit.stderr.is_empty());
+        }
+        let parsed = parser.parse_args(&["-qn7".into()]).unwrap();
+        assert_eq!(parsed["q"], Value::Bool(true));
+        assert_eq!(parsed["n"], Value::Int(7));
+        for arguments in [vec!["-qnBAD".into()], vec!["-qnBAD".into(), "-h".into()]] {
+            let exit = parser.parse_args(&arguments).unwrap_err();
+            assert_eq!(exit.code, 2, "{arguments:?}: {exit:?}");
+            assert!(exit.stdout.is_empty());
+            assert!(
+                exit.stderr
+                    .ends_with("lamp: error: argument -n: invalid int value: 'BAD'\n")
+            );
+        }
+    }
 
     #[test]
     fn wraps_like_textwrap() {
@@ -891,5 +1038,40 @@ mod tests {
                 "run"
             ]
         );
+    }
+
+    #[test]
+    fn wraps_long_words_at_character_boundaries() {
+        assert_eq!(
+            wrap("αβγδεζηθικλμνξοπρστυφ", 11),
+            ["αβγδεζηθικλ", "μνξοπρστυφ"]
+        );
+        assert_eq!(
+            wrap("12345 abcdefg-1abcdefghijk", 16),
+            ["12345 abcdefg-", "1abcdefghijk"]
+        );
+        assert_eq!(
+            wrap("12345678901 longwordswithoutspaces", 11),
+            ["12345678901", "longwordswi", "thoutspaces"]
+        );
+        assert_eq!(wrap("---long-words", 3), ["---", "lon", "g-w", "ord", "s"]);
+    }
+
+    #[test]
+    fn wraps_unicode_hyphenated_words_at_character_boundaries() {
+        for (text, width, expected) in [
+            ("éééééééééé-1", 11, vec!["éééééééééé-", "1"]),
+            ("préfixe-1suffixe", 11, vec!["préfixe-", "1suffixe"]),
+            ("abcdefghé-1z", 10, vec!["abcdefghé-", "1z"]),
+            ("---éééééééé-1", 11, vec!["---éééééééé", "-1"]),
+            ("é-1abc", 3, vec!["é-", "1ab", "c"]),
+            (
+                "🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂-1",
+                11,
+                vec!["🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂-", "1"],
+            ),
+        ] {
+            assert_eq!(wrap(text, width), expected, "{text:?}, width {width}");
+        }
     }
 }
