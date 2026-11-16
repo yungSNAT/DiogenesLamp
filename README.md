@@ -254,6 +254,22 @@ which the refresh budget does oldest first, so coverage grows with each
 budgeted run. `--full` fetches everything, covers included, and is not a
 description-only operation.
 
+### Export
+
+    lamp --data data export > catalogue.csv
+    lamp --data data export --format json --since 2026-11-16 > new.json
+
+`export` prints the indexed albums, one per row, with the columns the viewer's
+CSV export uses where they are stored (seller, album ID, title, currency,
+price, details checked, album URL, purchase links and description) plus
+`first_seen` and `gone_since`. The CSV opens in a spreadsheet as the viewer's
+does: a value that would start a formula gains a leading `'`. JSON gives the
+same fields, with `null` for an unknown value and the purchase links as a
+list. `--since YYYY-MM-DD` keeps the albums first stored on that date or
+later, by the local date in `first_seen`; after a scheduled scrape it gives
+what the scrape added. A missing or corrupt shard stops the export with an
+error and nothing printed.
+
 ### Diagnostics and recovery
 
     lamp --data data doctor
@@ -310,7 +326,7 @@ To start from a picture instead, such as a screenshot of a listing:
 
 It prints a JSON report of the indexed albums whose cover fingerprint is
 within the same 8 bits, nearest first, up to `--limit N` of them (8 by default,
-at most 20). Paste an `id` into the viewer's search to open the album. It
+at most 20). Paste an `id` into the viewer's search to find the album. It
 finds the same picture, resized, recompressed or slightly brightened; crops,
 other angles and heavy edits are missed. The image is read under the cover
 limits (JPEG, PNG or WebP, at most 8 MiB and 20 megapixels), and nothing is
