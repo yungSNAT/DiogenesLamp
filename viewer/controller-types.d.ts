@@ -50,6 +50,7 @@ export type ViewerState = {
   titleKeyCounts: Map<string, number>;
   shardAlbums: Map<string, ViewerAlbum[]>;
   unselectedAlbums: Map<string, ListingCopy[]>;
+  listingAliases: Record<string, string>;
   listingCopies: Map<string, ListingCopy[]>;
   failedShards: string[];
   aliasNote: string;

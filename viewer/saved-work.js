@@ -288,7 +288,7 @@ function showPreviewLinks(album) {
 /** @param {import('./controller-types.js').ViewerAlbum} album */
 function showListingCopies(album) {
   const copies = state.listingCopies.get(album.id) || [];
-  const named = Object.values(state.albumAliases).filter(id => id === album.id).length;
+  const named = Object.values(state.listingAliases).filter(id => id === album.id).length;
   const missing = Math.max(named - copies.length, 0);
   const listings = workEl("preview-copies");
   listings.replaceChildren();

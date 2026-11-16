@@ -251,10 +251,12 @@ unknown'), posting date (or first-seen date when none was recorded), a link
 to its album, and 'no longer listed' once it has gone. So 2 sellers' prices
 for one marketplace item compare in one place. The older listings come from
 the seller shards already loaded, so the list needs no extra request. The
-index names every listing, so one whose seller is still loading, or could
-not be read, is counted in the list's heading; an older index names none,
-so until every seller is read the heading counts only the sellers read. An
-open preview fills in as sellers load.
+index names the listings of every seller the scrape read, so one whose
+seller is still loading, or could not be read, is counted in the list's
+heading. An index from a scrape that could not read every seller, or from
+an older lamp, does not name them all, so whilst a seller is unread the
+heading says it counts only the sellers read. An open preview fills in as
+sellers load.
 
 Favourites, notes, tags and collections on an older duplicate copy to the
 newest listing when its field has no saved entry. Existing values, including

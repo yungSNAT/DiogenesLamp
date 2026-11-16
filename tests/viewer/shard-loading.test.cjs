@@ -113,6 +113,61 @@ test("a selected listing's other listings come from the index's aliases", () => 
   assert.deepEqual([...state.listingCopies], [["300", [older, other]]]);
 });
 
+// Every index shape `lamp scrape` writes (src/storage.rs write_index): a
+// complete one (selection_version 1, album_ids and album_aliases), one written
+// whilst a seller's shard was missing (album_ids and album_aliases for the
+// sellers it read, none for that seller, no selection_version), and one from
+// before album_ids. With every shard loaded, or with one failing here, each
+// hidden listing is either listed under the one shown or named, and so
+// counted, by state.listingAliases.
+test("the preview lists or counts the hidden listings of every index shape", () => {
+  const record = (id, seller, date) => {
+    const album = {id, seller, title: "Blue shirt", title_lc: "blue shirt", thumb: "", price: 90,
+      links: [{url: "https://weidian.com/item.html?itemID=7"}], date_published: date,
+      album_url: `https://${seller}.x.yupoo.com/albums/${id}`};
+    album.dup_key = dupKey(album); album.published_ms = publishedMs(album);
+    return album;
+  };
+  const older = record("100", "one", "2026-01-01"), shown = record("200", "two", "2026-02-01");
+  const three = {id: "three", shard: "catalog/three.json"};
+  const shapes = {
+    complete: {selection_version: 1, album_aliases: {100: "200"},
+      sellers: [{id: "one", album_ids: []}, {id: "two", album_ids: ["200"]}, {...three, album_ids: []}]},
+    "seller missing": {album_aliases: {100: "200"},
+      sellers: [{id: "one", album_ids: []}, {id: "two", album_ids: ["200"]}, three]},
+    "before album_ids": {sellers: [{id: "one"}, {id: "two"}, three]},
+  };
+  const cases = [];
+  for (const [shape, index] of Object.entries(shapes)) {
+    for (const oneFails of [false, true]) cases.push({shape, index, oneFails});
+  }
+  // Every case's list first, then the names that count the rest.
+  for (const check of ["listed", "named"]) {
+    for (const {shape, index, oneFails} of cases) {
+      const indexed = index.sellers[0].album_ids !== undefined;
+      const shardAlbums = new Map([["two", [shown]], ["three", []]]);
+      const unselectedAlbums = new Map();
+      if (!oneFails) {
+        if (indexed) unselectedAlbums.set("one", [older]);
+        shardAlbums.set("one", indexed ? [] : [older]);
+      }
+      const state = {index, loadedSellers: 3, failedShards: oneFails ? ["one"] : [], shardAlbums, unselectedAlbums};
+      rebuilder(state)();
+      const label = `${shape}, seller one ${oneFails ? "failed" : "loaded"}`;
+      assert.deepEqual(state.albums, [shown], label);
+      // Nothing names a listing in a seller never read; the heading then
+      // says the count covers the sellers read (preview.test.cjs).
+      const known = !(oneFails && !indexed);
+      if (check === "listed") {
+        assert.deepEqual((state.listingCopies.get("200") || []).map(a => a.id), known && !oneFails ? ["100"] : [], label);
+      } else {
+        const named = Object.keys(state.listingAliases).filter(id => state.listingAliases[id] === "200");
+        assert.deepEqual(named, known ? ["100"] : [], label);
+      }
+    }
+  }
+});
+
 test("rebuilding a large seller keeps index order without an argument limit", () => {
   const first = Array.from({length: 200000}, (_, index) => ({id: String(index)}));
   const last = [{id: "last"}];
