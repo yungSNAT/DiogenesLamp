@@ -819,6 +819,104 @@ fn a_listing_photo_count_change_is_recorded_without_a_detail_fetch() {
     );
 }
 
+/// Albums 101 to 106 as listed, with (id, title, count) replacing the
+/// default "Item {id}" and 3 photos.
+fn recounted_listing(changes: &[(u32, &str, u32)]) -> FakeClient {
+    let client = paged(&[(101, 106)]);
+    let listing = (101..=106)
+        .map(|id| match changes.iter().find(|(c, _, _)| *c == id) {
+            Some(&(_, title, count)) => {
+                list_item(&id.to_string(), title).replace(">3</span>", &format!(">{count}</span>"))
+            }
+            None => list_item(&id.to_string(), &format!("Item {id}")),
+        })
+        .collect();
+    client.set("albums?page=1", listing);
+    client
+}
+
+fn photo_count_events(dir: &Path, id: &str) -> Vec<String> {
+    match shard(dir)[id].get("history") {
+        Some(Value::Array(items)) => items
+            .iter()
+            .filter(|h| h.as_object().unwrap()["field"].py_str() == "photo count")
+            .map(Value::py_str)
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+#[test]
+fn a_recount_beside_a_failed_fetch_is_recorded_once() {
+    let dir = common::tmp();
+    run_once(&paged(&[(101, 106)]), dir.path(), T1, opts());
+    // 103 is retitled and gains photos, but its album fetch fails: the old
+    // record stays and the count change is still recorded.
+    let failing =
+        recounted_listing(&[(103, "Item 103 restocked", 5)]).fetch_errors(&["/albums/103?"]);
+    let summary = run_once(&failing, dir.path(), T2, opts());
+    assert_eq!(
+        (summary.failed_ids.clone(), summary.recounted_ids),
+        (ids(103, 103), ids(103, 103))
+    );
+    assert_eq!(get(&shard(dir.path()), "103", "title").py_str(), "Item 103");
+    assert_eq!(photo_count_events(dir.path(), "103").len(), 1);
+    // Retrying the failure stores the new title and records nothing more.
+    let retry = recounted_listing(&[(103, "Item 103 restocked", 5)]);
+    retry.set("/albums/103", album_page("Item 103 restocked", ""));
+    let third = "2026-08-19T12:00:00+10:00";
+    let options = Options {
+        retry_failed: true,
+        ..opts()
+    };
+    let summary = run_once(&retry, dir.path(), third, options);
+    assert_eq!(
+        (summary.resolved_ids, summary.recounted_ids),
+        (ids(103, 103), vec![])
+    );
+    let albums = shard(dir.path());
+    assert_eq!(get(&albums, "103", "title").py_str(), "Item 103 restocked");
+    assert_eq!(get(&albums, "103", "photo_count").py_str(), "5");
+    assert_eq!(photo_count_events(dir.path(), "103").len(), 1);
+}
+
+#[test]
+fn a_record_without_a_listed_count_takes_its_first_as_the_baseline() {
+    let dir = common::tmp();
+    run_once(&paged(&[(101, 106)]), dir.path(), T1, opts());
+    // A record written before the listed count was stored.
+    let mut saved = shard(dir.path());
+    for album in saved.values_mut() {
+        album.shift_remove("list_photo_count");
+    }
+    write_shard(dir.path(), "sellerx", &saved).unwrap();
+    let summary = run_once(
+        &recounted_listing(&[(103, "Item 103", 5)]),
+        dir.path(),
+        T2,
+        opts(),
+    );
+    assert_eq!(summary.recounted_ids, Vec::<String>::new());
+    assert!(photo_count_events(dir.path(), "103").is_empty());
+    let third = "2026-08-19T12:00:00+10:00";
+    let summary = run_once(
+        &recounted_listing(&[(103, "Item 103", 6)]),
+        dir.path(),
+        third,
+        opts(),
+    );
+    assert_eq!(summary.recounted_ids, ids(103, 103));
+    assert_eq!(
+        photo_count_events(dir.path(), "103"),
+        vec![
+            json(&format!(
+                r#"{{"at": "{third}", "field": "photo count", "before": 5, "after": 6}}"#
+            ))
+            .py_str()
+        ]
+    );
+}
+
 #[test]
 fn a_blocked_run_does_not_confirm_a_short_listing() {
     let dir = common::tmp();
