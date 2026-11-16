@@ -395,90 +395,104 @@ impl Parser {
                         )
                     );
                 }
-                let (action_index, option_string, explicit, has_sep) = tuples[0].clone();
-                let Some(action_index) = action_index else {
+                let (action_index, mut option_string, explicit_arg, mut has_sep) =
+                    tuples[0].clone();
+                let Some(mut action_index) = action_index else {
                     extras.push(args[start].clone());
                     start += 1;
                     continue;
                 };
-                let action = &self.actions[action_index];
-                let takes_value = matches!(action.kind, Kind::Store { .. });
-                let (value, stop) = match explicit {
-                    Some(explicit) => {
-                        if !takes_value {
+                let mut explicit = explicit_arg.as_deref();
+                let mut actions = Vec::new();
+                // Validate the whole cluster before applying its actions. A later
+                // missing value must fail even when an earlier action is help.
+                let stop = loop {
+                    let action = &self.actions[action_index];
+                    let takes_value = matches!(action.kind, Kind::Store { .. });
+                    let (value, stop, tail) = match explicit.take() {
+                        Some(explicit) if !takes_value => {
                             let single_dash = option_string.chars().nth(1) != Some('-');
                             if single_dash
                                 && !explicit.is_empty()
                                 && !(has_sep || explicit.starts_with('-'))
                             {
-                                // -hx: x would be another flag; none exist here.
-                                let leftover: String = format!("-{explicit}");
-                                let char0 = option_string.chars().next().unwrap_or('-');
-                                let next_option =
-                                    format!("{char0}{}", explicit.chars().next().unwrap_or(' '));
-                                if self.option_actions().iter().all(|(s, _)| *s != next_option) {
-                                    // Run the flag, then keep the rest as an extra.
-                                    seen.push(action_index);
-                                    if matches!(action.kind, Kind::Help) {
-                                        return Err(Exit {
-                                            code: 0,
-                                            stdout: self.format_help(),
-                                            stderr: String::new(),
-                                        });
-                                    }
-                                    namespace.insert(action.dest.clone(), Value::Bool(true));
-                                    extras.push(leftover);
-                                    start += 1;
-                                    continue;
+                                (None, start + 1, Some(explicit))
+                            } else {
+                                fail!(
+                                    Some(action_index),
+                                    format!("ignored explicit argument {}", pystr::repr(explicit))
+                                );
+                            }
+                        }
+                        Some(explicit) => (Some(explicit), start + 1, None),
+                        None => {
+                            if takes_value {
+                                if pattern.get(start + 1) != Some(&'A') {
+                                    fail!(Some(action_index), "expected one argument".to_string());
                                 }
+                                (Some(args[start + 1].as_str()), start + 2, None)
+                            } else {
+                                (None, start + 1, None)
                             }
-                            fail!(
-                                Some(action_index),
-                                format!("ignored explicit argument {}", pystr::repr(&explicit))
-                            );
                         }
-                        (Some(explicit), start + 1)
-                    }
-                    None => {
-                        if takes_value {
-                            if pattern.get(start + 1) != Some(&'A') {
-                                fail!(Some(action_index), "expected one argument".to_string());
-                            }
-                            (Some(args[start + 1].clone()), start + 2)
+                    };
+                    actions.push((action_index, value));
+                    if let Some(tail) = tail {
+                        let mut suffix = tail.chars();
+                        let next_option = format!("-{}", suffix.next().unwrap_or_default());
+                        if let Some(next_index) = self
+                            .actions
+                            .iter()
+                            .position(|action| action.option_strings.contains(&next_option))
+                        {
+                            action_index = next_index;
+                            option_string = next_option;
+                            let rest = suffix.as_str();
+                            has_sep = rest.starts_with('=');
+                            explicit = if has_sep {
+                                Some(&rest[1..])
+                            } else {
+                                (!rest.is_empty()).then_some(rest)
+                            };
+                            continue;
                         } else {
-                            (None, start + 1)
+                            extras.push(format!("-{tail}"));
                         }
                     }
+                    break stop;
                 };
-                seen.push(action_index);
-                match &action.kind {
-                    Kind::Help => {
-                        return Err(Exit {
-                            code: 0,
-                            stdout: self.format_help(),
-                            stderr: String::new(),
-                        });
+                for (action_index, value) in actions {
+                    let action = &self.actions[action_index];
+                    seen.push(action_index);
+                    match &action.kind {
+                        Kind::Help => {
+                            return Err(Exit {
+                                code: 0,
+                                stdout: self.format_help(),
+                                stderr: String::new(),
+                            });
+                        }
+                        Kind::Version(text) => {
+                            return Err(Exit {
+                                code: 0,
+                                stdout: format!("{text}\n"),
+                                stderr: String::new(),
+                            });
+                        }
+                        Kind::StoreTrue => {
+                            namespace.insert(action.dest.clone(), Value::Bool(true));
+                        }
+                        Kind::Store { convert, type_name } => {
+                            let converted = self.convert(
+                                action_index,
+                                *convert,
+                                type_name,
+                                value.unwrap_or_default(),
+                            )?;
+                            namespace.insert(action.dest.clone(), converted);
+                        }
+                        _ => {}
                     }
-                    Kind::Version(text) => {
-                        return Err(Exit {
-                            code: 0,
-                            stdout: format!("{text}\n"),
-                            stderr: String::new(),
-                        });
-                    }
-                    Kind::StoreTrue => {
-                        namespace.insert(action.dest.clone(), Value::Bool(true));
-                    }
-                    Kind::Store { convert, type_name } => {
-                        let converted = self.convert(
-                            action_index,
-                            *convert,
-                            type_name,
-                            &value.unwrap_or_default(),
-                        )?;
-                        namespace.insert(action.dest.clone(), converted);
-                    }
-                    _ => {}
                 }
                 start = stop;
             }
@@ -842,14 +856,12 @@ fn wrap(text: &str, width: usize) -> Vec<String> {
             let space_left = if width > cur { width - cur } else { 1 };
             let chars: Vec<char> = chunk.chars().collect();
             let mut end = space_left;
-            if chars.len() > space_left {
-                let head: String = chars[..space_left].iter().collect();
-                if let Some(hyphen) = head.rfind('-')
-                    && hyphen > 0
-                    && chars[..hyphen].iter().any(|&c| c != '-')
-                {
-                    end = hyphen + 1;
-                }
+            if chars.len() > space_left
+                && let Some(hyphen) = chars[..space_left].iter().rposition(|&c| c == '-')
+                && hyphen > 0
+                && chars[..hyphen].iter().any(|&c| c != '-')
+            {
+                end = hyphen + 1;
             }
             line.push(chars[..end.min(chars.len())].iter().collect());
             let rest: String = chars[end.min(chars.len())..].iter().collect();
