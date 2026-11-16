@@ -188,6 +188,57 @@ fn since_keeps_albums_first_stored_on_that_local_date_or_later() {
 }
 
 #[test]
+fn since_reads_first_seen_as_a_date_and_skips_one_that_is_not() {
+    let dir = common::tmp();
+    let data = dir.path().join("data");
+    let albums = [
+        // Text that sorts after 2026-11-16 but is no date.
+        album(
+            "1",
+            "one",
+            "Unpadded",
+            r#", "first_seen": "2026-11-6T00:00:00+11:00""#,
+        ),
+        album("2", "one", "Not a date", r#", "first_seen": "2026-11-99""#),
+        album(
+            "3",
+            "one",
+            "On the day",
+            r#", "first_seen": "2026-11-16T00:30:00+11:00""#,
+        ),
+        album(
+            "4",
+            "one",
+            "Day before",
+            r#", "first_seen": "2026-11-15T23:59:59+11:00""#,
+        ),
+    ];
+    atomic_write_json(
+        &data.join("index.json"),
+        &json(r#"{"schema_version": 1, "sellers": [{"id": "one", "shard": "catalog/one.json"}]}"#),
+    )
+    .unwrap();
+    atomic_write_json(
+        &data.join("catalog/one.json"),
+        &json(&format!(
+            r#"{{"seller": "one", "albums": [{}]}}"#,
+            albums.join(",")
+        )),
+    )
+    .unwrap();
+    let (code, stdout, stderr) = export(dir.path(), &["--format", "json", "--since", "2026-11-16"]);
+    assert_eq!(code, 0, "{stderr}");
+    let rows = json(&String::from_utf8(stdout).unwrap());
+    let ids: Vec<String> = rows
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| obj(r)["album_id"].py_str())
+        .collect();
+    assert_eq!(ids, ["3"]);
+}
+
+#[test]
 fn a_bad_format_or_date_is_a_usage_error() {
     let dir = common::tmp();
     catalogue(&dir.path().join("data"));
@@ -219,6 +270,20 @@ fn a_missing_index_or_shard_prints_nothing() {
     assert_eq!(code, 1, "{stderr}");
     assert!(
         stdout.is_empty() && stderr.starts_with("error: "),
+        "{stderr}"
+    );
+
+    catalogue(&dir.path().join("data"));
+    let index = dir.path().join("data/index.json");
+    let text = std::fs::read_to_string(&index)
+        .unwrap()
+        .replace(r#""14""#, r#""14", "30""#);
+    std::fs::write(&index, text).unwrap();
+    let (code, stdout, stderr) = export(dir.path(), &[]);
+    assert_eq!(code, 1, "{stderr}");
+    assert!(stdout.is_empty());
+    assert!(
+        stderr.contains("catalog/one.json: indexed album missing from shard"),
         "{stderr}"
     );
 }
