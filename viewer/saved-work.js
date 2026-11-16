@@ -263,6 +263,25 @@ function showPreviewLinks(album) {
     const via = agent ? agentLink(agent.id, marketplaceItem(link.url)) : "";
     if (via && agent) addLink(links, `${link.platform} on ${agent.name}`, via);
   }
+  // Every listing of the item, this one included, cheapest first, so 2
+  // sellers' prices compare whilst the grid still shows the newest only.
+  const copies = state.listingCopies.get(album.id) || [];
+  const listings = workEl("preview-copies");
+  listings.replaceChildren();
+  listings.hidden = workEl("preview-copies-note").hidden = !copies.length;
+  workEl("preview-copies-note").textContent = copies.length ? `Listed ${copies.length + 1} times, cheapest first:` : "";
+  /** @param {{price?: number}} listing */
+  const priced = listing => typeof listing.price === "number" && listing.price > 0;
+  const ordered = [album, ...copies].sort((a, b) => priced(a) && priced(b) ? /** @type {number} */ (a.price) - /** @type {number} */ (b.price)
+    : Number(priced(b)) - Number(priced(a)));
+  for (const listing of copies.length ? ordered : []) {
+    const item = document.createElement("li");
+    item.textContent = `${listing.seller} · ${priced(listing) ? `CNY ${listing.price}` : "Price unknown"} · ` +
+      (listing.date_published ? `posted ${localDate(listing.date_published)}` : `first seen ${localDate(listing.first_seen)}`) +
+      (listing.gone_since ? " · no longer listed" : "") + (listing === album ? " · shown here " : " ");
+    addLink(item, "Original album", listing.album_url);
+    listings.appendChild(item);
+  }
   const external = workEl("preview-external");
   external.replaceChildren();
   if (state.prefs.lookups) {

@@ -44,6 +44,8 @@ export type ViewerState = {
   bannedKeys: Set<string>;
   titleKeyCounts: Map<string, number>;
   shardAlbums: Map<string, ViewerAlbum[]>;
+  unselectedAlbums: Map<string, ViewerAlbum[]>;
+  listingCopies: Map<string, ViewerAlbum[]>;
   failedShards: string[];
   aliasNote: string;
   categories: Set<string>;
@@ -73,6 +75,7 @@ export interface ViewerElements {
   'save-search': HTMLButtonElement; 'search-name': HTMLInputElement; 'remove-search': HTMLButtonElement;
   'mark-reviewed': HTMLButtonElement; 'preview-favourite': HTMLButtonElement;
   'preview-price': HTMLElement; 'preview-description': HTMLElement; 'preview-links': HTMLDivElement;
+  'preview-copies-note': HTMLElement; 'preview-copies': HTMLUListElement;
   'preview-external': HTMLDivElement; 'preview-title': HTMLElement; 'preview-position': HTMLElement;
   'preview-prev': HTMLButtonElement; 'preview-next': HTMLButtonElement; 'preview-facts': HTMLElement;
   'preview-match': HTMLElement; 'preview-run': HTMLElement; 'preview-cover': HTMLImageElement;

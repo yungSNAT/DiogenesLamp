@@ -245,6 +245,14 @@ and titles used more than twice within a seller remain separate. Posting date
 wins, using the album ID estimate when no valid date is recorded; the higher
 album ID breaks date ties. **Age** hides listings older than 30/90/180/365 days.
 
+The grid shows the newest listing only, but its preview lists every listing
+of the item, cheapest first: each with its seller, price (or 'Price
+unknown'), posting date (or first-seen date when none was recorded), a link
+to its album, and 'no longer listed' once it has gone. So 2 sellers' prices
+for one marketplace item compare in one place. The older listings come from
+the seller shards already loaded, so the list needs no extra request; an
+older index lists them once every shard has loaded.
+
 Favourites, notes, tags and collections on an older duplicate copy to the
 newest listing when its field has no saved entry. Existing values, including
 an empty note or a removed favourite, win. If several older listings have a
