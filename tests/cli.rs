@@ -6,7 +6,7 @@ mod common;
 
 use std::io::Read;
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use common::{lamp, read, write};
 use lamp::cli::report_line;
@@ -227,76 +227,82 @@ fn scrape_report_lines_name_each_diagnostic() {
 #[test]
 fn serve_warns_when_there_is_no_index_and_needs_no_source_tree() {
     let dir = common::tmp();
-    let port = std::net::TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-        .to_string();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_lamp"))
-        .args([
-            "--data",
-            &dir.path().to_string_lossy(),
-            "serve",
-            "--no-browser",
-            "--port",
-            &port,
-        ])
-        .current_dir(dir.path())
-        // Piped stdout is buffered until exit, as Python's was, and the
-        // server is killed, so the "serving on" line must be flushed at once.
-        .env_remove("PYTHONUNBUFFERED")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    // A failure names the port, the time, whether the server had exited and
-    // what it printed, so a rare CI failure can be diagnosed from its log.
-    fn fail(mut child: std::process::Child, port: &str, what: String) -> ! {
-        let exited = child.try_wait();
-        let _ = child.kill();
-        let output = child.wait_with_output().unwrap();
-        panic!(
-            "{what} (port {port}; server exited before kill: {exited:?})\n\
-             server stdout: {}\nserver stderr: {}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-    let started = Instant::now();
-    let reply = loop {
-        if let Ok(mut stream) =
-            std::net::TcpStream::connect(("127.0.0.1", port.parse::<u16>().unwrap()))
-        {
-            use std::io::Write;
-            let mut data = Vec::new();
-            let sent = stream
-                .write_all(b"GET / HTTP/1.0\r\n\r\n")
-                .and_then(|()| stream.read_to_end(&mut data));
-            if let Err(e) = sent {
-                fail(
-                    child,
-                    &port,
-                    format!(
-                        "request failed after {:?}: {e}; {} bytes read: {:?}",
-                        started.elapsed(),
-                        data.len(),
-                        String::from_utf8_lossy(&data)
-                    ),
-                );
+    // A port that was free when chosen can be taken before lamp binds it, by
+    // another process or another lamp. Lamp then exits without its
+    // "serving on" line, so wait for that line before connecting, and try
+    // another port if it never comes.
+    let (mut child, port, serving, rest) = (1..=5)
+        .find_map(|_| {
+            let port = std::net::TcpListener::bind("127.0.0.1:0")
+                .unwrap()
+                .local_addr()
+                .unwrap()
+                .port();
+            let mut child = Command::new(env!("CARGO_BIN_EXE_lamp"))
+                .args([
+                    "--data",
+                    &dir.path().to_string_lossy(),
+                    "serve",
+                    "--no-browser",
+                    "--port",
+                    &port.to_string(),
+                ])
+                .current_dir(dir.path())
+                // Piped stdout is buffered until exit, as Python's was, and
+                // the server is killed, so the line must be flushed at once.
+                .env_remove("PYTHONUNBUFFERED")
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap();
+            let mut stdout = std::io::BufReader::new(child.stdout.take().unwrap());
+            let (tx, rx) = std::sync::mpsc::channel();
+            let rest = std::thread::spawn(move || {
+                use std::io::BufRead;
+                let mut line = String::new();
+                let _ = stdout.read_line(&mut line);
+                let _ = tx.send(line);
+                let mut rest = String::new();
+                let _ = stdout.read_to_string(&mut rest);
+                rest
+            });
+            let line = rx.recv_timeout(Duration::from_secs(10)).unwrap_or_default();
+            if line.starts_with("serving on http://127.0.0.1:") {
+                return Some((child, port, line, rest));
             }
-            break String::from_utf8_lossy(&data).into_owned();
-        }
-        if matches!(child.try_wait(), Ok(Some(_))) || started.elapsed() > Duration::from_secs(10) {
-            fail(child, &port, "server did not start".into());
-        }
-        std::thread::sleep(Duration::from_millis(50));
+            let _ = child.kill();
+            let output = child.wait_with_output().unwrap();
+            eprintln!(
+                "port {port}: no serving line ({line:?}); stderr: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            None
+        })
+        .expect("lamp serve did not start on any of 5 ports");
+    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+    let mut data = Vec::new();
+    let sent = {
+        use std::io::Write;
+        stream
+            .write_all(b"GET / HTTP/1.0\r\n\r\n")
+            .and_then(|()| stream.read_to_end(&mut data))
     };
+    let exited = child.try_wait();
     child.kill().unwrap();
     let output = child.wait_with_output().unwrap();
-    assert!(reply.starts_with("HTTP/1.0 200"), "{reply}");
-    assert!(String::from_utf8_lossy(&output.stderr).contains("no index.json"));
-    assert!(String::from_utf8_lossy(&output.stdout).contains("serving on http://127.0.0.1:"));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // A failure names the server's state and output, so a rare CI failure
+    // can be diagnosed from its log.
+    let report = format!(
+        "port {port}; server exited before kill: {exited:?}; {} bytes read: {:?}\n\
+         server stdout: {serving}{}\nserver stderr: {stderr}",
+        data.len(),
+        String::from_utf8_lossy(&data),
+        rest.join().unwrap()
+    );
+    assert!(sent.is_ok(), "request failed: {sent:?}; {report}");
+    assert!(data.starts_with(b"HTTP/1.0 200"), "{report}");
+    assert!(stderr.contains("no index.json"), "{report}");
 }
 
 #[test]
