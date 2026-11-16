@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- A scrape notices when an album's card in the seller's listing shows a
+  different photo count from the last run, without fetching the album: the
+  album's `photo_count` takes the new figure, its history records the change
+  (so **Changed since review** shows it) and the seller's result line counts
+  and names it as recounted. An album's `photo_count` is the card's count,
+  or the album page's when the card shows none, so a later fetch of the album
+  agrees with the recount.
 - A repeated short flag in one argument, such as `lamp -hh`, prints the help
   as Python's argparse does, instead of failing with 'ignored explicit
   argument'. Help text whose long words mix non-ASCII letters and a hyphen

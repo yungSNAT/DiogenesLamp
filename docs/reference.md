@@ -62,8 +62,8 @@ An album that has disappeared from a seller's listing is kept, marked
 gone, and available under Favourites, a collection or Changed since review. It comes back
 if the seller lists it again.
 
-Each seller's result line counts its new and returned albums and names the
-first 5 of each, so a scheduled run's log says what arrived. An album is
+Each seller's result line counts its new, returned and recounted albums and
+names the first 5 of each, so a scheduled run's log says what arrived. An album is
 new when this run stores it and the seller's data held no record of it:
 its `first_seen` is this run. A seller's first run therefore reports every
 album it stores as new. An album whose fetch failed, or that an interrupted
@@ -72,7 +72,13 @@ gone and then listed again is returned, not new; its history records the
 change. A short or blocked listing marks nothing gone (see the README's
 Development section), so the next run reports none of the albums it held
 back as new or returned.
-Dry runs report neither. The viewer's **Added since review** shows the same
+An album is recounted when its card in the listing shows a different photo
+count from the one the last run saw, as a restock or refresh often looks
+from outside. The listing page carries the count, so this needs no album
+fetch: the album's `photo_count` takes the new figure and its history records
+the change, which **Changed since review** in the viewer shows. A card with
+no count, and the first run that reads an album's count, record nothing.
+Dry runs report none of these. The viewer's **Added since review** shows new
 albums by their `first_seen` dates.
 
 Purchase links are found word by word, between whitespace. A word of a few
@@ -117,7 +123,8 @@ they are not a guarantee of a current sale price.
 
 Click a title or press `p` on a card for its local preview. It shows the
 cached cover, full title, price extraction evidence, timestamps, purchase
-links and the last 50 recorded price, link or availability changes. Unknown
+links and the last 50 recorded price, link, photo count or availability
+changes. Unknown
 extraction is labelled separately from a price drop. Arrow Left/Right moves
 between previews; Escape closes it and returns focus to the catalogue.
 Editing a field disables those arrow shortcuts while typing. The cover
