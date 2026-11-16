@@ -57,6 +57,13 @@ fn catalogue(root: &Path, hash: u64) {
         album("16", "one", Some("0000000000000000"), false),
         album("17", "one", None, false),
         album("18", "one", Some(&flipped(hash, 0)), false),
+        album("19", "one", Some(&flipped(hash, 0).to_uppercase()), false),
+        album(
+            "20",
+            "one",
+            Some(&format!("+{}", &flipped(hash, 0)[1..])),
+            false,
+        ),
     ];
     let two = [
         album("21", "two", Some(&flipped(hash, 1)), true),
@@ -66,7 +73,7 @@ fn catalogue(root: &Path, hash: u64) {
         &root.join("index.json"),
         &json(
             r#"{"schema_version": 1, "sellers": [
-            {"id": "one", "shard": "catalog/one.json", "album_ids": ["11", "14", "12", "13", "15", "16", "17"]},
+            {"id": "one", "shard": "catalog/one.json", "album_ids": ["11", "14", "12", "13", "15", "16", "17", "19", "20"]},
             {"id": "two", "shard": "catalog/two.json"}]}"#,
         ),
     )
@@ -127,9 +134,10 @@ fn selected_albums_within_8_bits_are_listed_nearest_first_then_by_id() {
     let report = json(&stdout);
     let fields = common::obj(&report);
     assert_eq!(fields["image_hash"].py_str(), format!("{hash:016x}"));
-    // Album 18 is not selected; 16, 17 and 22 have no usable fingerprint.
+    // Album 18 is not selected. 16, 17, 22 and, as in the viewer, the upper
+    // case 19 and the signed 20 have no usable fingerprint.
     assert!(matches!(fields["searched"], Value::Int(6)));
-    assert!(matches!(fields["without_hash"], Value::Int(3)));
+    assert!(matches!(fields["without_hash"], Value::Int(5)));
     assert_eq!(
         ids(&report),
         [
@@ -225,7 +233,7 @@ fn a_missing_index_or_shard_is_an_error_not_a_partial_search() {
     let index = root.join("data/index.json");
     let text = std::fs::read_to_string(&index)
         .unwrap()
-        .replace(r#""17""#, r#""17", "19""#);
+        .replace(r#""17""#, r#""17", "30""#);
     std::fs::write(&index, text).unwrap();
     let (code, stdout, stderr) = find(root, &[path.to_str().unwrap()]);
     assert_eq!(code, 1, "{stderr}");
@@ -234,4 +242,21 @@ fn a_missing_index_or_shard_is_an_error_not_a_partial_search() {
         stderr.contains("catalog/one.json: indexed album missing from shard"),
         "{stderr}"
     );
+}
+
+#[test]
+fn malformed_index_or_shard_json_is_an_error_not_a_partial_search() {
+    let dir = common::tmp();
+    let root = dir.path();
+    let path = photo(root);
+    for broken in ["index.json", "catalog/two.json"] {
+        catalogue(&root.join("data"), 1);
+        std::fs::write(root.join("data").join(broken), "{not json").unwrap();
+        let (code, stdout, stderr) = find(root, &[path.to_str().unwrap()]);
+        assert_eq!(code, 1, "{broken}: {stderr}");
+        assert!(
+            stdout.is_empty() && stderr.starts_with("error: "),
+            "{broken}: {stderr}"
+        );
+    }
 }
