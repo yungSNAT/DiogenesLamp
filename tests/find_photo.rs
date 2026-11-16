@@ -41,7 +41,7 @@ fn album(id: &str, seller: &str, cover_hash: Option<&str>, gone: bool) -> String
         ""
     };
     format!(
-        r#"{{"id": "{id}", "seller": "{seller}", "title": "Album {id}", "album_url": "https://{seller}.x.yupoo.com/albums/{id}", "links": []{hash}{gone}}}"#
+        r#"{{"id": "{id}", "seller": "{seller}", "title": "Album {id}", "album_url": "https://{seller}.x.yupoo.com/albums/{id}", "thumb": "thumbs/{seller}/{id}.jpg", "links": []{hash}{gone}}}"#
     )
 }
 
