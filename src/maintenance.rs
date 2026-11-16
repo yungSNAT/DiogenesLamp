@@ -657,22 +657,28 @@ fn export_row(album: &Map) -> Map {
 }
 
 /// `lamp scrape --notify`: the albums the run at `run_ts` stored for the first
-/// time or changed, as `export_rows` rows plus `new` and `changes`, the
-/// field, before and after of each history entry the run recorded. Every
-/// album in the shards the index read counts, duplicates of another listing
-/// included: each is a seller's own copy, with its own price. A seller whose
-/// shard the index could not read has no `album_ids` and is left out.
-pub fn run_rows(root: &Path, run_ts: &str) -> Result<Vec<Map>> {
+/// time (`new_ids`, the (seller, album id) pairs it reported as new) or changed,
+/// as `export_rows` rows plus `new` and `changes`, the field, before and
+/// after of each history entry the run recorded. Every album in the shards
+/// the index read counts, duplicates of another listing included: each is a
+/// seller's own copy, with its own price. A seller whose shard the index
+/// could not read has no `album_ids` and is left out.
+pub fn run_rows(
+    root: &Path,
+    run_ts: &str,
+    new_ids: &std::collections::HashSet<(String, String)>,
+) -> Result<Vec<Map>> {
     let index = read_metadata(&data_path(root, "index.json", false)?, "index.json")?;
     let mut rows = Vec::new();
     for seller in sellers_of(&index) {
         if !matches!(seller.get("album_ids"), Some(Value::Array(_))) {
             continue;
         }
+        let id = seller.get("id").map(Value::py_str).unwrap_or_default();
         let relative = seller.get("shard").map(Value::py_str).unwrap_or_default();
         let shard = read_metadata(&data_path(root, &relative, false)?, &relative)?;
         for album in albums_of(&shard) {
-            let new = album.get("first_seen").and_then(Value::as_str) == Some(run_ts);
+            let new = new_ids.contains(&(id.clone(), id_of(&album)));
             let changes: Vec<Value> = album
                 .get("history")
                 .and_then(Value::as_array)

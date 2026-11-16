@@ -5,6 +5,7 @@
 //! stdin of the user's command.
 mod common;
 
+use std::collections::HashSet;
 use std::io::Read;
 use std::path::Path;
 
@@ -46,7 +47,7 @@ fn album(id: &str, title: &str, extra: &str) -> String {
     )
 }
 
-/// Seller `one` indexes albums 2, 3 and 4; album 1 is a duplicate the index
+/// Seller `one` indexes albums 2 to 5; album 1 is a duplicate the index
 /// leaves out. Seller `two` has no `album_ids` and no shard: the index could
 /// not read it.
 fn catalogue(root: &Path, title: &str) {
@@ -73,6 +74,9 @@ fn catalogue(root: &Path, title: &str) {
                 {{"at": "{EARLIER}", "field": "price", "before": 1, "after": 2}}]"#
             ),
         ),
+        // Stored before first_seen was recorded: this run filled it in, but
+        // the album is not new and did not change.
+        album("5", "Backfilled", &format!(r#", "first_seen": "{RUN}""#)),
         album(
             "4",
             "Gone",
@@ -86,7 +90,7 @@ fn catalogue(root: &Path, title: &str) {
         &root.join("index.json"),
         &json(
             r#"{"schema_version": 1, "sellers": [
-            {"id": "one", "shard": "catalog/one.json", "album_ids": ["2", "3", "4"]},
+            {"id": "one", "shard": "catalog/one.json", "album_ids": ["2", "3", "4", "5"]},
             {"id": "two", "shard": "catalog/two.json"}]}"#,
         ),
     )
@@ -101,6 +105,11 @@ fn catalogue(root: &Path, title: &str) {
     .unwrap();
 }
 
+/// The albums the run reported as new: album 1 only.
+fn new_ids() -> HashSet<(String, String)> {
+    HashSet::from([("one".to_string(), "1".to_string())])
+}
+
 fn ids(rows: &[Map]) -> Vec<String> {
     rows.iter().map(|r| r["album_id"].py_str()).collect()
 }
@@ -109,7 +118,7 @@ fn ids(rows: &[Map]) -> Vec<String> {
 fn rows_are_the_albums_the_run_stored_or_changed_with_its_changes() {
     let dir = common::tmp();
     catalogue(dir.path(), "New hoodie");
-    let rows = run_rows(dir.path(), RUN).unwrap();
+    let rows = run_rows(dir.path(), RUN, &new_ids()).unwrap();
     assert_eq!(ids(&rows), ["1", "2", "4"]);
     let keys: Vec<&str> = rows[0].keys().map(String::as_str).collect();
     let mut want = EXPORT_COLUMNS.to_vec();
@@ -131,7 +140,7 @@ fn rows_are_the_albums_the_run_stored_or_changed_with_its_changes() {
     assert_eq!(rows[2]["gone_since"].as_str(), Some(RUN));
     // Another run's timestamp matches nothing.
     assert!(
-        run_rows(dir.path(), "2026-11-18T03:47:00+11:00")
+        run_rows(dir.path(), "2026-11-18T03:47:00+11:00", &HashSet::new())
             .unwrap()
             .is_empty()
     );
@@ -145,7 +154,7 @@ fn the_command_gets_the_rows_on_stdin_and_never_in_its_command_line() {
     let title =
         format!(r#"x"; touch '{m}'; $(touch '{m}') `touch '{m}'` & echo>"{m}" | %PATH% ^& "#);
     catalogue(dir.path(), &title);
-    let rows = run_rows(dir.path(), RUN).unwrap();
+    let rows = run_rows(dir.path(), RUN, &new_ids()).unwrap();
     let want = pyjson::dumps(
         &Value::Array(rows.iter().cloned().map(Value::Object).collect()),
         Style::Indent(2),
@@ -172,7 +181,7 @@ fn no_rows_run_no_command() {
 fn a_failing_command_is_an_error_with_its_status() {
     let dir = common::tmp();
     catalogue(dir.path(), "x");
-    let rows = run_rows(dir.path(), RUN).unwrap();
+    let rows = run_rows(dir.path(), RUN, &new_ids()).unwrap();
     let error = notify("exit 3", rows).unwrap_err();
     assert!(
         error.starts_with("the command failed (") && error.contains('3'),
@@ -186,7 +195,7 @@ fn a_failing_command_is_an_error_with_its_status() {
 fn a_command_that_reads_nothing_succeeds() {
     let dir = common::tmp();
     catalogue(dir.path(), &"long title ".repeat(100));
-    let rows = run_rows(dir.path(), RUN).unwrap();
+    let rows = run_rows(dir.path(), RUN, &new_ids()).unwrap();
     let many: Vec<Map> = (0..300).flat_map(|_| rows.clone()).collect();
     notify("exit 0", many).unwrap();
 }

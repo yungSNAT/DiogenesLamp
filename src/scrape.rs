@@ -767,6 +767,14 @@ pub fn scrape_all(
     } else {
         Some(CatalogueLock::acquire(data_dir)?)
     };
+    // `--notify` finds the run's changes by its timestamp, which has
+    // 1-second resolution: a run in the same second as the last scrape
+    // would report that scrape's changes as its own, so it does not start.
+    if options.run_rows && !options.dry_run && last_scrape(data_dir).as_deref() == Some(run_ts) {
+        return Err(Error::Busy(format!(
+            "a scrape already ran at {run_ts}; run again"
+        )));
+    }
     let factory: ClientFactory = client_factory.unwrap_or_else(|| {
         let (global, host, overrides) = limiter_settings(rps);
         let limiter = Arc::new(RateLimiter::new(
@@ -911,7 +919,11 @@ pub fn scrape_all(
         return Err(error);
     }
     let rows = if options.run_rows && !options.dry_run && !interrupted {
-        crate::maintenance::run_rows(data_dir, run_ts)
+        let new: HashSet<(String, String)> = summaries
+            .iter()
+            .flat_map(|s| s.new_ids.iter().map(|id| (s.seller.clone(), id.clone())))
+            .collect();
+        crate::maintenance::run_rows(data_dir, run_ts, &new)
     } else {
         Ok(Vec::new())
     };
@@ -921,6 +933,17 @@ pub fn scrape_all(
         interrupted,
         rows,
     })
+}
+
+/// The timestamp of the run that last wrote index.json, if it can be read.
+fn last_scrape(data_dir: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(data_dir.join("index.json")).ok()?;
+    let index = crate::pyjson::loads(&text).ok()?;
+    index
+        .as_object()?
+        .get("generated_at")?
+        .as_str()
+        .map(String::from)
 }
 
 fn eprint_unexpected(seller: &str, text: &str) {
