@@ -1768,7 +1768,7 @@ fn a_stopped_seller_saves_nothing_it_has_not_listed() {
 }
 
 /// `scrape_all` for sellerx with `--notify`'s rows asked for or not, as
-/// (album_id, new) pairs.
+/// (album_id, new) pairs in id order.
 fn run_rows(dir: &Path, run_ts: &str, run_rows: bool, dry_run: bool) -> Vec<(String, bool)> {
     let options = Options {
         run_rows,
@@ -1797,6 +1797,8 @@ fn run_rows(dir: &Path, run_ts: &str, run_rows: bool, dry_run: bool) -> Vec<(Str
             matches!(row["new"], Value::Bool(true)),
         )
     })
+    .collect::<std::collections::BTreeSet<_>>()
+    .into_iter()
     .collect()
 }
 
