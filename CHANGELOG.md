@@ -23,6 +23,9 @@
 - An agent link whose wrapped `url=` value exceeds the link pattern's
   backtracking limit marks its album partly scanned and `links_truncated`.
   Before, the link was dropped and the album counted as fully scanned.
+- `lamp serve` and `lamp demo` write their `serving on` line at once when
+  stdout is redirected to a file or pipe. Before, it waited in the output
+  buffer until the server stopped.
 
 ## 0.1.2 (2026-11-13)
 
