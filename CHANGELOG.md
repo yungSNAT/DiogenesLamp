@@ -22,6 +22,16 @@
   after the next run. A fetch that scans every word clears the mark.
 - Non-ASCII hostnames are converted with the `idna` crate's unicode-rs back
   end instead of ICU4X, so `Cargo.lock` lists 153 packages instead of 171.
+- An agent link whose wrapped `url=` value exceeds the link pattern's
+  backtracking limit marks its album partly scanned and `links_truncated`.
+  Before, the link was dropped and the album counted as fully scanned.
+- `lamp serve` and `lamp demo` write their `serving on` line at once when
+  stdout is redirected to a file or pipe. Before, it waited in the output
+  buffer until the server stopped.
+- Writing the index no longer compares every seller with every album, and a
+  scrape no longer reads each seller's shard twice to write it. `lamp
+  reindex` over 400 sellers of 200 albums took 2.3 to 2.5 s instead of 7.6 to
+  10.0 s, with the same `index.json`.
 
 ## 0.1.2 (2026-11-13)
 
