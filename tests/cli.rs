@@ -250,26 +250,51 @@ fn serve_warns_when_there_is_no_index_and_needs_no_source_tree() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
+    // A failure names the port, the time, whether the server had exited and
+    // what it printed, so a rare CI failure can be diagnosed from its log.
+    fn fail(mut child: std::process::Child, port: &str, what: String) -> ! {
+        let exited = child.try_wait();
+        let _ = child.kill();
+        let output = child.wait_with_output().unwrap();
+        panic!(
+            "{what} (port {port}; server exited before kill: {exited:?})\n\
+             server stdout: {}\nserver stderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
     let started = Instant::now();
     let reply = loop {
         if let Ok(mut stream) =
             std::net::TcpStream::connect(("127.0.0.1", port.parse::<u16>().unwrap()))
         {
             use std::io::Write;
-            stream.write_all(b"GET / HTTP/1.0\r\n\r\n").unwrap();
             let mut data = Vec::new();
-            stream.read_to_end(&mut data).unwrap();
+            let sent = stream
+                .write_all(b"GET / HTTP/1.0\r\n\r\n")
+                .and_then(|()| stream.read_to_end(&mut data));
+            if let Err(e) = sent {
+                fail(
+                    child,
+                    &port,
+                    format!(
+                        "request failed after {:?}: {e}; {} bytes read: {:?}",
+                        started.elapsed(),
+                        data.len(),
+                        String::from_utf8_lossy(&data)
+                    ),
+                );
+            }
             break String::from_utf8_lossy(&data).into_owned();
         }
-        assert!(
-            started.elapsed() < Duration::from_secs(10),
-            "server did not start"
-        );
+        if matches!(child.try_wait(), Ok(Some(_))) || started.elapsed() > Duration::from_secs(10) {
+            fail(child, &port, "server did not start".into());
+        }
         std::thread::sleep(Duration::from_millis(50));
     };
     child.kill().unwrap();
     let output = child.wait_with_output().unwrap();
-    assert!(reply.starts_with("HTTP/1.0 200"));
+    assert!(reply.starts_with("HTTP/1.0 200"), "{reply}");
     assert!(String::from_utf8_lossy(&output.stderr).contains("no index.json"));
     assert!(String::from_utf8_lossy(&output.stdout).contains("serving on http://127.0.0.1:"));
 }
