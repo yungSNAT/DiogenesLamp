@@ -715,10 +715,11 @@ pub fn export_site(root: &Path, dir: &Path) -> Result<Site> {
         return value("the site folder must be outside the data directory");
     }
     match std::fs::read_dir(dir) {
-        Ok(mut entries) if entries.next().is_some() => {
-            return value(format!("{}: folder is not empty", pyerr::path_str(dir)));
+        Ok(mut entries) => {
+            if entries.next().is_some() {
+                return value(format!("{}: folder is not empty", pyerr::path_str(dir)));
+            }
         }
-        Ok(_) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => return Err(Error::Os(pyerr::os_error(&e, Call::Os, dir))),
     }
