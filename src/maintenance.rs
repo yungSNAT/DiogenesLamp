@@ -374,7 +374,7 @@ pub fn restore(root: &Path, archive_path: &Path) -> Result<Option<PathBuf>> {
     let mut records: Vec<(String, Value)> = Vec::new();
     for (i, name) in names.iter().enumerate() {
         data_path(root, name, false)?;
-        if records.iter().any(|(n, _)| n == name) {
+        if archive.has_duplicate_names() || records.iter().any(|(n, _)| n == name) {
             return value("duplicate snapshot member");
         }
         let mut entry = archive
