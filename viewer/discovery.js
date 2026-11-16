@@ -76,6 +76,9 @@ function compileCatalogueSearch(query) {
   } catch { /* Ordinary text search. */ }
   // A term also finds a title whose Chinese words kinds.js reads as it.
   const terms = SEARCH_WORDS.searchTerms(text);
+  // A number is an item ID, unless the operator's aliases list it as a
+  // seller code; then it is also searched as one, after the ID.
+  const numberIsCode = !isUrl && exactId !== "" && terms.some(term => term.words.length > 0);
   /** @param {string} within @param {readonly string[]} gloss */
   const hasEveryTerm = (within, gloss) => terms.every(term =>
     term.literals.every(literal => within.includes(literal)) || term.words.some(word => gloss.includes(word)));
@@ -83,7 +86,8 @@ function compileCatalogueSearch(query) {
   function reason(album) {
     if (!text) return "";
     if (exactKey) return album.search_keys?.includes(exactKey) ? "Purchase link" : null;
-    if (exactId) return (album.search_ids || [album.id]).includes(exactId) ? "Exact item ID" : null;
+    if (exactId && (album.search_ids || [album.id]).includes(exactId)) return "Exact item ID";
+    if (exactId && !numberIsCode) return null;
     if (isUrl) return null;
     const title = album.title_lc || (album.title || "").normalize("NFKC").toLowerCase();
     const seller = (album.seller || "").normalize("NFKC").toLowerCase();

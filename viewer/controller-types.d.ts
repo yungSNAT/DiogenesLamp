@@ -45,6 +45,7 @@ export type ViewerState = {
   titleKeyCounts: Map<string, number>;
   shardAlbums: Map<string, ViewerAlbum[]>;
   failedShards: string[];
+  aliasNote: string;
   categories: Set<string>;
   filterVersion: number;
   prefs: Prefs;

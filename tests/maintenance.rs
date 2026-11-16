@@ -432,9 +432,19 @@ fn doctor_counts_missing_descriptions_and_rejects_malformed_fields() {
             .unwrap();
         album.insert("description".into(), "kept".into());
         album.insert("description_truncated".into(), true.into());
+        album.insert("links_truncated".into(), true.into());
     }
     validate_metadata(&shard, "catalog/example.json").unwrap();
-    for (field, bad) in [("description", "5"), ("description_truncated", r#""yes""#)] {
+    atomic_write_json(&dir.path().join("catalog/example.json"), &shard).unwrap();
+    assert!(matches!(
+        diagnose(dir.path()).get("links_truncated"),
+        Some(Value::Int(1))
+    ));
+    for (field, bad) in [
+        ("description", "5"),
+        ("description_truncated", r#""yes""#),
+        ("links_truncated", r#""yes""#),
+    ] {
         let mut broken = shard.clone();
         broken
             .as_object_mut()
@@ -731,7 +741,7 @@ fn cover_batches_resume_across_sellers() {
 fn failed_cover_attempt_consumes_the_batch_and_remains_retryable() {
     let dir = common::tmp();
     several_sellers(dir.path());
-    std::fs::remove_file(dir.path().join("thumbs/first/1.png")).unwrap();
+    write(&dir.path().join("thumbs/first/1.png"), "not an image");
     let before: Vec<Vec<u8>> = ["first", "second", "third"]
         .iter()
         .map(|s| std::fs::read(dir.path().join(format!("catalog/{s}.json"))).unwrap())
@@ -746,6 +756,32 @@ fn failed_cover_attempt_consumes_the_batch_and_remains_retryable() {
             .collect();
         assert_eq!(before, after);
     }
+}
+
+#[test]
+fn missing_covers_are_counted_without_using_the_batch_or_a_snapshot() {
+    let dir = common::tmp();
+    several_sellers(dir.path());
+    for id in [1, 2] {
+        std::fs::remove_file(dir.path().join(format!("thumbs/first/{id}.png"))).unwrap();
+    }
+    let first = prepare_covers(dir.path(), 1).unwrap();
+    assert!(matches!(first["processed"], Value::Int(1)));
+    assert_eq!(first["errors"].py_str(), "[]");
+    assert_eq!(prepared(dir.path(), "second"), ["1", "0"]);
+    assert!(matches!(first["missing_covers"], Value::Int(2)));
+    prepare_covers(dir.path(), 9).unwrap();
+    let again = prepare_covers(dir.path(), 9).unwrap();
+    assert!(matches!(again["processed"], Value::Int(0)));
+    assert!(matches!(again["missing_covers"], Value::Int(2)));
+    assert_eq!(again["errors"].py_str(), "[]");
+    assert!(matches!(again["snapshot"], Value::Null));
+    assert_eq!(
+        std::fs::read_dir(dir.path().join("snapshots"))
+            .unwrap()
+            .count(),
+        2
+    );
 }
 
 #[test]

@@ -53,6 +53,7 @@ declare const WORDS: typeof import("./kinds.js").WORDS;
 declare const searchTerms: typeof import("./kinds.js").searchTerms;
 declare const readWords: typeof import("./kinds.js").readWords;
 declare const wordRanges: typeof import("./kinds.js").wordRanges;
+declare const setOperatorAliases: typeof import("./kinds.js").setOperatorAliases;
 declare const prepareAlbumSearch: typeof import("./discovery.js").prepareAlbumSearch;
 declare const catalogueCsv: typeof import("./discovery.js").catalogueCsv;
 declare const sheetItemKeys: typeof import("./discovery.js").sheetItemKeys;

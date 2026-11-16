@@ -16,8 +16,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -74,6 +74,22 @@ jobs:
           path: coverage-rust.lcov
           retention-days: 1
       - run: cargo build --locked --release
+
+  # Catch RustSec advisories before the release gate, using the same pinned
+  # prebuilt tool installer as the test job.
+  audit:
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@<pin>
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - uses: taiki-e/install-action@<pin>
+        with:
+          tool: cargo-audit@0.22.2
+          fallback: none
+      - run: cargo audit --deny warnings
 
   # The upload runs apart from the tests so the OIDC token is never available
   # while test code runs. A Codecov outage fails only this job.
@@ -246,6 +262,7 @@ fn active_workflow_inventory_is_exact() {
     assert_eq!(
         names,
         [
+            "changelog.yml",
             "ci.yml",
             "codeql.yml",
             "no-ai-attribution.yml",
@@ -348,6 +365,24 @@ fn release_version_files_agree() {
         Some(format!("# v{version}").as_str()),
         "RELEASE_NOTES.md must start with the tag's heading"
     );
+    // The README's download commands name the release by tag and asset.
+    let readme = read("README.md");
+    for marker in [
+        "releases/download/v",
+        "tag=v",
+        "$tag = 'v",
+        "diogenes-lamp-",
+    ] {
+        for rest in readme.split(marker).skip(1) {
+            let pinned: String = rest
+                .chars()
+                .take_while(|c| c.is_ascii_digit() || *c == '.')
+                .collect();
+            if !pinned.is_empty() {
+                assert_eq!(pinned, version, "README.md pins {marker}{pinned}");
+            }
+        }
+    }
 }
 
 #[test]

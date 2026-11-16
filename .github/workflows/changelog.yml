@@ -1,0 +1,31 @@
+name: Changelog
+
+# Fails a pull request that changes what ships in lamp (src/, the viewer
+# files built into it, Cargo.toml or rust-toolchain.toml) without adding a
+# line to CHANGELOG.md. Waive it for a change no user would notice with the
+# skip-changelog label; Dependabot's pull requests are skipped.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  changelog:
+    name: Changelog line
+    if: >-
+      !contains(github.event.pull_request.labels.*.name, 'skip-changelog') &&
+      github.event.pull_request.user.login != 'dependabot[bot]'
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require a changelog line for shipped changes
+        uses: yungSNAT/yungSNAT/.github/actions/changelog-line@5cd2765e4c78098b7602809e60830f07373fae44 # v1
+        with:
+          shipped: '^(src/|viewer/[^/]+\.(js|html|css|json)$|Cargo\.toml$|rust-toolchain\.toml$)'
+          heading: "'## Unreleased'"
