@@ -396,8 +396,8 @@ For strict type checking of the viewer's logic modules, controllers and compile-
 contract tests, run `npm ci` then `npm run typecheck`. TypeScript and the Node
 type declarations are development tools only; the check emits no files and
 the browser still loads the same JavaScript. `viewer/controller-types.d.ts`
-describes catalogue state and the elements owned by `index.html`; a Node test
-checks the declared element IDs and tags. `viewer/browser-globals.d.ts` gives the
+describes catalogue state and the elements owned by `index.html`; a test in
+`tests/viewer.rs` checks the declared element IDs and tags. `viewer/browser-globals.d.ts` gives the
 script loading path the same helper signatures as the Node test imports.
 Compiler checks cover saved-value reads, DOM access and controller calls;
 browser verification still checks focus, layout and keyboard behaviour.
