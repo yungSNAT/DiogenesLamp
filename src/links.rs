@@ -22,7 +22,7 @@ pub const MARKETPLACE_HOSTS: [&str; 4] = ["taobao.com", "tmall.com", "weidian.co
 pub const SHORTLINK_HOSTS: [&str; 2] = ["m.tb.cn", "k.youshop10.com"];
 /// Agents whose product links carry a marketplace item. viewer/agents.js
 /// lists the same hosts; a parity test keeps the two equal.
-pub const AGENT_HOSTS: [&str; 28] = [
+pub const AGENT_HOSTS: [&str; 29] = [
     "kakobuy.com",
     "hoobuy.com",
     "oopbuy.com",
@@ -51,6 +51,7 @@ pub const AGENT_HOSTS: [&str; 28] = [
     "orientdig.com",
     "ponybuy.com",
     "fishgoo.com",
+    "lolobuy.com",
 ];
 
 /// The item page each marketplace serves for a bare item id.
@@ -156,7 +157,7 @@ fn path_channel(agent: &str, code: &str) -> Option<&'static str> {
     )
 }
 
-const WRAPPED_AGENTS: [&str; 10] = [
+const WRAPPED_AGENTS: [&str; 11] = [
     "kakobuy.com",
     "superbuy.com",
     "sugargoo.com",
@@ -167,6 +168,7 @@ const WRAPPED_AGENTS: [&str; 10] = [
     "allchinabuy.com",
     "pandabuy.com",
     "fishgoo.com",
+    "lolobuy.com",
 ];
 
 /// Agents whose item page is a route in the URL fragment: the item is read

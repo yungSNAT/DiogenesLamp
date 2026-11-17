@@ -101,6 +101,12 @@ const AGENTS = [
     build: channelled({ "1688": 2, weidian: 3 }, (channel, id) => `https://www.ponybuy.com/products/${channel}/${id}`) },
   { id: "fishgoo", name: "Fishgoo", host: "fishgoo.com", checked: "2026-11-16",
     build: item => `https://www.fishgoo.com/#/product?productLink=${wrapped(item)}` },
+  // LoloBuy's taobao link opened a manual order form, not the item, so it
+  // builds none for taobao or tmall. Its site puts a time and random number
+  // where this 0 stands; any number opens the item.
+  { id: "lolobuy", name: "LoloBuy", host: "lolobuy.com", checked: "2026-11-17",
+    build: item => item.platform === "taobao" || item.platform === "tmall" ? ""
+      : `https://www.lolobuy.com/productDetail/0?url=${wrapped(item)}` },
   { id: "cnfans", name: "CNFans", host: "cnfans.com", checked: "2026-09-27", retired: "2026-08" },
   { id: "allchinabuy", name: "AllChinaBuy", host: "allchinabuy.com", checked: "2026-09-27", retired: "2026-08" },
   { id: "pandabuy", name: "Pandabuy", host: "pandabuy.com", checked: "2026-09-27", retired: "2024-04" },
@@ -141,7 +147,7 @@ const RIZZITGO_SOURCES = { "1": "taobao", "2": "1688", "3": "weidian" };
 // in the two parameters listed here, path agents are in PATH_CHANNELS and
 // cssbuy spells the marketplace in its file name. links.rs keeps the same.
 const WRAPPED_AGENTS = new Set(["kakobuy", "superbuy", "sugargoo", "loongbuy", "pikobuy", "itaobuy", "bbdbuy",
-  "allchinabuy", "pandabuy", "fishgoo"]);
+  "allchinabuy", "pandabuy", "fishgoo", "lolobuy"]);
 // Agents whose item page is a route in the URL fragment: the item is read
 // from the query after this prefix, and from nowhere else.
 /** @type {Record<string, string>} */
