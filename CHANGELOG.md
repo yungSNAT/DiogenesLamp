@@ -8,6 +8,10 @@
   availability). The README's Alerts section has recipes for a phone alert
   through ntfy and for email. lamp makes no request of its own, and scraped
   text reaches the command only on stdin.
+- The grid still shows the newest listing of an item, and its preview now
+  lists every listing of it, cheapest first, with each seller, price,
+  posting date and album link, so 2 sellers' prices for one marketplace item
+  can be compared.
 - A scrape notices when an album's card in the seller's listing shows a
   different photo count from the last run, without fetching the album: the
   album's `photo_count` takes the new figure, its history records the change

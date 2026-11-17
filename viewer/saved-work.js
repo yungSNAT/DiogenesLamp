@@ -58,7 +58,10 @@ function refreshSavedState(render = true) {
   selectOptions(els.tag, [...state.tags.values()].flat(), state.view.filters.tag);
   selectOptions(workEl("saved-search"), entries.filter(e => e.kind === "search" && e.value).map(e => e.id));
   if (render) applyFilters();
-  if (preview.open) { reconcilePreview(); updatePreviewFavourite(); }
+  if (preview.open) {
+    reconcilePreview(); updatePreviewFavourite();
+    if (previewSnapshot) showListingCopies(previewSnapshot);
+  }
 }
 
 /** @param {unknown} filters */
@@ -230,6 +233,16 @@ function updatePreviewFavourite() {
 /** @param {unknown} value */
 function localDate(value) { return value ? String(value).replace("T", " ") : "Not recorded"; }
 
+// A link that opens in a new tab, added only for an http(s) address.
+/** @param {HTMLElement} parent @param {string} text @param {string} href */
+function addLink(parent, text, href) {
+  const url = new URL(href, location.href);
+  if (!["https:", "http:"].includes(url.protocol)) return;
+  const a = document.createElement("a");
+  a.href = url.href; a.target = "_blank"; a.rel = "noreferrer"; a.textContent = text;
+  parent.appendChild(a);
+}
+
 // The read-only part of the preview that preferences change: price, stored
 // text and links. Kept apart from showPreview so a changed agent or rate
 // never repopulates the notes form and discards an edit in progress.
@@ -246,14 +259,6 @@ function showPreviewLinks(album) {
   workEl("preview-description").textContent = !("description" in album) ? "Description not recorded: it is kept from the next detail fetch (refresh budget or full scrape)."
     : !album.description ? "No description extracted at the last detail check."
     : album.description + (album.description_truncated ? "\n(Saved excerpt; the description was longer.)" : "");
-  /** @param {HTMLElement} parent @param {string} text @param {string} href */
-  const addLink = (parent, text, href) => {
-    const url = new URL(href, location.href);
-    if (!["https:", "http:"].includes(url.protocol)) return;
-    const a = document.createElement("a");
-    a.href = url.href; a.target = "_blank"; a.rel = "noreferrer"; a.textContent = text;
-    parent.appendChild(a);
-  };
   const links = workEl("preview-links");
   links.replaceChildren();
   addLink(links, "Original album", album.album_url);
@@ -263,6 +268,7 @@ function showPreviewLinks(album) {
     const via = agent ? agentLink(agent.id, marketplaceItem(link.url)) : "";
     if (via && agent) addLink(links, `${link.platform} on ${agent.name}`, via);
   }
+  showListingCopies(album);
   const external = workEl("preview-external");
   external.replaceChildren();
   if (state.prefs.lookups) {
@@ -272,6 +278,40 @@ function showPreviewLinks(album) {
         "https://rep.tools/qc-finder?link=" + encodeURIComponent(marketplaceUrl(item)));
     }
     if (!items.length) external.textContent = "No marketplace item to look up.";
+  }
+}
+
+// Every listing of the item, this one included, cheapest first, so 2
+// sellers' prices compare whilst the grid still shows the newest only. The
+// aliases name every other listing; one not loaded yet, or not readable, is
+// counted rather than left out silently.
+/** @param {import('./controller-types.js').ViewerAlbum} album */
+function showListingCopies(album) {
+  const copies = state.listingCopies.get(album.id) || [];
+  const named = Object.values(state.listingAliases).filter(id => id === album.id).length;
+  const missing = Math.max(named - copies.length, 0);
+  const listings = workEl("preview-copies");
+  listings.replaceChildren();
+  listings.hidden = workEl("preview-copies-note").hidden = !copies.length && !missing;
+  const loading = state.loadedSellers < (state.index?.sellers.length ?? 0);
+  const failed = state.failedShards.length > 0;
+  const why = loading && failed ? "still loading or could not be read" : loading ? "still loading" : "could not be read";
+  // Only a complete index names every seller's listings; otherwise, whilst
+  // a seller is unread, the count covers the sellers read.
+  const scope = state.index?.selection_version !== 1 && (loading || failed) ? " in the sellers read" : "";
+  workEl("preview-copies-note").textContent = listings.hidden ? ""
+    : `Listed ${copies.length + missing + 1} times${scope}` + (missing ? `; ${missing} ${why}. Cheapest first:` : ", cheapest first:");
+  /** @param {{price?: number | null}} listing */
+  const priced = listing => typeof listing.price === "number" && listing.price > 0;
+  const ordered = [album, ...copies].sort((a, b) => priced(a) && priced(b) ? /** @type {number} */ (a.price) - /** @type {number} */ (b.price)
+    : Number(priced(b)) - Number(priced(a)));
+  for (const listing of listings.hidden ? [] : ordered) {
+    const item = document.createElement("li");
+    item.textContent = `${listing.seller} · ${priced(listing) ? `CNY ${listing.price}` : "Price unknown"} · ` +
+      (listing.date_published ? `posted ${localDate(listing.date_published)}` : `first seen ${localDate(listing.first_seen)}`) +
+      (listing.gone_since ? " · no longer listed" : "") + (listing === album ? " · shown here " : " ");
+    addLink(item, "Original album", listing.album_url);
+    listings.appendChild(item);
   }
 }
 

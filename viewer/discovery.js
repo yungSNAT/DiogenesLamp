@@ -316,6 +316,44 @@ function admittedCatalogueShard(raw, seller) {
   return validCatalogueShard({...shard, albums}, seller.id) ? albums : null;
 }
 
+// The albums of an indexed shard that the index did not select, each passing
+// the checks a selected album passes: other listings of an item the index
+// shows once. An older index without album_ids selects in the viewer, which
+// keeps every album, so it has none here.
+/** @param {unknown} raw @param {{id: string, album_ids?: string[]}} seller
+ * @returns {import("./controller-types.js").ListingCopy[]} */
+function unselectedShardAlbums(raw, seller) {
+  const albums = /** @type {{albums?: unknown}} */ (raw || {}).albums;
+  if (seller.album_ids === undefined || !Array.isArray(albums)) return [];
+  const selected = new Set(seller.album_ids);
+  // Only the fields the preview's list shows are kept, so the whole
+  // catalogue's descriptions and histories do not stay in memory.
+  return albums.filter(album => album && !selected.has(album.id) && validCatalogueShard({albums: [album]}, seller.id))
+    .map(album => ({id: album.id, seller: album.seller, price: album.price, date_published: album.date_published,
+      first_seen: album.first_seen, gone_since: album.gone_since, album_url: album.album_url}));
+}
+
+// Each shown listing's other listings, by the aliases that map an older
+// listing's id to the one shown: shown id -> albums, in the order given.
+/**
+ * @template {{id: string}} T
+ * @param {Record<string, string>} aliases @param {Iterable<T>[]} lists
+ * @returns {Map<string, T[]>}
+ */
+function listingCopies(aliases, lists) {
+  /** @type {Map<string, T[]>} */
+  const copies = new Map();
+  for (const list of lists) {
+    for (const album of list) {
+      if (!Object.hasOwn(aliases, album.id)) continue;
+      const shown = copies.get(aliases[album.id]);
+      if (shown) shown.push(album);
+      else copies.set(aliases[album.id], [album]);
+    }
+  }
+  return copies;
+}
+
 /** @param {{selection_version?: 1, album_aliases?: Record<string, string>}} index
  * @param {{id: string}[]} albums @param {Record<string, string>} derived @param {boolean} complete */
 function inheritableAliases(index, albums, derived, complete) {
@@ -360,5 +398,6 @@ function validCatalogueShard(raw, seller) {
 if (typeof module !== "undefined") {
   module.exports = { prepareAlbumSearch, keyForUrl, compileCatalogueSearch, csvCell, albumAgentLinks,
     catalogueCsv, parseDelimited, sheetItemKeys, matchSheet,
-    similarCovers, validCatalogueShard, validCatalogueIndex, admittedCatalogueShard, inheritableAliases };
+    similarCovers, validCatalogueShard, validCatalogueIndex, admittedCatalogueShard, inheritableAliases,
+    unselectedShardAlbums, listingCopies };
 }
