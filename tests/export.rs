@@ -525,6 +525,19 @@ fn a_site_folder_reaching_the_data_directory_through_dot_dot_is_refused() {
     assert!(!data.join("site").exists());
 }
 
+/// A folder named through a missing folder and `..` is written where it
+/// resolves, and the missing folder is not made.
+#[test]
+fn a_site_folder_named_through_a_missing_folder_and_dot_dot_is_written() {
+    let dir = common::tmp();
+    site_catalogue(dir.path());
+    let site = dir.path().join("scratch").join("..").join("site");
+    let (code, _, stderr) = export(dir.path(), &["--site", site.to_str().unwrap()]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(dir.path().join("site/data/index.json").is_file());
+    assert!(!dir.path().join("scratch").exists());
+}
+
 /// aliases.json must be a regular file: a folder in its place is an error,
 /// not a site without it.
 #[test]

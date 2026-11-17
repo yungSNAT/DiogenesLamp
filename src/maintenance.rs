@@ -765,7 +765,10 @@ pub struct Site {
 /// outside the data directory.
 pub fn export_site(root: &Path, dir: &Path) -> Result<Site> {
     let _lock = CatalogueLock::acquire(root)?;
-    if pyerr::is_relative_to(&pyerr::resolve(dir), &pyerr::resolve(root)) {
+    // Checked and written by one resolved path, so `missing/../site` neither
+    // fails nor makes `missing`.
+    let dir = &pyerr::resolve(dir);
+    if pyerr::is_relative_to(dir, &pyerr::resolve(root)) {
         return value("the site folder must be outside the data directory");
     }
     let os = |e: std::io::Error, path: &Path| Error::Os(pyerr::os_error(&e, Call::Os, path));
