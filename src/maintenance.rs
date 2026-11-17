@@ -656,16 +656,17 @@ fn export_row(album: &Map) -> Map {
         .collect()
 }
 
-/// `lamp scrape --notify`: the albums the run at `run_ts` stored for the first
-/// time (`new_ids`, the (seller, album id) pairs it reported as new) or changed,
-/// as `export_rows` rows plus `new` and `changes`, the field, before and
-/// after of each history entry the run recorded. Every album in the shards
+/// `lamp scrape --notify`: the albums the runs at `runs` (their timestamps)
+/// stored for the first time (`new_ids`, the (seller, album id) pairs they
+/// reported as new) or changed, as `export_rows` rows plus `new` and
+/// `changes`, the field, before and after of each history entry those runs
+/// recorded. Every album in the shards
 /// the index read counts, duplicates of another listing included: each is a
 /// seller's own copy, with its own price. A seller whose shard the index
 /// could not read has no `album_ids` and is left out.
 pub fn run_rows(
     root: &Path,
-    run_ts: &str,
+    runs: &std::collections::HashSet<String>,
     new_ids: &std::collections::HashSet<(String, String)>,
 ) -> Result<Vec<Map>> {
     let index = read_metadata(&data_path(root, "index.json", false)?, "index.json")?;
@@ -685,7 +686,12 @@ pub fn run_rows(
                 .into_iter()
                 .flatten()
                 .filter_map(Value::as_object)
-                .filter(|entry| entry.get("at").and_then(Value::as_str) == Some(run_ts))
+                .filter(|entry| {
+                    entry
+                        .get("at")
+                        .and_then(Value::as_str)
+                        .is_some_and(|at| runs.contains(at))
+                })
                 .map(|entry| {
                     let field = |key: &str| entry.get(key).cloned().unwrap_or(Value::Null);
                     Value::Object(crate::obj! {

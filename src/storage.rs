@@ -439,3 +439,57 @@ pub fn write_run(data_dir: &Path, seller: &str, run_ts: &str, mut summary: Map) 
         &Value::Object(summary),
     )
 }
+
+/// `--notify` runs whose rows no command has been given yet, such as a run
+/// stopped with Ctrl+C: each run's timestamp maps each seller to the albums
+/// that run stored for the first time.
+const PENDING: &str = "notify-pending.json";
+
+/// The runs `notify-pending.json` holds; none when it does not exist.
+pub fn read_pending(data_dir: &Path) -> Result<Map> {
+    let path = data_dir.join(PENDING);
+    let unreadable =
+        |e: String| Error::Value(format!("unreadable {}: {e}", pyerr::path_str(&path)));
+    let text = match pyerr::read_text(&path) {
+        Ok(text) => text,
+        Err(fail) if fail.not_found => return Ok(Map::new()),
+        Err(fail) => return Err(unreadable(fail.message)),
+    };
+    let payload = pyjson::loads(&text).map_err(|e| unreadable(e.0))?;
+    let runs = payload
+        .as_object()
+        .filter(|p| matches!(p.get("schema_version"), Some(Value::Int(1))))
+        .and_then(|p| p.get("runs"))
+        .and_then(Value::as_object)
+        .filter(|runs| {
+            runs.values().all(|sellers| {
+                sellers.as_object().is_some_and(|sellers| {
+                    sellers.values().all(|ids| {
+                        ids.as_array()
+                            .is_some_and(|ids| ids.iter().all(|id| id.as_str().is_some()))
+                    })
+                })
+            })
+        })
+        .ok_or_else(|| unreadable("unsupported shape or schema version".into()))?;
+    Ok(runs.clone())
+}
+
+/// Replace `notify-pending.json` with `runs`, or remove it when there are none.
+pub fn write_pending(data_dir: &Path, runs: &Map) -> Result<()> {
+    let path = data_dir.join(PENDING);
+    if runs.is_empty() {
+        return match std::fs::remove_file(&path) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                Err(Error::Os(pyerr::os_error(&e, Call::Os, &path)))
+            }
+            _ => Ok(()),
+        };
+    }
+    atomic_write_json(
+        &path,
+        &Value::Object(
+            crate::obj! { "schema_version" => 1i64, "runs" => Value::Object(runs.clone()) },
+        ),
+    )
+}
