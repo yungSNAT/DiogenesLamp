@@ -16,6 +16,8 @@ const ALI = "https%3A%2F%2Fdetail.1688.com%2Foffer%2F691234567890.html";
 // Read from rep.tools' public converter on 27 September 2026, minus its
 // KakoBuy referral code. OrientDig, PonyBuy and Fishgoo were opened on
 // 16 November 2026; PonyBuy's taobao code did not open, so it offers none.
+// LoloBuy was opened on 17 November 2026; its taobao link opened a manual
+// order form instead of the item, so it offers none for taobao either.
 const OBSERVED = {
   weidian: {
     kakobuy: `https://www.kakobuy.com/item/details?url=${WD}`,
@@ -43,6 +45,7 @@ const OBSERVED = {
     orientdig: "https://orientdig.com/product/?shop_type=weidian&id=7652831688",
     ponybuy: "https://www.ponybuy.com/products/3/7652831688",
     fishgoo: `https://www.fishgoo.com/#/product?productLink=${WD}`,
+    lolobuy: `https://www.lolobuy.com/productDetail/0?url=${WD}`,
   },
   taobao: {
     kakobuy: `https://www.kakobuy.com/item/details?url=${TB}`,
@@ -70,6 +73,7 @@ const OBSERVED = {
     orientdig: "https://orientdig.com/product/?shop_type=taobao&id=560198996624",
     ponybuy: "",
     fishgoo: `https://www.fishgoo.com/#/product?productLink=${TB}`,
+    lolobuy: "",
   },
   "1688": {
     kakobuy: `https://www.kakobuy.com/item/details?url=${ALI}`,
@@ -97,6 +101,7 @@ const OBSERVED = {
     orientdig: "https://orientdig.com/product/?shop_type=ali_1688&id=691234567890",
     ponybuy: "https://www.ponybuy.com/products/2/691234567890",
     fishgoo: `https://www.fishgoo.com/#/product?productLink=${ALI}`,
+    lolobuy: `https://www.lolobuy.com/productDetail/0?url=${ALI}`,
   },
 };
 
@@ -121,7 +126,8 @@ test("built links unwrap back to the item they were built from", () => {
     const link = agentLink(agent.id, { platform: "tmall", id: "77" });
     if (link) assert.deepEqual(marketplaceItem(unwrapAgentLink(link)), { platform: "tmall", id: "77" }, agent.id);
     else assert.ok(["hoobuy", "oopbuy", "mulebuy", "joyagoo", "cssbuy", "ootdbuy", "lovegobuy", "cnshopper",
-      "alleurobuy", "rizzitgo", "vigorbuy", "usfans", "litbuy", "hipobuy", "gtbuy", "orientdig", "ponybuy"].includes(agent.id), agent.id);
+      "alleurobuy", "rizzitgo", "vigorbuy", "usfans", "litbuy", "hipobuy", "gtbuy", "orientdig", "ponybuy",
+      "lolobuy"].includes(agent.id), agent.id);
   }
   assert.equal(agentLink("hoobuy", { platform: "tmall", id: "77" }), "");
   assert.equal(agentLink("kakobuy", { platform: "tmall", id: "77" }),

@@ -133,7 +133,7 @@ ID, Yupoo album URL or purchase link. A pasted shopping-agent link
 (KakoBuy, Hoobuy, Oopbuy, Mulebuy, Joyagoo, CSSBuy, Sugargoo, Superbuy,
 LoongBuy, Pikobuy, iTaobuy, BBDbuy, Ootdbuy, Lovegobuy, Cnshopper, Alleurobuy,
 RizzitGO, Vigorbuy, USFans, Litbuy, hipobuy, GTBuy, OrientDig, PonyBuy,
-Fishgoo, and the retired CNFans,
+Fishgoo, LoloBuy, and the retired CNFans,
 AllChinaBuy and Pandabuy) is
 unwrapped to the taobao, tmall, weidian or 1688 item it carries, the same
 way the scraper stores such links from album text. Stored descriptions are
@@ -243,9 +243,10 @@ way the note under the header says so and the catalogue loads as usual.
   agent link side by side. Links are rebuilt from the item id with no
   referral codes, from formats read from the public converters on
   27 September 2026; OrientDig, PonyBuy and Fishgoo were added on
-  16 November 2026 after opening an item on each (`viewer/agents.js`
-  records the dates). PonyBuy's taobao link did not open an item then, so
-  PonyBuy offers none for taobao. An agent that
+  16 November 2026 and LoloBuy on 17 November 2026, after opening an item
+  on each (`viewer/agents.js` records the dates). PonyBuy's and LoloBuy's
+  taobao links did not open an item then, so they offer none for taobao. An
+  agent that
   shuts down leaves the menu but its old links still resolve. Agents that
   name the marketplace by a channel code have none for tmall, so a tmall
   item keeps its marketplace link only; the agents that wrap the whole

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- LoloBuy joins the viewer's **Open purchase links on** menu for weidian
+  and 1688 items, and its links in album text are read as the marketplace
+  item they name. The format was checked by opening an item on each on
+  17 November 2026; its taobao link opened a manual order form instead.
 - Releases add executables for macOS (arm64) and Linux (arm64, statically
   linked), and the tests now run on macOS as well as Linux and Windows.
 - `lamp scrape --notify COMMAND` runs your command after a run that stored
