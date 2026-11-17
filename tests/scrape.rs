@@ -2126,8 +2126,7 @@ fn the_next_notify_run_reports_what_a_seller_saved_before_its_summary_failed() {
         }
     }));
     let error = notify_run(client.factory(), dir.path(), T1, notifying())
-        .err()
-        .expect("the unreadable run summary stops the run");
+        .expect_err("the unreadable run summary stops the run");
     assert!(
         error.to_string().contains("unreadable run summary"),
         "{error}"
