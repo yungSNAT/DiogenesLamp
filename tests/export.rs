@@ -536,6 +536,44 @@ fn a_site_folder_named_through_a_missing_folder_and_dot_dot_is_written() {
     assert_eq!(code, 0, "{stderr}");
     assert!(dir.path().join("site/data/index.json").is_file());
     assert!(!dir.path().join("scratch").exists());
+
+    // The same, relative to the working folder.
+    let data = dir.path().join("data");
+    let args = [
+        "--data",
+        data.to_str().unwrap(),
+        "export",
+        "--site",
+        "gone/../relative",
+    ];
+    let output = common::lamp_output(&args, Some(dir.path()));
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(dir.path().join("relative/data/index.json").is_file());
+    assert!(!dir.path().join("gone").exists());
+}
+
+/// With the working folder deleted, a relative site folder is an error, not
+/// a folder at the filesystem root.
+#[cfg(unix)]
+#[test]
+fn a_relative_site_folder_needs_a_working_folder() {
+    let dir = common::tmp();
+    let data = site_catalogue(dir.path());
+    let gone = dir.path().join("gone");
+    std::fs::create_dir(&gone).unwrap();
+    let output = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(r#"cd "$1" && rmdir "$1" && exec "$2" --data "$3" export --site lamp-site"#)
+        .args(["sh", gone.to_str().unwrap(), env!("CARGO_BIN_EXE_lamp")])
+        .arg(&data)
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(
+        stderr.contains("No such file or directory") && !stderr.contains("/lamp-site"),
+        "{stderr}"
+    );
 }
 
 /// aliases.json must be a regular file: a folder in its place is an error,

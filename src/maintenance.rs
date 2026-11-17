@@ -765,13 +765,14 @@ pub struct Site {
 /// outside the data directory.
 pub fn export_site(root: &Path, dir: &Path) -> Result<Site> {
     let _lock = CatalogueLock::acquire(root)?;
+    let os = |e: std::io::Error, path: &Path| Error::Os(pyerr::os_error(&e, Call::Os, path));
     // Checked and written by one resolved path, so `missing/../site` neither
-    // fails nor makes `missing`.
-    let dir = &pyerr::resolve(dir);
+    // fails nor makes `missing`. A relative path without a readable working
+    // folder is an error, not a folder at the filesystem root.
+    let dir = &pyerr::resolve(&std::path::absolute(dir).map_err(|e| os(e, dir))?);
     if pyerr::is_relative_to(dir, &pyerr::resolve(root)) {
         return value("the site folder must be outside the data directory");
     }
-    let os = |e: std::io::Error, path: &Path| Error::Os(pyerr::os_error(&e, Call::Os, path));
     match std::fs::read_dir(dir) {
         Ok(mut entries) => match entries.next() {
             None => {}
