@@ -81,6 +81,27 @@ no count, and the first run that reads an album's count, record nothing.
 Dry runs report none of these. The viewer's **Added since review** shows new
 albums by their `first_seen` dates.
 
+`--notify COMMAND` hands a run's results to a command of yours, such as one
+that sends a phone or email alert (the README's
+[Alerts](../README.md#alerts) section has recipes). After a run that stored
+or changed at least one album, lamp runs `COMMAND` in the system shell
+(`/bin/sh -c`, or `cmd /d /s /c` on Windows) with a JSON list on its stdin:
+one object per album, with the fields of `lamp export --format json` plus
+`new` (true when this run first stored the album) and `changes`, the
+`field`, `before` and `after` of each change this run recorded in the
+album's history: price, price availability, purchase links, photo count and
+availability (listed or gone). Every album in the scraped shards counts,
+including a duplicate the index hides behind a newer listing, since each is
+a seller's own copy. Scraped text reaches the command only on stdin, never
+in its command line. lamp itself makes no request for this. A run that
+stored and changed nothing, a dry run and a run stopped with Ctrl+C run no
+command. If the command cannot start or exits with a failure status, lamp
+reports it and exits with status 1; the scrape's data is already saved.
+Changes are matched to a run by its timestamp, to the second, so a
+`--notify` run that starts in the same second as an earlier scrape,
+including one that stopped before finishing, stops before fetching
+anything and asks to be run again.
+
 Purchase links are found word by word, between whitespace. A word of a few
 hundred dotted parts with no space, such as `a.a.a.`, that never reaches a
 known host exceeds the link pattern's backtracking limit; the rest of that

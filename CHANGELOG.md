@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `lamp scrape --notify COMMAND` runs your command after a run that stored
+  or changed albums, with them as JSON on its stdin: the `lamp export`
+  fields plus `new` and the run's `changes` (price, links, photo count,
+  availability). The README's Alerts section has recipes for a phone alert
+  through ntfy and for email. lamp makes no request of its own, and scraped
+  text reaches the command only on stdin.
 - The grid still shows the newest listing of an item, and its preview now
   lists every listing of it, cheapest first, with each seller, price,
   posting date and album link, so 2 sellers' prices for one marketplace item
