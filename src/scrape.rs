@@ -929,9 +929,11 @@ pub fn scrape_all(
         }
         match receiver.recv_timeout(Duration::from_millis(500)) {
             Ok(item) => {
+                // The seller's shard is already saved, so its new albums are
+                // recorded before anything else can fail.
                 if !options.dry_run
-                    && let Err(e) = write_run(data_dir, &item.seller, run_ts, item.as_map())
-                        .and_then(|()| record_new(data_dir, pending.as_mut(), run_ts, &item))
+                    && let Err(e) = record_new(data_dir, pending.as_mut(), run_ts, &item)
+                        .and_then(|()| write_run(data_dir, &item.seller, run_ts, item.as_map()))
                 {
                     drain_error = Some(e);
                     break;

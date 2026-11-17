@@ -94,13 +94,13 @@ availability (listed or gone). Every album in the scraped shards counts,
 including a duplicate the index hides behind a newer listing, since each is
 a seller's own copy. Scraped text reaches the command only on stdin, never
 in its command line. lamp itself makes no request for this. A run that
-stored and changed nothing, a dry run and a run stopped with Ctrl+C run no
-command. A `--notify` run stopped with Ctrl+C, or one that fails before
+stored and changed nothing, with nothing left from an earlier run, a dry
+run and a run stopped with Ctrl+C run no command. A `--notify` run stopped with Ctrl+C, or one that fails before
 running the command, leaves its albums in `data/notify-pending.json`, and
 the next `--notify` run reports them with its own, even after runs without
-`--notify` in between. Of a seller still running at a second Ctrl+C, or
-when lamp is killed, only the changes are reported, not which albums were
-new. If the command cannot start or exits with a failure status, lamp
+`--notify` in between. Of a seller still running at a second Ctrl+C or
+when lamp is killed, or one whose albums that file could not record, only
+the changes are reported, not which albums were new. If the command cannot start or exits with a failure status, lamp
 reports it and exits with status 1; the scrape's data is already saved,
 and the albums are not reported again.
 Changes are matched to a run by its timestamp, to the second, so a

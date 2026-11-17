@@ -2064,6 +2064,21 @@ fn the_next_notify_run_reports_what_an_interrupted_one_stored_and_changed() {
     assert_eq!(rows, [], "reported once");
 }
 
+/// `scrape_rows` with `--notify`, once the failed run before it has let go
+/// of the catalogue lock: its workers release it on their own thread, as a
+/// process that exits would.
+fn rows_after_a_failed_run(dir: &Path, run_ts: &str) -> Vec<(String, bool)> {
+    for _ in 0..100 {
+        match scrape_rows(dir, run_ts, notifying()) {
+            Err(lamp::errors::Error::Busy(m)) if m.contains("already in use") => {
+                std::thread::sleep(std::time::Duration::from_millis(50))
+            }
+            rows => return rows.unwrap(),
+        }
+    }
+    panic!("the catalogue lock was never released");
+}
+
 /// A notifying run that stores albums and then fails before writing the
 /// index leaves them for the next notifying run to report as new.
 #[test]
@@ -2089,18 +2104,39 @@ fn the_next_notify_run_reports_what_a_failed_one_stored() {
         "{error}"
     );
     assert!(!dir.path().join("index.json").exists());
-    // The failed run's workers release the catalogue lock on their own
-    // thread, as a process that exits would.
-    let mut rows = scrape_rows(dir.path(), T2, notifying());
-    for _ in 0..100 {
-        if !matches!(rows, Err(lamp::errors::Error::Busy(_))) {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        rows = scrape_rows(dir.path(), T2, notifying());
-    }
     assert_eq!(
-        rows.unwrap(),
+        rows_after_a_failed_run(dir.path(), T2),
+        [("101".to_string(), true), ("102".to_string(), true)]
+    );
+}
+
+/// A seller whose run summary cannot be written after it saved its albums
+/// still leaves them for the next notifying run to report as new.
+#[test]
+fn the_next_notify_run_reports_what_a_seller_saved_before_its_summary_failed() {
+    let dir = common::tmp();
+    let client = make_client();
+    let runs = dir.path().join("runs/sellerx.json");
+    // The summary becomes unreadable once the listing is read, so the run
+    // stores both albums and then fails to write its summary.
+    let damaged = runs.clone();
+    *client.0.hook.lock().unwrap() = Some(Arc::new(move |url: &str| {
+        if url.contains("/albums/101") {
+            write(&damaged, b"{");
+        }
+    }));
+    let error = notify_run(client.factory(), dir.path(), T1, notifying())
+        .err()
+        .expect("the unreadable run summary stops the run");
+    assert!(
+        error.to_string().contains("unreadable run summary"),
+        "{error}"
+    );
+    assert_eq!(shard(dir.path()).len(), 2);
+    *client.0.hook.lock().unwrap() = None;
+    std::fs::remove_file(&runs).unwrap();
+    assert_eq!(
+        rows_after_a_failed_run(dir.path(), T2),
         [("101".to_string(), true), ("102".to_string(), true)]
     );
 }
