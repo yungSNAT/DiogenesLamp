@@ -746,3 +746,197 @@ pub fn export_csv(rows: &[Map]) -> String {
     }
     csv
 }
+
+/// What `lamp export --site` wrote.
+pub struct Site {
+    pub sellers: usize,
+    pub covers: usize,
+    /// Covers the shards name that are not cached; the viewer shows none.
+    pub missing_covers: usize,
+}
+
+/// `lamp export --site`: the viewer and the catalogue it reads as static
+/// files for a web host, such as one a phone can reach. `dir` gets the
+/// bundled viewer, its index.html carrying the policy `lamp serve` sends as
+/// a header, and under data/ the index, every indexed shard, the cached
+/// covers the shards name and the operator's aliases.json when there is one;
+/// snapshots, run summaries and sources stay behind. The catalogue is locked
+/// and checked before anything is written. `dir` must be new or empty and
+/// outside the data directory.
+pub fn export_site(root: &Path, dir: &Path) -> Result<Site> {
+    let _lock = CatalogueLock::acquire(root)?;
+    let os = |e: std::io::Error, path: &Path| Error::Os(pyerr::os_error(&e, Call::Os, path));
+    // Checked and written by one resolved path, so `missing/../site` neither
+    // fails nor makes `missing`. A relative path without a readable working
+    // folder is an error, not a folder at the filesystem root.
+    let dir = &pyerr::resolve(&std::path::absolute(dir).map_err(|e| os(e, dir))?);
+    if pyerr::is_relative_to(dir, &pyerr::resolve(root)) {
+        return value("the site folder must be outside the data directory");
+    }
+    match std::fs::read_dir(dir) {
+        Ok(mut entries) => match entries.next() {
+            None => {}
+            Some(Ok(_)) => {
+                return value(format!("{}: folder is not empty", pyerr::path_str(dir)));
+            }
+            Some(Err(e)) => return Err(os(e, dir)),
+        },
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(os(e, dir)),
+    }
+    let index = data_path(root, "index.json", false)?;
+    let sellers = sellers_of(&read_metadata(&index, "index.json")?);
+    let mut copies = vec![(index, "index.json".to_string())];
+    let mut covers = std::collections::BTreeSet::new();
+    let mut missing = std::collections::BTreeSet::new();
+    for seller in &sellers {
+        let relative = seller.get("shard").map(Value::py_str).unwrap_or_default();
+        let shard = data_path(root, &relative, false)?;
+        for album in albums_of(&read_metadata(&shard, &relative)?) {
+            if let Some(Value::Str(thumb)) = album.get("thumb")
+                && !thumb.is_empty()
+            {
+                if data_path(root, thumb, true)?.is_file() {
+                    covers.insert(thumb.clone());
+                } else {
+                    missing.insert(thumb.clone());
+                }
+            }
+        }
+        copies.push((shard, relative));
+    }
+    // Not followed through a link: the site may carry only the data
+    // directory's own file.
+    let aliases = root.join("aliases.json");
+    match std::fs::symlink_metadata(&aliases) {
+        Ok(meta) if meta.is_file() => {
+            if meta.len() > MAX_METADATA_BYTES {
+                return value("aliases.json exceeds 256 MB");
+            }
+            copies.push((aliases, "aliases.json".into()));
+        }
+        Ok(_) => return value("aliases.json is not a regular file"),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(os(e, &aliases)),
+    }
+    for cover in &covers {
+        copies.push((data_path(root, cover, true)?, cover.clone()));
+    }
+    // A failure partway removes exactly what this export made, so a file
+    // another program puts in the folder meanwhile stays.
+    let mut made = Made::default();
+    write_site(dir, &copies, &mut made).inspect_err(|_| made.undo())?;
+    Ok(Site {
+        sellers: sellers.len(),
+        covers: covers.len(),
+        missing_covers: missing.len(),
+    })
+}
+
+/// The folders and files `lamp export --site` created, in order.
+#[derive(Default)]
+struct Made {
+    dirs: Vec<PathBuf>,
+    files: Vec<PathBuf>,
+}
+
+impl Made {
+    /// `path` and any missing ancestors, each recorded as it is made.
+    fn dir(&mut self, path: &Path) -> Result<()> {
+        let mut missing = Vec::new();
+        let mut next = Some(path);
+        while let Some(p) = next.filter(|p| !p.as_os_str().is_empty() && !p.exists()) {
+            missing.push(p.to_path_buf());
+            next = p.parent();
+        }
+        for p in missing.into_iter().rev() {
+            std::fs::create_dir(&p).map_err(|e| Error::Os(pyerr::os_error(&e, Call::Os, &p)))?;
+            self.dirs.push(p);
+        }
+        Ok(())
+    }
+
+    /// A new file at `target` holding `bytes`; one already there is an error.
+    fn file(&mut self, target: &Path, bytes: &mut dyn Read) -> Result<()> {
+        if let Some(parent) = target.parent() {
+            self.dir(parent)?;
+        }
+        let error = |e: std::io::Error| Error::Os(pyerr::os_error(&e, Call::Open, target));
+        let mut out = std::fs::File::create_new(target).map_err(error)?;
+        self.files.push(target.to_path_buf());
+        std::io::copy(bytes, &mut out).map_err(error)?;
+        Ok(())
+    }
+
+    /// Removes the files, then each folder left empty, newest first.
+    fn undo(&self) {
+        for file in self.files.iter().rev() {
+            let _ = std::fs::remove_file(file);
+        }
+        for dir in self.dirs.iter().rev() {
+            let _ = std::fs::remove_dir(dir);
+        }
+    }
+}
+
+/// The viewer, its index.html carrying the policy, and `copies` under data/.
+fn write_site(dir: &Path, copies: &[(PathBuf, String)], made: &mut Made) -> Result<()> {
+    made.dir(dir)?;
+    const CHARSET: &str = "<meta charset=\"utf-8\">";
+    for (name, bytes) in crate::viewer::FILES {
+        let policy;
+        let bytes = if *name == "index.html" {
+            let html = std::str::from_utf8(bytes)
+                .ok()
+                .filter(|html| html.contains(CHARSET))
+                .ok_or_else(|| Error::Value("viewer index.html has no charset tag".into()))?;
+            policy = html.replacen(
+                CHARSET,
+                &format!(
+                    "{CHARSET}\n<meta http-equiv=\"Content-Security-Policy\" content=\"{}\">",
+                    crate::serve::CSP
+                ),
+                1,
+            );
+            policy.as_bytes()
+        } else {
+            bytes
+        };
+        made.file(&dir.join(name), &mut &bytes[..])?;
+    }
+    for (source, relative) in copies {
+        let mut file = std::fs::File::open(source)
+            .map_err(|e| Error::Os(pyerr::os_error(&e, Call::Open, source)))?;
+        made.file(&dir.join("data").join(relative), &mut file)?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A failed site export removes only what it made: a file another
+    /// program put in the folder meanwhile stays, with the folders holding it.
+    #[test]
+    fn undo_removes_only_what_the_export_made() {
+        let tmp = tempfile::tempdir().unwrap();
+        let site = tmp.path().join("site");
+        let mut made = Made::default();
+        made.file(&site.join("data/catalog/one.json"), &mut &b"{}"[..])
+            .unwrap();
+        made.file(&site.join("index.html"), &mut &b"x"[..]).unwrap();
+        std::fs::write(site.join("data/theirs.txt"), b"keep").unwrap();
+        assert!(
+            made.file(&site.join("data/theirs.txt"), &mut &b"y"[..])
+                .is_err()
+        );
+        made.undo();
+        assert_eq!(
+            std::fs::read(site.join("data/theirs.txt")).unwrap(),
+            b"keep"
+        );
+        assert!(!site.join("index.html").exists());
+        assert!(!site.join("data/catalog").exists());
+    }
+}

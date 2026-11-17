@@ -16,6 +16,11 @@
   menu, and their links in album text are read as the marketplace item they
   name: OrientDig, PonyBuy (weidian and 1688) and Fishgoo. Each format was
   checked by opening an item on 16 November 2026.
+- `lamp export --site DIR` writes the viewer and the catalogue as static
+  files, so a phone can open the catalogue from any web host. The page
+  carries the content security policy `lamp serve` sends as a header. The
+  viewer now starts loading the catalogue once all its scripts have run: on
+  a static host the index could arrive first and stop the page loading.
 - A scrape notices when an album's card in the seller's listing shows a
   different photo count from the last run, without fetching the album: the
   album's `photo_count` takes the new figure, its history records the change

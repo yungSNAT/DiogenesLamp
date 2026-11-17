@@ -1,7 +1,8 @@
 // Copyright 2026 Ryan Duguid
 // SPDX-License-Identifier: Apache-2.0
 
-//! `lamp export`: the indexed albums as CSV or JSON on stdout.
+//! `lamp export`: the indexed albums as CSV or JSON on stdout, or the viewer
+//! and catalogue as a static site.
 mod common;
 
 use std::path::Path;
@@ -365,4 +366,291 @@ fn csv_cells_match_the_viewers_csv_cell() {
         let want = format!("{},\"CNY\",", cell.py_str());
         assert!(rest.starts_with(&want), "{line} against {cell:?}");
     }
+}
+
+/// The catalogue with 2 cached covers, an aliases.json and the files a site
+/// must leave behind; returns the data directory.
+fn site_catalogue(root: &Path) -> std::path::PathBuf {
+    let data = root.join("data");
+    catalogue(&data);
+    common::write(&data.join("thumbs/one/11.jpg"), b"cover 11");
+    common::write(&data.join("thumbs/two/21.jpg"), b"cover 21");
+    common::write(&data.join("aliases.json"), br#"{"brands": {}}"#);
+    common::write(&data.join("runs/one.json"), b"{}");
+    common::write(&data.join("snapshots/old.zip"), b"zip");
+    data
+}
+
+/// Every file under `dir`, as slash-separated relative paths.
+fn tree(dir: &Path) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(next) = stack.pop() {
+        for entry in std::fs::read_dir(&next).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                let relative = path.strip_prefix(dir).unwrap().to_string_lossy();
+                found.push(relative.replace('\\', "/"));
+            }
+        }
+    }
+    found.sort();
+    found
+}
+
+#[test]
+fn a_site_holds_the_viewer_and_the_catalogue_it_reads_and_nothing_else() {
+    let dir = common::tmp();
+    let data = site_catalogue(dir.path());
+    let site = dir.path().join("site");
+    let (code, stdout, stderr) = export(dir.path(), &["--site", site.to_str().unwrap()]);
+    assert_eq!(code, 0, "{stderr}");
+    let stdout = String::from_utf8(stdout).unwrap();
+    assert!(
+        stdout.contains("2 sellers and 2 covers (4 not cached"),
+        "{stdout}"
+    );
+    let mut expected: Vec<String> = lamp::viewer::FILES
+        .iter()
+        .map(|(name, _)| name.to_string())
+        .chain(
+            [
+                "aliases.json",
+                "catalog/one.json",
+                "catalog/two.json",
+                "index.json",
+                "thumbs/one/11.jpg",
+                "thumbs/two/21.jpg",
+            ]
+            .map(|f| format!("data/{f}")),
+        )
+        .collect();
+    expected.sort();
+    assert_eq!(tree(&site), expected);
+    for name in [
+        "index.json",
+        "catalog/one.json",
+        "thumbs/two/21.jpg",
+        "aliases.json",
+    ] {
+        assert_eq!(
+            std::fs::read(site.join("data").join(name)).unwrap(),
+            std::fs::read(data.join(name)).unwrap(),
+            "{name}"
+        );
+    }
+    for (name, bytes) in lamp::viewer::FILES {
+        let written = std::fs::read(site.join(name)).unwrap();
+        if *name != "index.html" {
+            assert_eq!(&written, bytes, "{name}");
+        }
+    }
+    // A static host sends no policy header, so the page carries the one
+    // `lamp serve` sends, before any script or style loads.
+    let html = std::fs::read_to_string(site.join("index.html")).unwrap();
+    let policy = format!(
+        "<meta charset=\"utf-8\">\n<meta http-equiv=\"Content-Security-Policy\" content=\"{}\">",
+        lamp::serve::CSP
+    );
+    assert!(html.contains(&policy), "{html}");
+    let at = html.find(&policy).unwrap();
+    assert!(html.find("<head>").unwrap() < at && at < html.find("</head>").unwrap());
+    for load in ["<link", "<script", "<style"] {
+        assert!(html.find(load).is_none_or(|first| at < first), "{load}");
+    }
+    assert_eq!(
+        html.replacen(&policy, "<meta charset=\"utf-8\">", 1)
+            .as_bytes(),
+        lamp::viewer::get("index.html").unwrap()
+    );
+}
+
+#[test]
+fn a_site_needs_a_new_or_empty_folder_outside_the_data_directory() {
+    let dir = common::tmp();
+    let data = site_catalogue(dir.path());
+    let site = dir.path().join("site");
+    common::write(&site.join("keep.txt"), b"mine");
+    let (code, stdout, stderr) = export(dir.path(), &["--site", site.to_str().unwrap()]);
+    assert_eq!(code, 1, "{stderr}");
+    assert!(
+        stdout.is_empty() && stderr.contains("folder is not empty"),
+        "{stderr}"
+    );
+    assert_eq!(tree(&site), ["keep.txt"]);
+
+    let inside = data.join("site");
+    let (code, _, stderr) = export(dir.path(), &["--site", inside.to_str().unwrap()]);
+    assert_eq!(code, 1, "{stderr}");
+    assert!(stderr.contains("outside the data directory"), "{stderr}");
+    assert!(!inside.exists());
+
+    let empty = dir.path().join("empty");
+    std::fs::create_dir(&empty).unwrap();
+    let args = ["--site", empty.to_str().unwrap(), "--since", "2026-11-16"];
+    let (code, _, stderr) = export(dir.path(), &args);
+    assert_eq!(code, 1, "{stderr}");
+    assert!(stderr.contains("leave out --since"), "{stderr}");
+    let (code, _, stderr) = export(dir.path(), &args[..2]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(empty.join("data/index.json").is_file());
+}
+
+#[test]
+fn a_bad_catalogue_writes_no_site() {
+    let dir = common::tmp();
+    let data = site_catalogue(dir.path());
+    std::fs::remove_file(data.join("catalog/two.json")).unwrap();
+    let site = dir.path().join("site");
+    let (code, stdout, stderr) = export(dir.path(), &["--site", site.to_str().unwrap()]);
+    assert_eq!(code, 1, "{stderr}");
+    assert!(
+        stdout.is_empty() && stderr.starts_with("error: "),
+        "{stderr}"
+    );
+    assert!(!site.exists());
+}
+
+/// A folder that reaches the data directory through `..` is inside it.
+#[test]
+fn a_site_folder_reaching_the_data_directory_through_dot_dot_is_refused() {
+    let dir = common::tmp();
+    let data = site_catalogue(dir.path());
+    let sneaky = data.join("..").join("data").join("site");
+    let (code, _, stderr) = export(dir.path(), &["--site", sneaky.to_str().unwrap()]);
+    assert_eq!(code, 1, "{stderr}");
+    assert!(stderr.contains("outside the data directory"), "{stderr}");
+    assert!(!data.join("site").exists());
+}
+
+/// A folder named through a missing folder and `..` is written where it
+/// resolves, and the missing folder is not made.
+#[test]
+fn a_site_folder_named_through_a_missing_folder_and_dot_dot_is_written() {
+    let dir = common::tmp();
+    site_catalogue(dir.path());
+    let site = dir.path().join("scratch").join("..").join("site");
+    let (code, _, stderr) = export(dir.path(), &["--site", site.to_str().unwrap()]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(dir.path().join("site/data/index.json").is_file());
+    assert!(!dir.path().join("scratch").exists());
+
+    // The same, relative to the working folder.
+    let data = dir.path().join("data");
+    let args = [
+        "--data",
+        data.to_str().unwrap(),
+        "export",
+        "--site",
+        "gone/../relative",
+    ];
+    let output = common::lamp_output(&args, Some(dir.path()));
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(dir.path().join("relative/data/index.json").is_file());
+    assert!(!dir.path().join("gone").exists());
+}
+
+/// With the working folder deleted, a relative site folder is an error, not
+/// a folder at the filesystem root.
+#[cfg(unix)]
+#[test]
+fn a_relative_site_folder_needs_a_working_folder() {
+    let dir = common::tmp();
+    let data = site_catalogue(dir.path());
+    let gone = dir.path().join("gone");
+    std::fs::create_dir(&gone).unwrap();
+    let output = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(r#"cd "$1" && rmdir "$1" && exec "$2" --data "$3" export --site lamp-site"#)
+        .args(["sh", gone.to_str().unwrap(), env!("CARGO_BIN_EXE_lamp")])
+        .arg(&data)
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(
+        stderr.contains("No such file or directory") && !stderr.contains("/lamp-site"),
+        "{stderr}"
+    );
+}
+
+/// aliases.json must be a regular file: a folder in its place is an error,
+/// not a site without it.
+#[test]
+fn an_aliases_entry_that_is_not_a_file_writes_no_site() {
+    let dir = common::tmp();
+    let data = site_catalogue(dir.path());
+    std::fs::remove_file(data.join("aliases.json")).unwrap();
+    std::fs::create_dir(data.join("aliases.json")).unwrap();
+    let site = dir.path().join("site");
+    let (code, _, stderr) = export(dir.path(), &["--site", site.to_str().unwrap()]);
+    assert_eq!(code, 1, "{stderr}");
+    assert!(
+        stderr.contains("aliases.json is not a regular file"),
+        "{stderr}"
+    );
+    assert!(!site.exists());
+}
+
+/// A link may not carry a file from outside the data directory into the
+/// site, nor take the site into the data directory.
+#[cfg(unix)]
+#[test]
+fn links_cannot_carry_files_in_or_out_of_the_data_directory() {
+    use std::os::unix::fs::symlink;
+    let dir = common::tmp();
+    let data = site_catalogue(dir.path());
+    let secret = dir.path().join("sources.toml");
+    common::write(&secret, b"secret");
+    let site = dir.path().join("site");
+    let refused = |what: &str| {
+        let (code, stdout, stderr) = export(dir.path(), &["--site", site.to_str().unwrap()]);
+        assert_eq!((code, stdout.is_empty()), (1, true), "{what}: {stderr}");
+        assert!(!site.exists(), "{what}");
+    };
+    std::fs::remove_file(data.join("aliases.json")).unwrap();
+    symlink(&secret, data.join("aliases.json")).unwrap();
+    refused("aliases.json linked outside");
+    std::fs::remove_file(data.join("aliases.json")).unwrap();
+    std::fs::remove_file(data.join("thumbs/one/11.jpg")).unwrap();
+    symlink(&secret, data.join("thumbs/one/11.jpg")).unwrap();
+    refused("a cover linked outside");
+    std::fs::remove_file(data.join("thumbs/one/11.jpg")).unwrap();
+
+    let into_data = dir.path().join("into-data");
+    symlink(&data, &into_data).unwrap();
+    let through = into_data.join("site");
+    let (code, _, stderr) = export(dir.path(), &["--site", through.to_str().unwrap()]);
+    assert_eq!(code, 1, "{stderr}");
+    assert!(stderr.contains("outside the data directory"), "{stderr}");
+    assert!(!data.join("site").exists());
+}
+
+/// A copy that fails partway removes what the export wrote: a new folder
+/// goes, an empty one is left empty, and the next export can use it.
+#[cfg(unix)]
+#[test]
+fn a_failed_copy_leaves_no_partial_site() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = common::tmp();
+    let data = site_catalogue(dir.path());
+    let cover = data.join("thumbs/two/21.jpg");
+    std::fs::set_permissions(&cover, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read(&cover).is_ok() {
+        return; // root reads any file, so the failure cannot be staged
+    }
+    let site = dir.path().join("site");
+    let (code, stdout, stderr) = export(dir.path(), &["--site", site.to_str().unwrap()]);
+    assert_eq!((code, stdout.is_empty()), (1, true), "{stderr}");
+    assert!(!site.exists());
+    std::fs::create_dir(&site).unwrap();
+    let (code, _, stderr) = export(dir.path(), &["--site", site.to_str().unwrap()]);
+    assert_eq!(code, 1, "{stderr}");
+    assert!(tree(&site).is_empty(), "{:?}", tree(&site));
+    std::fs::set_permissions(&cover, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let (code, _, stderr) = export(dir.path(), &["--site", site.to_str().unwrap()]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(site.join("data/thumbs/two/21.jpg").is_file());
 }

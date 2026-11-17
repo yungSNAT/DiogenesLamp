@@ -24,7 +24,7 @@ use crate::viewer;
 /// requests are pointed at it so they 404 by not existing.
 pub const REFUSED: &str = ".refused-traversal";
 const SERVER_VERSION: &str = "SimpleHTTP/0.6 DiogenesLamp/0.1";
-const CSP: &str = "default-src 'none'; img-src 'self' data:; script-src 'self'; style-src 'self'; connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'";
+pub const CSP: &str = "default-src 'none'; img-src 'self' data:; script-src 'self'; style-src 'self'; connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'";
 
 const ERROR_TEMPLATE: &str = "<!DOCTYPE HTML>
 <html lang=\"en\">
