@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `lamp scrape --notify COMMAND` runs your command after a run that stored
+  or changed albums, with them as JSON on its stdin: the `lamp export`
+  fields plus `new` and the run's `changes` (price, links, photo count,
+  availability). The README's Alerts section has recipes for a phone alert
+  through ntfy and for email. lamp makes no request of its own, and scraped
+  text reaches the command only on stdin.
 - `lamp export --site DIR` writes the viewer and the catalogue as static
   files, so a phone can open the catalogue from any web host. The page
   carries the content security policy `lamp serve` sends as a header. The

@@ -1767,6 +1767,155 @@ fn a_stopped_seller_saves_nothing_it_has_not_listed() {
     assert!(!dir.path().join("catalog/sellerx.json").exists());
 }
 
+/// `scrape_all` for sellerx with these options; its `--notify` rows as
+/// (album_id, new) pairs in id order.
+fn scrape_rows(
+    dir: &Path,
+    run_ts: &str,
+    options: Options,
+) -> lamp::errors::Result<Vec<(String, bool)>> {
+    let outcome = scrape_all(
+        &sources(&[seller()]),
+        dir,
+        run_ts,
+        &options,
+        1,
+        8.0,
+        None,
+        Some(make_client().factory()),
+        &mut |_| {},
+        &Interrupt::default(),
+    )?;
+    let rows: std::collections::BTreeSet<(String, bool)> = outcome
+        .rows?
+        .iter()
+        .map(|row| {
+            (
+                row["album_id"].py_str(),
+                matches!(row["new"], Value::Bool(true)),
+            )
+        })
+        .collect();
+    Ok(rows.into_iter().collect())
+}
+
+fn notifying() -> Options {
+    Options {
+        run_rows: true,
+        ..opts()
+    }
+}
+
+#[test]
+fn a_run_asked_for_its_rows_returns_the_albums_it_stored_or_changed() {
+    let dir = common::tmp();
+    assert_eq!(scrape_rows(dir.path(), T1, opts()).unwrap(), []);
+    let dry = Options {
+        dry_run: true,
+        ..notifying()
+    };
+    assert_eq!(
+        scrape_rows(common::tmp().path(), T1, dry).unwrap(),
+        [],
+        "a dry run stores nothing"
+    );
+    let fresh = common::tmp();
+    assert_eq!(
+        scrape_rows(fresh.path(), T1, notifying()).unwrap(),
+        [("101".to_string(), true), ("102".to_string(), true)]
+    );
+    assert_eq!(
+        scrape_rows(fresh.path(), T2, notifying()).unwrap(),
+        [],
+        "a run that changes nothing"
+    );
+}
+
+/// An album stored before `first_seen` was recorded gets the timestamp of
+/// the run that next stores it, but that run did not find it: not new.
+#[test]
+fn an_album_stored_without_first_seen_is_not_reported_new() {
+    let dir = common::tmp();
+    scrape_rows(dir.path(), T1, opts()).unwrap();
+    let path = dir.path().join("catalog/sellerx.json");
+    let mut stored = obj(&read_json(&path)).clone();
+    if let Some(Value::Array(albums)) = stored.get_mut("albums") {
+        for album in albums {
+            if let Value::Object(album) = album {
+                album.shift_remove("first_seen");
+            }
+        }
+    }
+    lamp::storage::atomic_write_json(&path, &Value::Object(stored)).unwrap();
+    let full = Options {
+        full: true,
+        ..notifying()
+    };
+    assert_eq!(scrape_rows(dir.path(), T2, full).unwrap(), []);
+    assert_eq!(get(&shard(dir.path()), "101", "first_seen").py_str(), T2);
+}
+
+/// History entries are matched by the run's timestamp, so a notifying run
+/// that would share its second with the scrape before it is refused rather
+/// than given that scrape's changes; without `--notify` it runs as before.
+#[test]
+fn a_notify_run_in_the_same_second_as_the_last_scrape_is_refused() {
+    let dir = common::tmp();
+    scrape_rows(dir.path(), T1, notifying()).unwrap();
+    let error = scrape_rows(dir.path(), T1, notifying()).unwrap_err();
+    assert!(
+        matches!(&error, lamp::errors::Error::Busy(m) if m.contains("already ran at")),
+        "{error}"
+    );
+    assert_eq!(scrape_rows(dir.path(), T1, opts()).unwrap(), []);
+}
+
+/// A scrape that saved shards but failed before writing the index leaves
+/// records stamped with its second whilst the index names the run before:
+/// a notifying run in that second is refused as well.
+#[test]
+fn a_notify_run_in_the_second_of_a_scrape_that_never_wrote_its_index_is_refused() {
+    let dir = common::tmp();
+    scrape_rows(dir.path(), T1, opts()).unwrap();
+    let full = Options {
+        full: true,
+        ..opts()
+    };
+    scrape_rows(dir.path(), T2, full).unwrap();
+    assert_eq!(get(&shard(dir.path()), "101", "updated_at").py_str(), T2);
+    let index = dir.path().join("index.json");
+    let mut stored = obj(&read_json(&index)).clone();
+    stored.insert("generated_at".into(), T1.into());
+    lamp::storage::atomic_write_json(&index, &Value::Object(stored)).unwrap();
+    let error = scrape_rows(dir.path(), T2, notifying()).unwrap_err();
+    assert!(
+        matches!(&error, lamp::errors::Error::Busy(m) if m.contains("already ran at")),
+        "{error}"
+    );
+}
+
+/// A failed run that only marked albums gone or recounted leaves history
+/// entries at its second without touching `updated_at`: refused as well.
+#[test]
+fn a_notify_run_in_the_second_of_history_a_failed_scrape_left_is_refused() {
+    let dir = common::tmp();
+    scrape_rows(dir.path(), T1, opts()).unwrap();
+    let path = dir.path().join("catalog/sellerx.json");
+    let mut stored = obj(&read_json(&path)).clone();
+    if let Some(Value::Array(albums)) = stored.get_mut("albums")
+        && let Some(Value::Object(album)) = albums.first_mut()
+    {
+        lamp::storage::record_change(album, "availability", "listed".into(), "gone".into(), T2);
+    }
+    lamp::storage::atomic_write_json(&path, &Value::Object(stored)).unwrap();
+    assert_eq!(get(&shard(dir.path()), "102", "updated_at").py_str(), T1);
+    let error = scrape_rows(dir.path(), T2, notifying()).unwrap_err();
+    assert!(
+        matches!(&error, lamp::errors::Error::Busy(m) if m.contains("already ran at")),
+        "{error}"
+    );
+}
+
 #[test]
 fn each_seller_is_reported_as_it_finishes() {
     let dir = common::tmp();

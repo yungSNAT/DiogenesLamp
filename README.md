@@ -224,6 +224,62 @@ Then load it with
 
 </details>
 
+### Alerts
+
+To hear when a seller posts albums or changes a price, add
+`--notify COMMAND` to the scheduled scrape. After a run that stored or
+changed albums, lamp runs your command with them as a JSON list on its
+stdin: the `lamp export --format json` fields plus `new` and `changes`
+([docs/reference.md](docs/reference.md#scrape) has the details). lamp makes
+no request of its own: the command decides where the alert goes. Scraped
+text reaches it only on stdin, never in its command line.
+
+The recipes below are scripts, so the scheduled command stays short. The
+command is run by the shell, so quote a path inside it as well:
+
+    lamp --sources "$HOME/lamp/sources.toml" --data "$HOME/lamp/data" scrape --notify '"$HOME/lamp/notify.sh"'
+
+<details>
+<summary>Phone alert with ntfy (Linux and macOS: jq and curl)</summary>
+
+Save as `~/lamp/notify.sh` and run `chmod +x ~/lamp/notify.sh`. Anyone who
+knows a topic name on ntfy.sh can read it, so choose a long random one, or
+use your own ntfy server.
+
+    #!/bin/sh
+    jq -r '"\(length) new or changed", (.[:15][] | (if .new then "new: " else "changed: " end) + .seller + " " + (.title // "") + " " + (.album_url // ""))' |
+      curl -fsS -H 'Title: lamp' --data-binary @- https://ntfy.sh/your-long-random-topic > /dev/null
+
+</details>
+
+<details>
+<summary>Email (Linux and macOS: jq and a configured mail command)</summary>
+
+    #!/bin/sh
+    jq -r '.[] | (if .new then "new: " else "changed: " end) + .seller + " " + (.title // "") + " " + (.album_url // "")' |
+      mail -s 'lamp: new and changed albums' you@example.com
+
+</details>
+
+<details>
+<summary>Windows: ntfy from PowerShell</summary>
+
+Save as `notify.ps1` in your `lamp` folder and pass
+`--notify 'pwsh -NoProfile -File "C:\Users\you\lamp\notify.ps1"'` (with
+Windows PowerShell 5.1, whose default policy runs no scripts:
+`powershell -NoProfile -ExecutionPolicy Bypass -File ...`):
+
+    $reader = [IO.StreamReader]::new([Console]::OpenStandardInput(), [Text.UTF8Encoding]::new($false))
+    $rows = $reader.ReadToEnd() | ConvertFrom-Json
+    $lines = $rows | Select-Object -First 15 | ForEach-Object {
+      "$(if ($_.new) { 'new' } else { 'changed' }): $($_.seller) $($_.title) $($_.album_url)"
+    }
+    $body = "$(@($rows).Count) new or changed`n" + ($lines -join "`n")
+    Invoke-RestMethod -Method Post -Uri 'https://ntfy.sh/your-long-random-topic' -Headers @{ Title = 'lamp' } `
+      -Body ([Text.Encoding]::UTF8.GetBytes($body)) | Out-Null
+
+</details>
+
 ## Data
 
 Fetched data lives in `data/` (gitignored): `index.json`, seller shards in

@@ -161,6 +161,14 @@ pub fn build_parser() -> Parser {
         "--dry-run",
         Some("preview scrape work without fetching album pages or saving files"),
     );
+    scrape.store(
+        "--notify",
+        |t| Ok(Value::Str(t.into())),
+        "str",
+        Value::Str(String::new()),
+        Some("COMMAND"),
+        Some("after a run that stores or changes albums, run COMMAND in the system shell with them as JSON on its stdin (not after --dry-run or Ctrl+C)"),
+    );
 
     let mut serve = Parser::new("lamp serve", None);
     serve.store("--port", port, "_port", Value::Int(8000), None, None);
@@ -495,6 +503,7 @@ fn cmd_scrape(args: &Args) -> i32 {
         refresh_days: args.int("refresh_details_days"),
         refresh_limit: args.int("refresh_limit"),
         retry_failed: args.flag("retry_failed"),
+        run_rows: !args.str("notify").is_empty(),
     };
     let interrupt = Arc::new(Interrupt::default());
     {
@@ -563,7 +572,69 @@ fn cmd_scrape(args: &Args) -> i32 {
         outcome.summaries.len()
     ))
     .unwrap_or_else(|e| out::uncaught(&e));
+    let sent = outcome
+        .rows
+        .map_err(|e| e.to_string())
+        .and_then(|rows| notify(&args.str("notify"), rows));
+    if let Err(e) = sent {
+        out::err(&format!("error: --notify: {e}"));
+        return 1;
+    }
     i32::from(errored > 0)
+}
+
+/// Run `command` in the system shell with `rows` as JSON on its stdin, or
+/// nothing when there are none. Scraped text reaches the command only on
+/// stdin, never in its arguments or the shell's command line.
+pub fn notify(command: &str, rows: Vec<pyjson::Map>) -> Result<(), String> {
+    use std::io::Write;
+    if rows.is_empty() {
+        return Ok(());
+    }
+    let rows = pyjson::Value::Array(rows.into_iter().map(pyjson::Value::Object).collect());
+    let json = pyjson::dumps(&rows, Style::Indent(2)) + "\n";
+    // The command shares stdout, so lamp's own lines come first.
+    let _ = std::io::stdout().flush();
+    let mut child = shell(command)
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("could not start the command: {e}"))?;
+    // Dropping stdin closes it. A command may exit without reading it all.
+    let written = child
+        .stdin
+        .take()
+        .map_or(Ok(()), |mut stdin| stdin.write_all(json.as_bytes()));
+    let status = child
+        .wait()
+        .map_err(|e| format!("could not wait for the command: {e}"))?;
+    if !status.success() {
+        return Err(format!("the command failed ({status})"));
+    }
+    match written {
+        Err(e) if e.kind() != std::io::ErrorKind::BrokenPipe => {
+            Err(format!("could not write to the command: {e}"))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// `command` run by the system shell: `/bin/sh -c` or `%ComSpec% /d /s /c`.
+fn shell(command: &str) -> std::process::Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let comspec = std::env::var_os("ComSpec").unwrap_or_else(|| "cmd.exe".into());
+        let mut shell = std::process::Command::new(comspec);
+        // cmd strips the outer quotes that /s marks and runs the rest as typed.
+        shell.raw_arg(format!("/d /s /c \"{command}\""));
+        shell
+    }
+    #[cfg(not(windows))]
+    {
+        let mut shell = std::process::Command::new("/bin/sh");
+        shell.arg("-c").arg(command);
+        shell
+    }
 }
 
 fn maintenance(command: &str, args: &Args) -> Result<i32, Error> {
