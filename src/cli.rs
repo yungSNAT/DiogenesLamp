@@ -404,8 +404,8 @@ fn run_timestamp() -> String {
     if let Ok(fixed) = std::env::var("LAMP_FIXED_NOW") {
         return fixed;
     }
-    chrono::Local::now()
-        .format("%Y-%m-%dT%H:%M:%S%:z")
+    jiff::ZonedDateTime::now()
+        .strftime("%Y-%m-%dT%H:%M:%S%:z")
         .to_string()
 }
 
@@ -876,5 +876,42 @@ pub fn main(argv: &[String]) -> i32 {
                 1
             }
         },
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+
+    /// Runs the named unit test again in a child process whose local time is
+    /// UTC+05:30, a zone with no daylight saving, and reports which side this is.
+    #[cfg(unix)]
+    pub(crate) fn rerun_in_utc_plus_0530(test: &str) -> bool {
+        if std::env::var_os("LAMP_TZ_CHILD").is_some() {
+            return true;
+        }
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", test])
+            .env("TZ", "IST-5:30")
+            .env("LAMP_TZ_CHILD", "1")
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success() && stdout.contains("test result: ok. 1 passed"),
+            "{stdout}"
+        );
+        false
+    }
+
+    #[test]
+    fn run_timestamp_is_local_time_with_its_offset() {
+        let stamp = run_timestamp();
+        let shape = regex::Regex::new(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d$").unwrap();
+        assert!(shape.is_match(&stamp), "{stamp}");
+        #[cfg(unix)]
+        if rerun_in_utc_plus_0530("cli::tests::run_timestamp_is_local_time_with_its_offset") {
+            assert!(stamp.ends_with("+05:30"), "{stamp}");
+        }
     }
 }

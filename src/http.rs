@@ -373,47 +373,44 @@ impl Page {
 
 /// The capped wait a `Retry-After` value asks for: delta-seconds, or any of the three
 /// HTTP-date formats relative to `now`. None if it is neither.
-pub fn retry_after_seconds(value: &str, now: chrono::DateTime<chrono::Utc>) -> Option<f64> {
+pub fn retry_after_seconds(value: &str, now: jiff::Timestamp) -> Option<f64> {
+    use jiff::civil::DateTime;
+
     let value = value.trim();
     let seconds = if !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()) {
         value.parse::<f64>().ok()?
     } else {
-        let date = chrono::DateTime::parse_from_rfc2822(value)
-            .map(|date| date.to_utc())
+        // Dates are compared as UTC wall time: jiff's instants end at 9999-12-31T11:59:59Z, and
+        // a later IMF-fixdate still asks for the longest wait.
+        let utc = jiff::tz::TimeZone::UTC;
+        let now = utc.to_datetime(now);
+        let date = jiff::fmt::rfc2822::parse(value)
+            .map(|date| utc.to_datetime(date.timestamp()))
             .ok()
+            .or_else(|| DateTime::strptime("%a, %d %b %Y %H:%M:%S GMT", value).ok())
             .or_else(|| parse_rfc850(value, now))
-            .or_else(|| {
-                chrono::NaiveDateTime::parse_from_str(value, "%a %b %e %H:%M:%S %Y")
-                    .ok()
-                    .map(|date| date.and_utc())
-            })?;
-        (date - now).num_milliseconds() as f64 / 1000.0
+            .or_else(|| DateTime::strptime("%a %b %e %H:%M:%S %Y", value).ok())?;
+        date.duration_since(now).as_millis() as f64 / 1000.0
     };
     Some(seconds.clamp(0.0, MAX_RETRY_AFTER_SECS))
 }
 
 /// An rfc850-date, whose two-digit year RFC 9110 reads as the latest such year no more than
-/// 50 years after `now`. The weekday is dropped because chrono would check it against its
-/// own fixed century.
-fn parse_rfc850(
-    value: &str,
-    now: chrono::DateTime<chrono::Utc>,
-) -> Option<chrono::DateTime<chrono::Utc>> {
-    use chrono::Datelike;
+/// 50 years after `now` (UTC wall time). The weekday is dropped because jiff would check it
+/// against its own fixed century.
+fn parse_rfc850(value: &str, now: jiff::civil::DateTime) -> Option<jiff::civil::DateTime> {
+    use jiff::ToSpan;
 
     let (_, rest) = value.split_once(", ")?;
-    let date = chrono::NaiveDateTime::parse_from_str(rest, "%d-%b-%y %H:%M:%S GMT").ok()?;
-    let limit = now
-        .naive_utc()
-        .checked_add_months(chrono::Months::new(50 * 12))?;
+    let date = jiff::civil::DateTime::strptime("%d-%b-%y %H:%M:%S GMT", rest).ok()?;
+    let limit = now.checked_add(50.years()).ok()?;
     let year = limit.year() - (limit.year() - date.year()).rem_euclid(100);
-    let dated = date.with_year(year)?;
-    let dated = if dated > limit {
-        date.with_year(year - 100)?
+    let dated = date.with().year(year).build().ok()?;
+    if dated > limit {
+        date.with().year(year - 100).build().ok()
     } else {
-        dated
-    };
-    Some(dated.and_utc())
+        Some(dated)
+    }
 }
 
 /// The exponential backoff, or longer if the server asked for longer.
@@ -422,7 +419,7 @@ fn backoff(attempt: u32, requested: Option<f64>) -> f64 {
 }
 
 fn retry_after(response: &dyn Response) -> Option<f64> {
-    retry_after_seconds(&response.header("Retry-After")?, chrono::Utc::now())
+    retry_after_seconds(&response.header("Retry-After")?, jiff::Timestamp::now())
 }
 
 pub struct Client {
