@@ -296,10 +296,11 @@ function showListingCopies(album) {
   const loading = state.loadedSellers < (state.index?.sellers.length ?? 0);
   const failed = state.failedShards.length > 0;
   const why = loading && failed ? "still loading or could not be read" : loading ? "still loading" : "could not be read";
+  // Only a complete index names every seller's listings; otherwise, whilst
+  // a seller is unread, the count covers the sellers read.
+  const scope = state.index?.selection_version !== 1 && (loading || failed) ? " in the sellers read" : "";
   workEl("preview-copies-note").textContent = listings.hidden ? ""
-    : missing ? `Listed ${copies.length + missing + 1} times; ${missing} ${why}. Cheapest first:`
-    : state.index?.selection_version !== 1 && (loading || failed) ? `Listed ${copies.length + 1} times in the sellers read, cheapest first:`
-    : `Listed ${copies.length + 1} times, cheapest first:`;
+    : `Listed ${copies.length + missing + 1} times${scope}` + (missing ? `; ${missing} ${why}. Cheapest first:` : ", cheapest first:");
   /** @param {{price?: number | null}} listing */
   const priced = listing => typeof listing.price === "number" && listing.price > 0;
   const ordered = [album, ...copies].sort((a, b) => priced(a) && priced(b) ? /** @type {number} */ (a.price) - /** @type {number} */ (b.price)

@@ -174,10 +174,11 @@ test("the preview lists every listing of the item, cheapest first, with price an
     "two · Price unknown · posted 2026-10-20 "]);
   assert.deepEqual(h.el("preview-copies").children.map(li => li.children[0].href),
     ["100", "300", "200"].map(id => `https://one.x.yupoo.com/albums/${id}`));
-  // The index names every listing of the item; one not loaded is counted,
-  // not silently left out, and an open preview catches up as shards arrive.
+  // A complete index names every listing of the item; one not loaded is
+  // counted, not silently left out, and an open preview catches up as
+  // shards arrive.
   h.el("album-preview").close(); h.state.listingAliases = {100: "300", 200: "300", 400: "300"};
-  h.state.index = {sellers: [{}, {}, {}, {}]}; h.state.loadedSellers = 3; h.context.openPreview("300");
+  h.state.index = {selection_version: 1, sellers: [{}, {}, {}, {}]}; h.state.loadedSellers = 3; h.context.openPreview("300");
   assert.equal(h.el("preview-copies-note").textContent, "Listed 4 times; 1 still loading. Cheapest first:");
   assert.equal(h.el("preview-copies").children.length, 3);
   h.state.failedShards = ["five"]; h.context.refreshSavedState(false);
@@ -196,6 +197,7 @@ test("the preview lists every listing of the item, cheapest first, with price an
     ["four · CNY 80 · posted 2026-10-05 ", "three · CNY 120 · posted 2026-11-01 · shown here "]);
   // An older index names no listings, so with a seller unread the count
   // covers only the sellers read.
+  h.state.index = {sellers: [{}, {}, {}, {}]};
   h.state.listingAliases = {}; h.state.failedShards = ["five"]; h.context.refreshSavedState(false);
   assert.equal(h.el("preview-copies-note").textContent, "Listed 2 times in the sellers read, cheapest first:");
   h.state.index = {selection_version: 1, sellers: [{}, {}, {}, {}]}; h.state.listingAliases = {400: "300"};
@@ -206,4 +208,31 @@ test("the preview lists every listing of the item, cheapest first, with price an
   assert.equal(h.el("preview-copies").hidden, true);
   assert.equal(h.el("preview-copies-note").hidden, true);
   assert.deepEqual(h.el("preview-copies").children, []);
+});
+
+// The index a scrape writes when it could not read a seller names only the
+// listings of the sellers it read: rebuilt from that index as app.js does,
+// the heading says its count covers the sellers read.
+test("a partial index's heading counts only the sellers read", () => {
+  const h = harness();
+  const {publishedMs} = require("../../viewer/age.js");
+  const source = readFileSync(join(__dirname, "../../viewer/app.js"), "utf8");
+  vm.runInContext(source.match(/\nfunction rebuildAlbums\([\s\S]*?\n\}\n/)[0], h.context);
+  const record = (id, seller, date) => {
+    const a = {...album(id), seller, title: "Blue shirt", title_lc: "blue shirt", price: 90, date_published: date,
+      links: [{url: "https://weidian.com/item.html?itemID=7"}]};
+    a.dup_key = h.context.dupKey(a); a.published_ms = publishedMs(a);
+    return a;
+  };
+  const older = record("100", "one", "2026-01-01"), shown = record("200", "two", "2026-02-01");
+  h.state.index = {album_aliases: {100: "200"}, sellers: [{id: "one", album_ids: []},
+    {id: "two", album_ids: ["200"]}, {id: "three", shard: "catalog/three.json"}]};
+  Object.assign(h.state, {loadedSellers: 3, failedShards: ["three"], shardAlbums: new Map([["one", []], ["two", [shown]]]),
+    unselectedAlbums: new Map([["one", [older]]])});
+  h.context.rebuildAlbums(); h.state.filtered = [...h.state.albums]; h.context.openPreview("200");
+  assert.equal(h.el("preview-copies-note").textContent, "Listed 2 times in the sellers read, cheapest first:");
+  assert.equal(h.el("preview-copies").children.length, 2);
+  h.state.failedShards = ["one", "three"]; h.state.shardAlbums.delete("one"); h.state.unselectedAlbums.delete("one");
+  h.context.rebuildAlbums(); h.context.refreshSavedState(false);
+  assert.equal(h.el("preview-copies-note").textContent, "Listed 2 times in the sellers read; 1 could not be read. Cheapest first:");
 });
