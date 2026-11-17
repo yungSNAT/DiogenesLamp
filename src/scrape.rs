@@ -306,6 +306,34 @@ pub fn scrape_seller(
     budget: &RefreshBudget,
 ) -> Result<SellerSummary> {
     let mut summary = SellerSummary::new(&source.id);
+    scrape_into(
+        &mut summary,
+        &mut 0,
+        client,
+        source,
+        data_dir,
+        run_ts,
+        options,
+        stop,
+        budget,
+    )?;
+    Ok(summary)
+}
+
+/// `scrape_seller` into a caller's summary, so a seller that fails still
+/// has it. `saved_new` counts the leading `new_ids` a shard save has stored.
+#[allow(clippy::too_many_arguments)]
+fn scrape_into(
+    summary: &mut SellerSummary,
+    saved_new: &mut usize,
+    client: &dyn ScrapeClient,
+    source: &Source,
+    data_dir: &Path,
+    run_ts: &str,
+    options: &Options,
+    stop: &AtomicBool,
+    budget: &RefreshBudget,
+) -> Result<()> {
     let loaded = load_shard(data_dir, &source.id).and_then(|shard| {
         let run = read_run(data_dir, &source.id)?;
         let failures: BTreeSet<String> = match run.get("failed_ids") {
@@ -322,7 +350,7 @@ pub fn scrape_seller(
         Ok(found) => found,
         Err(Error::Value(message)) => {
             summary.error = message;
-            return Ok(summary);
+            return Ok(());
         }
         Err(other) => return Err(other),
     };
@@ -341,11 +369,11 @@ pub fn scrape_seller(
         Ok(stubs) => stubs,
         Err(ListingError::Stopped) => {
             summary.error = "interrupted before the listing finished".into();
-            return Ok(summary);
+            return Ok(());
         }
         Err(ListingError::Message(message)) => {
             summary.error = message;
-            return Ok(summary);
+            return Ok(());
         }
     };
     let listed: HashMap<String, i128> = stubs
@@ -445,7 +473,7 @@ pub fn scrape_seller(
             summary.skipped += 1;
             if !options.dry_run
                 && !cover_current
-                && fetch_thumb(&stub.thumb_url, &thumb_path, &mut summary)
+                && fetch_thumb(&stub.thumb_url, &thumb_path, summary)
             {
                 summary.thumbs_refetched += 1;
                 let mut updated = o.clone();
@@ -523,7 +551,7 @@ pub fn scrape_seller(
         let price = evidence.get("amount").cloned().unwrap_or(Value::Int(0));
         let mut cover_downloaded = false;
         if !stub.thumb_url.is_empty() && (options.full || !cover_current) {
-            cover_current = fetch_thumb(&stub.thumb_url, &thumb_path, &mut summary);
+            cover_current = fetch_thumb(&stub.thumb_url, &thumb_path, summary);
             cover_downloaded = cover_current;
         }
         let thumb_url_value: Value = if cover_current {
@@ -597,6 +625,7 @@ pub fn scrape_seller(
         if scraped_since_flush >= FLUSH_EVERY {
             write_shard(data_dir, &source.id, &shard)?;
             scraped_since_flush = 0;
+            *saved_new = summary.new_ids.len();
         }
     }
     // A short listing holds back the albums it misses, except those the
@@ -642,7 +671,7 @@ pub fn scrape_seller(
             stamp_listing(&mut shard, &listed, &absent, run_ts);
         write_shard(data_dir, &source.id, &shard)?;
     }
-    Ok(summary)
+    Ok(())
 }
 
 /// Record which albums the seller's listing still carries, with the photo
@@ -824,30 +853,38 @@ pub fn scrape_all(
                 else {
                     return;
                 };
+                let mut summary = SellerSummary::new(&source.id);
+                let mut saved_new = 0;
                 let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     let client = factory();
-                    scrape_seller(
-                        &*client, &source, &data_dir, &run_ts, &options, &stop, &budget,
+                    scrape_into(
+                        &mut summary,
+                        &mut saved_new,
+                        &*client,
+                        &source,
+                        &data_dir,
+                        &run_ts,
+                        &options,
+                        &stop,
+                        &budget,
                     )
                 }));
-                let summary = match outcome {
-                    Ok(Ok(summary)) => summary,
-                    Ok(Err(error)) => {
-                        eprint_unexpected(&source.id, &error.to_string());
-                        SellerSummary {
-                            error: format!("unexpected error: {error}"),
-                            ..SellerSummary::new(&source.id)
-                        }
-                    }
-                    Err(payload) => {
-                        let text = panic_text(&*payload);
-                        eprint_unexpected(&source.id, &text);
-                        SellerSummary {
-                            error: format!("unexpected error: {text}"),
-                            ..SellerSummary::new(&source.id)
-                        }
-                    }
+                let failure = match outcome {
+                    Ok(Ok(())) => None,
+                    Ok(Err(error)) => Some(error.to_string()),
+                    Err(payload) => Some(panic_text(&*payload)),
                 };
+                if let Some(text) = failure {
+                    eprint_unexpected(&source.id, &text);
+                    // The albums a shard save stored are first seen in this
+                    // run, so it is the one to report them as new.
+                    summary.new_ids.truncate(saved_new);
+                    summary = SellerSummary {
+                        error: format!("unexpected error: {text}"),
+                        new_ids: summary.new_ids,
+                        ..SellerSummary::new(&source.id)
+                    };
+                }
                 if sender.send(summary).is_err() {
                     return;
                 }

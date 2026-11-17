@@ -1774,7 +1774,18 @@ fn scrape_rows(
     run_ts: &str,
     options: Options,
 ) -> lamp::errors::Result<Vec<(String, bool)>> {
-    let outcome = scrape_all(
+    Ok(notify_run(&make_client(), dir, run_ts, options)?.1)
+}
+
+/// `scrape_all` for sellerx through `client`: its summary and its `--notify`
+/// rows as (album_id, new) pairs in id order.
+fn notify_run(
+    client: &FakeClient,
+    dir: &Path,
+    run_ts: &str,
+    options: Options,
+) -> lamp::errors::Result<(SellerSummary, Vec<(String, bool)>)> {
+    let mut outcome = scrape_all(
         &sources(&[seller()]),
         dir,
         run_ts,
@@ -1782,7 +1793,7 @@ fn scrape_rows(
         1,
         8.0,
         None,
-        Some(make_client().factory()),
+        Some(client.factory()),
         &mut |_| {},
         &Interrupt::default(),
     )?;
@@ -1796,7 +1807,7 @@ fn scrape_rows(
             )
         })
         .collect();
-    Ok(rows.into_iter().collect())
+    Ok((outcome.summaries.remove(0), rows.into_iter().collect()))
 }
 
 fn notifying() -> Options {
@@ -1829,6 +1840,33 @@ fn a_run_asked_for_its_rows_returns_the_albums_it_stored_or_changed() {
         [],
         "a run that changes nothing"
     );
+}
+
+/// A seller that fails after a periodic save has stored albums for the first
+/// time: this run reports exactly those as new, and the next run reports
+/// only the albums the failure kept from being saved.
+#[test]
+fn a_seller_that_fails_after_a_periodic_save_reports_the_albums_it_saved_as_new() {
+    let dir = common::tmp();
+    let ids: Vec<String> = (101..251).map(|a| a.to_string()).collect();
+    let refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+    let client = client_of(&seller_of(&refs));
+    // The shard is saved after album 200; album 201 is stored only in memory.
+    *client.0.panic_on.lock().unwrap() = Some("/albums/202?".into());
+    let (summary, rows) = notify_run(&client, dir.path(), T1, notifying()).unwrap();
+    assert!(summary.error.contains("parser bug"), "{}", summary.error);
+    let saved: Vec<(String, bool)> = (101..201).map(|a| (a.to_string(), true)).collect();
+    assert_eq!(rows, saved);
+    assert_eq!(
+        summary.new_ids,
+        ids[..100],
+        "the unsaved album 201 is not new"
+    );
+    *client.0.panic_on.lock().unwrap() = None;
+    let (summary, rows) = notify_run(&client, dir.path(), T2, notifying()).unwrap();
+    let rest: Vec<(String, bool)> = (201..251).map(|a| (a.to_string(), true)).collect();
+    assert_eq!(rows, rest);
+    assert_eq!(summary.new_ids, ids[100..]);
 }
 
 /// An album stored before `first_seen` was recorded gets the timestamp of

@@ -8,6 +8,9 @@
   availability). The README's Alerts section has recipes for a phone alert
   through ntfy and for email. lamp makes no request of its own, and scraped
   text reaches the command only on stdin.
+- A seller that fails part-way through a scrape still counts and names the
+  albums it had saved for the first time, and `--notify` reports them as
+  new in that run; before, they were never reported as new.
 - The grid still shows the newest listing of an item, and its preview now
   lists every listing of it, cheapest first, with each seller, price,
   posting date and album link, so 2 sellers' prices for one marketplace item
