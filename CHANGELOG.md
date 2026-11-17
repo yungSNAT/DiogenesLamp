@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Releases add executables for macOS (arm64) and Linux (arm64, statically
+  linked), and the tests now run on macOS as well as Linux and Windows.
 - `lamp scrape --notify COMMAND` runs your command after a run that stored
   or changed albums, with them as JSON on its stdin: the `lamp export`
   fields plus `new` and the run's `changes` (price, links, photo count,
