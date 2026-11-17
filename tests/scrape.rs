@@ -1909,6 +1909,29 @@ fn a_seller_that_fails_after_its_final_save_reports_every_album_it_saved_as_new(
     assert_eq!(summary.new_ids, ids);
 }
 
+/// A seller that fails part-way still records the album fetches that failed
+/// before it stopped, beside the failures earlier runs recorded, so
+/// `--retry-failed` targets both.
+#[test]
+fn a_seller_that_fails_part_way_records_its_failed_fetches() {
+    let dir = common::tmp();
+    let first = client_of(&seller_of(&["104"])).fetch_errors(&["/albums/104?"]);
+    notify_run(first.factory(), dir.path(), T1, opts()).unwrap();
+    let second =
+        client_of(&seller_of(&["101", "102", "103", "104"])).fetch_errors(&["/albums/101?"]);
+    *second.0.panic_on.lock().unwrap() = Some("/albums/103?".into());
+    let (summary, _) = notify_run(second.factory(), dir.path(), T2, opts()).unwrap();
+    assert!(summary.error.contains("parser bug"), "{}", summary.error);
+    assert_eq!(
+        (summary.failed, summary.failed_ids),
+        (1, vec!["101".into()])
+    );
+    assert_eq!(
+        read_run(dir.path(), "sellerx").unwrap()["failed_ids"].py_str(),
+        r#"["101", "104"]"#
+    );
+}
+
 /// An album stored before `first_seen` was recorded gets the timestamp of
 /// the run that next stores it, but that run did not find it: not new.
 #[test]

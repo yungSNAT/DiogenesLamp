@@ -16,6 +16,9 @@
 - A seller that fails part-way through a scrape still counts and names the
   albums it had saved for the first time, and `--notify` reports them as
   new in that run; before, they were never reported as new.
+- A seller that fails part-way through a scrape now records the album
+  fetches that failed before it stopped, so its result line counts them and
+  `--retry-failed` targets them; before, they were dropped.
 - The grid still shows the newest listing of an item, and its preview now
   lists every listing of it, cheapest first, with each seller, price,
   posting date and album link, so 2 sellers' prices for one marketplace item

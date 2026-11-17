@@ -893,11 +893,14 @@ pub fn scrape_all(
                 if let Some(text) = failure {
                     eprint_unexpected(&source.id, &text);
                     // The albums a shard save stored are first seen in this
-                    // run, so it is the one to report them as new.
+                    // run, so it is the one to report them as new. Failed
+                    // fetches stored nothing, so they stay due for a retry.
                     summary.new_ids.truncate(saved_new);
                     summary = SellerSummary {
                         error: format!("unexpected error: {text}"),
                         new_ids: summary.new_ids,
+                        failed: summary.failed,
+                        failed_ids: summary.failed_ids,
                         ..SellerSummary::new(&source.id)
                     };
                 }
