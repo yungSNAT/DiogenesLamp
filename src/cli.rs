@@ -404,8 +404,8 @@ fn run_timestamp() -> String {
     if let Ok(fixed) = std::env::var("LAMP_FIXED_NOW") {
         return fixed;
     }
-    chrono::Local::now()
-        .format("%Y-%m-%dT%H:%M:%S%:z")
+    jiff::ZonedDateTime::now()
+        .strftime("%Y-%m-%dT%H:%M:%S%:z")
         .to_string()
 }
 

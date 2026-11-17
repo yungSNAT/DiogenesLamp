@@ -273,10 +273,11 @@ fn random_hex(n: usize) -> String {
 }
 
 fn zip_time(path: &Path) -> zip::DateTime {
-    use chrono::{Datelike, Timelike};
-    let modified = std::fs::metadata(path).and_then(|m| m.modified()).ok();
-    let local: chrono::DateTime<chrono::Local> =
-        modified.map_or_else(chrono::Local::now, chrono::DateTime::from);
+    let local = std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|modified| jiff::ZonedDateTime::try_from(modified).ok())
+        .unwrap_or_else(jiff::ZonedDateTime::now);
     zip::DateTime::from_date_and_time(
         local.year().clamp(1980, 2107) as u16,
         local.month() as u8,
@@ -313,7 +314,7 @@ fn snapshot_inner(root: &Path, validate: bool) -> Result<PathBuf> {
     }
     let name = format!(
         "{}-{}.zip",
-        chrono::Utc::now().format("%Y%m%dT%H%M%S"),
+        jiff::Timestamp::now().strftime("%Y%m%dT%H%M%S"),
         random_hex(8)
     );
     let path = directory.join(name);
