@@ -504,6 +504,48 @@ fn rfc850_years_roll_within_50_years_of_now() {
     }
 }
 
+#[test]
+fn retry_after_dates_parse_at_their_edges() {
+    let now = chrono::DateTime::parse_from_rfc3339("2026-10-30T00:00:00Z")
+        .unwrap()
+        .to_utc();
+    for (value, expected) in [
+        ("30 Oct 2026 00:00:30 GMT", Some(30.0)),
+        ("Fri, 30 Oct 2026 01:00:30 +0100", Some(30.0)),
+        ("Fri, 30 Oct 2026 00:00:30 UT", Some(30.0)),
+        ("Sat, 30 Oct 2026 00:00:30 GMT", None),
+        ("Fri, 30 Oct 2026 24:00:30 GMT", None),
+        ("Friday, 30-Oct-27 00:00:00 GMT", Some(MAX_RETRY_AFTER_SECS)),
+        ("Friday, 30-Oct-99 00:00:30 GMT", Some(0.0)),
+        ("Friday, 30-Oct-00 00:00:30 GMT", Some(0.0)),
+        ("Friday, 29-Feb-76 00:00:00 GMT", Some(MAX_RETRY_AFTER_SECS)),
+        ("Friday, 29-Feb-00 00:00:00 GMT", Some(0.0)),
+        ("Friday, 31-Feb-26 00:00:30 GMT", None),
+        ("Friday, 30-Oct-2026 00:00:30 GMT", None),
+        ("Fri Oct 2 00:00:30 2026", Some(0.0)),
+        ("Fri Oct 30 00:00:45 2026", Some(45.0)),
+        ("Sat Oct 30 00:00:30 2026", None),
+        ("Fri Oct 30 00:00:30 26", Some(0.0)),
+    ] {
+        assert_eq!(http::retry_after_seconds(value, now), expected, "{value:?}");
+    }
+}
+
+#[test]
+fn retry_after_counts_whole_milliseconds_from_now() {
+    let now = chrono::DateTime::parse_from_rfc3339("2026-10-30T00:00:00.2504Z")
+        .unwrap()
+        .to_utc();
+    assert_eq!(
+        http::retry_after_seconds("Fri, 30 Oct 2026 00:00:30 GMT", now),
+        Some(29.749)
+    );
+    assert_eq!(
+        http::retry_after_seconds("Fri Oct 30 00:00:00 2026", now),
+        Some(0.0)
+    );
+}
+
 fn png_bytes() -> Vec<u8> {
     common::png(2, 2, [255, 0, 0])
 }

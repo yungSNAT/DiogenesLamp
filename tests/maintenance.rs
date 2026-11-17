@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 use common::{json, lamp, obj, read_json, write};
 use lamp::covers::{cover_facts, resize_cover};
+use lamp::isodate::Date;
 use lamp::maintenance::{diagnose, prepare_covers, restore, snapshot};
 use lamp::pyjson::{self, Style, Value};
 use lamp::schema::{data_path, validate_metadata};
@@ -79,6 +80,42 @@ fn doctor_is_read_only_and_reports_coverage() {
     assert_eq!(before, tree(dir.path()));
     let (code, _, _) = lamp(&["--data", &dir.path().to_string_lossy(), "doctor"], None);
     assert_eq!(code, 0);
+}
+
+/// The current UTC time as a snapshot name writes it, `YYYYMMDDTHHMMSS`.
+fn utc_stamp() -> String {
+    const UNIX_EPOCH_ORDINAL: i64 = 719_163; // 1970-01-01 as a proleptic Gregorian ordinal.
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    let (y, m, d) = Date::from_ordinal(UNIX_EPOCH_ORDINAL + secs / 86_400)
+        .unwrap()
+        .ymd();
+    let t = secs % 86_400;
+    format!(
+        "{y:04}{m:02}{d:02}T{:02}{:02}{:02}",
+        t / 3600,
+        t / 60 % 60,
+        t % 60
+    )
+}
+
+#[test]
+fn snapshot_names_carry_the_utc_time() {
+    let dir = common::tmp();
+    catalogue(dir.path());
+    let before = utc_stamp();
+    let archive = snapshot(dir.path()).unwrap();
+    let after = utc_stamp();
+    let name = archive.file_name().unwrap().to_str().unwrap();
+    let shape = regex::Regex::new(r"^\d{8}T\d{6}-[0-9a-f]{8}\.zip$").unwrap();
+    assert!(shape.is_match(name), "{name}");
+    let stamp = &name[..15];
+    assert!(
+        before.as_str() <= stamp && stamp <= after.as_str(),
+        "{before} {name} {after}"
+    );
 }
 
 #[test]
