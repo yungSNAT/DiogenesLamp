@@ -22,7 +22,8 @@ use crate::pyerr;
 use crate::pyjson::{Map, Value, py_eq};
 use crate::pystr;
 use crate::storage::{
-    Shard, load_shard, merge_album, read_run, record_change, write_index, write_run, write_shard,
+    Shard, load_shard, merge_album, read_pending, read_run, record_change, write_index,
+    write_pending, write_run, write_shard,
 };
 
 /// Stored album text: enough for product codes, sizes and batch names.
@@ -805,6 +806,20 @@ pub fn scrape_all(
             "a scrape already ran at {run_ts}; run again"
         )));
     }
+    // The notifying runs whose rows no command has had, this one included,
+    // so the next notifying run reports a run that stops before giving them.
+    // shortcut: albums are recorded as their seller's summary arrives, so a
+    // seller still running at a second Ctrl+C or a kill leaves its saved
+    // albums unreported as new; recording at each shard save would cover it.
+    let mut pending = if options.run_rows && !options.dry_run {
+        let mut runs = read_pending(data_dir)?;
+        runs.entry(run_ts.to_string())
+            .or_insert_with(|| Value::Object(Map::new()));
+        write_pending(data_dir, &runs)?;
+        Some(runs)
+    } else {
+        None
+    };
     let factory: ClientFactory = client_factory.unwrap_or_else(|| {
         let (global, host, overrides) = limiter_settings(rps);
         let limiter = Arc::new(RateLimiter::new(
@@ -913,6 +928,7 @@ pub fn scrape_all(
             Ok(item) => {
                 if !options.dry_run
                     && let Err(e) = write_run(data_dir, &item.seller, run_ts, item.as_map())
+                        .and_then(|()| record_new(data_dir, pending.as_mut(), run_ts, &item))
                 {
                     drain_error = Some(e);
                     break;
@@ -956,14 +972,9 @@ pub fn scrape_all(
         finish();
         return Err(error);
     }
-    let rows = if options.run_rows && !options.dry_run && !interrupted {
-        let new: HashSet<(String, String)> = summaries
-            .iter()
-            .flat_map(|s| s.new_ids.iter().map(|id| (s.seller.clone(), id.clone())))
-            .collect();
-        crate::maintenance::run_rows(data_dir, run_ts, &new)
-    } else {
-        Ok(Vec::new())
+    let rows = match pending {
+        Some(runs) if !interrupted => pending_rows(data_dir, &runs),
+        _ => Ok(Vec::new()),
     };
     finish();
     Ok(RunOutcome {
@@ -971,6 +982,43 @@ pub fn scrape_all(
         interrupted,
         rows,
     })
+}
+
+/// Add `item`'s new albums to this run's entry in `pending`, when it has one.
+fn record_new(
+    data_dir: &Path,
+    pending: Option<&mut Map>,
+    run_ts: &str,
+    item: &SellerSummary,
+) -> Result<()> {
+    let Some(runs) = pending.filter(|_| !item.new_ids.is_empty()) else {
+        return Ok(());
+    };
+    if let Some(Value::Object(sellers)) = runs.get_mut(run_ts) {
+        let ids = item
+            .new_ids
+            .iter()
+            .map(|id| Value::Str(id.clone()))
+            .collect();
+        sellers.insert(item.seller.clone(), Value::Array(ids));
+    }
+    write_pending(data_dir, runs)
+}
+
+/// The rows of every run in `pending`, which then has none left to report.
+fn pending_rows(data_dir: &Path, pending: &Map) -> Result<Vec<Map>> {
+    let mut new = HashSet::new();
+    for sellers in pending.values().filter_map(Value::as_object) {
+        for (seller, ids) in sellers {
+            for id in ids.as_array().into_iter().flatten() {
+                new.insert((seller.clone(), id.py_str()));
+            }
+        }
+    }
+    let runs: HashSet<String> = pending.keys().cloned().collect();
+    let rows = crate::maintenance::run_rows(data_dir, &runs, &new)?;
+    write_pending(data_dir, &Map::new())?;
+    Ok(rows)
 }
 
 /// Whether a scrape already wrote `run_ts`: index.json's `generated_at`, or

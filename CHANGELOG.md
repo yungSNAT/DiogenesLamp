@@ -8,6 +8,11 @@
   availability). The README's Alerts section has recipes for a phone alert
   through ntfy and for email. lamp makes no request of its own, and scraped
   text reaches the command only on stdin.
+- A `--notify` run stopped with Ctrl+C, or one that fails before running
+  the command, is no longer lost to alerts: the next `--notify` run reports
+  the albums it stored and changed, as `data/notify-pending.json` records
+  them. Before, a later run saw those albums as known and never reported
+  them as new.
 - A seller that fails part-way through a scrape still counts and names the
   albums it had saved for the first time, and `--notify` reports them as
   new in that run; before, they were never reported as new.

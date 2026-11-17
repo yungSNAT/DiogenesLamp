@@ -300,6 +300,9 @@ fn index_sellers(dir: &Path) -> Vec<(String, String)> {
 
 const T1: &str = "2026-08-17T12:00:00+10:00";
 const T2: &str = "2026-08-18T12:00:00+10:00";
+const T3: &str = "2026-08-19T12:00:00+10:00";
+const T4: &str = "2026-08-20T12:00:00+10:00";
+const T5: &str = "2026-08-21T12:00:00+10:00";
 
 #[test]
 fn unchanged_details_refresh_with_a_shared_budget() {
@@ -1989,6 +1992,96 @@ fn a_notify_run_in_the_second_of_history_a_failed_scrape_left_is_refused() {
         matches!(&error, lamp::errors::Error::Busy(m) if m.contains("already ran at")),
         "{error}"
     );
+}
+
+/// A run with `--notify` stopped by Ctrl+C as sellerx finishes: it gives no
+/// rows, so it runs no command.
+fn interrupted_notify_run(client: &FakeClient, dir: &Path, run_ts: &str) {
+    let interrupt = Interrupt::default();
+    let outcome = scrape_all(
+        &sources(&[seller()]),
+        dir,
+        run_ts,
+        &notifying(),
+        1,
+        8.0,
+        None,
+        Some(client.factory()),
+        &mut |_| interrupt.press(),
+        &interrupt,
+    )
+    .unwrap();
+    assert!(outcome.interrupted);
+    assert!(outcome.rows.unwrap().is_empty());
+}
+
+/// What a notifying run stopped by Ctrl+C stored and changed is reported by
+/// the next notifying run, even after a run without `--notify`, and only
+/// once.
+#[test]
+fn the_next_notify_run_reports_what_an_interrupted_one_stored_and_changed() {
+    let dir = common::tmp();
+    scrape_rows(dir.path(), T1, opts()).unwrap();
+    let mut pages = seller_of(&["101", "102", "103"]);
+    pages[0].1 = pages[0].1.replace("count\">3<", "count\">5<");
+    let client = client_of(&pages);
+    interrupted_notify_run(&client, dir.path(), T2);
+    assert_eq!(get(&shard(dir.path()), "101", "photo_count").py_str(), "5");
+    notify_run(client.factory(), dir.path(), T3, opts()).unwrap();
+    let (_, rows) = notify_run(client.factory(), dir.path(), T4, notifying()).unwrap();
+    assert_eq!(
+        rows,
+        [
+            ("101".to_string(), false),
+            ("102".to_string(), false),
+            ("103".to_string(), true)
+        ]
+    );
+    let (_, rows) = notify_run(client.factory(), dir.path(), T5, notifying()).unwrap();
+    assert_eq!(rows, [], "reported once");
+}
+
+/// A notifying run that stores albums and then fails before writing the
+/// index leaves them for the next notifying run to report as new.
+#[test]
+fn the_next_notify_run_reports_what_a_failed_one_stored() {
+    let dir = common::tmp();
+    write(&dir.path().join("runs/sellerz.json"), b"{");
+    let error = scrape_all(
+        &sources(&[seller(), source("sellerz", false)]),
+        dir.path(),
+        T1,
+        &notifying(),
+        1,
+        8.0,
+        None,
+        Some(make_client().factory()),
+        &mut |_| {},
+        &Interrupt::default(),
+    )
+    .err()
+    .expect("the unreadable run summary stops the run");
+    assert!(
+        error.to_string().contains("unreadable run summary"),
+        "{error}"
+    );
+    assert!(!dir.path().join("index.json").exists());
+    assert_eq!(
+        scrape_rows(dir.path(), T2, notifying()).unwrap(),
+        [("101".to_string(), true), ("102".to_string(), true)]
+    );
+}
+
+/// The record of runs still to report is checked before anything is
+/// fetched: a damaged one stops the run rather than losing what it holds.
+#[test]
+fn a_notify_run_with_an_unreadable_record_of_unreported_runs_fetches_nothing() {
+    let dir = common::tmp();
+    write(&dir.path().join("notify-pending.json"), b"[]");
+    let client = make_client();
+    let error = notify_run(client.factory(), dir.path(), T1, notifying()).unwrap_err();
+    assert!(error.to_string().contains("notify-pending.json"), "{error}");
+    assert!(client.calls().is_empty());
 }
 
 #[test]
