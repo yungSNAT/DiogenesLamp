@@ -2089,8 +2089,18 @@ fn the_next_notify_run_reports_what_a_failed_one_stored() {
         "{error}"
     );
     assert!(!dir.path().join("index.json").exists());
+    // The failed run's workers release the catalogue lock on their own
+    // thread, as a process that exits would.
+    let mut rows = scrape_rows(dir.path(), T2, notifying());
+    for _ in 0..100 {
+        if !matches!(rows, Err(lamp::errors::Error::Busy(_))) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        rows = scrape_rows(dir.path(), T2, notifying());
+    }
     assert_eq!(
-        scrape_rows(dir.path(), T2, notifying()).unwrap(),
+        rows.unwrap(),
         [("101".to_string(), true), ("102".to_string(), true)]
     );
 }
