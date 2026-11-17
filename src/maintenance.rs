@@ -715,17 +715,17 @@ pub fn export_site(root: &Path, dir: &Path) -> Result<Site> {
         return value("the site folder must be outside the data directory");
     }
     let os = |e: std::io::Error, path: &Path| Error::Os(pyerr::os_error(&e, Call::Os, path));
-    let existed = match std::fs::read_dir(dir) {
+    match std::fs::read_dir(dir) {
         Ok(mut entries) => match entries.next() {
-            None => true,
+            None => {}
             Some(Ok(_)) => {
                 return value(format!("{}: folder is not empty", pyerr::path_str(dir)));
             }
             Some(Err(e)) => return Err(os(e, dir)),
         },
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => return Err(os(e, dir)),
-    };
+    }
     let index = data_path(root, "index.json", false)?;
     let sellers = sellers_of(&read_metadata(&index, "index.json")?);
     let mut copies = vec![(index, "index.json".to_string())];
@@ -764,28 +764,10 @@ pub fn export_site(root: &Path, dir: &Path) -> Result<Site> {
     for cover in &covers {
         copies.push((data_path(root, cover, true)?, cover.clone()));
     }
-    if !existed {
-        if let Some(parent) = dir.parent().filter(|p| !p.as_os_str().is_empty()) {
-            std::fs::create_dir_all(parent).map_err(|e| os(e, parent))?;
-        }
-        std::fs::create_dir(dir).map_err(|e| os(e, dir))?;
-    }
-    // A failure partway removes what this export wrote: the folder it made,
-    // or everything in the empty folder it was given.
-    write_site(dir, &copies).inspect_err(|_| {
-        if existed {
-            for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
-                let path = entry.path();
-                let _ = if entry.file_type().is_ok_and(|t| t.is_dir()) {
-                    std::fs::remove_dir_all(&path)
-                } else {
-                    std::fs::remove_file(&path)
-                };
-            }
-        } else {
-            let _ = std::fs::remove_dir_all(dir);
-        }
-    })?;
+    // A failure partway removes exactly what this export made, so a file
+    // another program puts in the folder meanwhile stays.
+    let mut made = Made::default();
+    write_site(dir, &copies, &mut made).inspect_err(|_| made.undo())?;
     Ok(Site {
         sellers: sellers.len(),
         covers: covers.len(),
@@ -793,17 +775,57 @@ pub fn export_site(root: &Path, dir: &Path) -> Result<Site> {
     })
 }
 
+/// The folders and files `lamp export --site` created, in order.
+#[derive(Default)]
+struct Made {
+    dirs: Vec<PathBuf>,
+    files: Vec<PathBuf>,
+}
+
+impl Made {
+    /// `path` and any missing ancestors, each recorded as it is made.
+    fn dir(&mut self, path: &Path) -> Result<()> {
+        let mut missing = Vec::new();
+        let mut next = Some(path);
+        while let Some(p) = next.filter(|p| !p.as_os_str().is_empty() && !p.exists()) {
+            missing.push(p.to_path_buf());
+            next = p.parent();
+        }
+        for p in missing.into_iter().rev() {
+            std::fs::create_dir(&p).map_err(|e| Error::Os(pyerr::os_error(&e, Call::Os, &p)))?;
+            self.dirs.push(p);
+        }
+        Ok(())
+    }
+
+    /// A new file at `target` holding `bytes`; one already there is an error.
+    fn file(&mut self, target: &Path, bytes: &mut dyn Read) -> Result<()> {
+        if let Some(parent) = target.parent() {
+            self.dir(parent)?;
+        }
+        let error = |e: std::io::Error| Error::Os(pyerr::os_error(&e, Call::Open, target));
+        let mut out = std::fs::File::create_new(target).map_err(error)?;
+        self.files.push(target.to_path_buf());
+        std::io::copy(bytes, &mut out).map_err(error)?;
+        Ok(())
+    }
+
+    /// Removes the files, then each folder left empty, newest first.
+    fn undo(&self) {
+        for file in self.files.iter().rev() {
+            let _ = std::fs::remove_file(file);
+        }
+        for dir in self.dirs.iter().rev() {
+            let _ = std::fs::remove_dir(dir);
+        }
+    }
+}
+
 /// The viewer, its index.html carrying the policy, and `copies` under data/.
-fn write_site(dir: &Path, copies: &[(PathBuf, String)]) -> Result<()> {
-    let made = |path: &Path| -> Result<()> {
-        let parent = path.parent().unwrap_or(dir);
-        std::fs::create_dir_all(parent)
-            .map_err(|e| Error::Os(pyerr::os_error(&e, Call::Os, parent)))
-    };
+fn write_site(dir: &Path, copies: &[(PathBuf, String)], made: &mut Made) -> Result<()> {
+    made.dir(dir)?;
     const CHARSET: &str = "<meta charset=\"utf-8\">";
     for (name, bytes) in crate::viewer::FILES {
-        let target = dir.join(name);
-        made(&target)?;
         let policy;
         let bytes = if *name == "index.html" {
             let html = std::str::from_utf8(bytes)
@@ -822,14 +844,41 @@ fn write_site(dir: &Path, copies: &[(PathBuf, String)]) -> Result<()> {
         } else {
             bytes
         };
-        std::fs::write(&target, bytes)
-            .map_err(|e| Error::Os(pyerr::os_error(&e, Call::Open, &target)))?;
+        made.file(&dir.join(name), &mut &bytes[..])?;
     }
     for (source, relative) in copies {
-        let target = dir.join("data").join(relative);
-        made(&target)?;
-        std::fs::copy(source, &target)
-            .map_err(|e| Error::Os(pyerr::os_error(&e, Call::Open, &target)))?;
+        let mut file = std::fs::File::open(source)
+            .map_err(|e| Error::Os(pyerr::os_error(&e, Call::Open, source)))?;
+        made.file(&dir.join("data").join(relative), &mut file)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A failed site export removes only what it made: a file another
+    /// program put in the folder meanwhile stays, with the folders holding it.
+    #[test]
+    fn undo_removes_only_what_the_export_made() {
+        let tmp = tempfile::tempdir().unwrap();
+        let site = tmp.path().join("site");
+        let mut made = Made::default();
+        made.file(&site.join("data/catalog/one.json"), &mut &b"{}"[..])
+            .unwrap();
+        made.file(&site.join("index.html"), &mut &b"x"[..]).unwrap();
+        std::fs::write(site.join("data/theirs.txt"), b"keep").unwrap();
+        assert!(
+            made.file(&site.join("data/theirs.txt"), &mut &b"y"[..])
+                .is_err()
+        );
+        made.undo();
+        assert_eq!(
+            std::fs::read(site.join("data/theirs.txt")).unwrap(),
+            b"keep"
+        );
+        assert!(!site.join("index.html").exists());
+        assert!(!site.join("data/catalog").exists());
+    }
 }
