@@ -22,7 +22,7 @@ pub const MARKETPLACE_HOSTS: [&str; 4] = ["taobao.com", "tmall.com", "weidian.co
 pub const SHORTLINK_HOSTS: [&str; 2] = ["m.tb.cn", "k.youshop10.com"];
 /// Agents whose product links carry a marketplace item. viewer/agents.js
 /// lists the same hosts; a parity test keeps the two equal.
-pub const AGENT_HOSTS: [&str; 25] = [
+pub const AGENT_HOSTS: [&str; 28] = [
     "kakobuy.com",
     "hoobuy.com",
     "oopbuy.com",
@@ -48,6 +48,9 @@ pub const AGENT_HOSTS: [&str; 25] = [
     "litbuy.com",
     "hipobuy.com",
     "gtbuy.com",
+    "orientdig.com",
+    "ponybuy.com",
+    "fishgoo.com",
 ];
 
 /// The item page each marketplace serves for a bare item id.
@@ -101,7 +104,7 @@ fn url_pattern() -> String {
         .collect();
     let label = format!("[{PY_LETTERS}0-9-]");
     format!(
-        r#"(?<![{PY_LETTERS}0-9@-])(?:{h}{t}{t}{p}{s}?://)?(?P<host>(?:{label}+\.)*(?:{alt}))(?!\.?{label}|@)(?P<rest>/[^{PY_SPACE}'"<>]*|\?[^{PY_SPACE}'"<>]*)?"#,
+        r#"(?<![{PY_LETTERS}0-9@-])(?:{h}{t}{t}{p}{s}?://)?(?P<host>(?:{label}+\.)*(?:{alt}))(?!\.?{label}|@)(?P<rest>[/?#][^{PY_SPACE}'"<>]*)?"#,
         h = ignorecase_literal("h"),
         t = ignorecase_literal("t"),
         p = ignorecase_literal("p"),
@@ -116,7 +119,7 @@ static URL_FULL_RE: LazyLock<FancyRegex> = LazyLock::new(|| {
     FancyRegex::new(&format!("^(?:{})$", url_pattern())).expect("URL pattern compiles")
 });
 static PATH_PRODUCT_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^/product/([A-Za-z0-9]+)/([0-9]+)(?:\.html)?/?$").expect("compiles")
+    Regex::new(r"^/(products?)/([A-Za-z0-9]+)/([0-9]+)(?:\.html)?/?$").expect("compiles")
 });
 static CSSBUY_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^/item-(micro-|1688-)?([0-9]+)\.html$").expect("compiles"));
@@ -141,6 +144,8 @@ fn path_channel(agent: &str, code: &str) -> Option<&'static str> {
         "litbuy.com" | "hipobuy.com" | "gtbuy.com" => {
             &[("0", "1688"), ("1", "taobao"), ("weidian", "weidian")]
         }
+        // Its taobao code is unconfirmed, so it is left out.
+        "ponybuy.com" => &[("2", "1688"), ("3", "weidian")],
         _ => return None,
     };
     Some(
@@ -151,7 +156,7 @@ fn path_channel(agent: &str, code: &str) -> Option<&'static str> {
     )
 }
 
-const WRAPPED_AGENTS: [&str; 9] = [
+const WRAPPED_AGENTS: [&str; 10] = [
     "kakobuy.com",
     "superbuy.com",
     "sugargoo.com",
@@ -161,12 +166,19 @@ const WRAPPED_AGENTS: [&str; 9] = [
     "bbdbuy.com",
     "allchinabuy.com",
     "pandabuy.com",
+    "fishgoo.com",
 ];
+
+/// Agents whose item page is a route in the URL fragment: the item is read
+/// from the query after this prefix, and from nowhere else.
+const FRAGMENT_ROUTES: [(&str, &str); 1] = [("fishgoo.com", "/#/product?")];
 
 fn agent_query(agent: &str) -> Option<(&'static str, &'static str)> {
     Some(match agent {
         "oopbuy.com" | "ootdbuy.com" => ("id", "channel"),
-        "mulebuy.com" | "joyagoo.com" | "cnfans.com" | "lovegobuy.com" => ("id", "shop_type"),
+        "mulebuy.com" | "joyagoo.com" | "cnfans.com" | "lovegobuy.com" | "orientdig.com" => {
+            ("id", "shop_type")
+        }
         "cnshopper.com" => ("keyword", "platform"),
         "alleurobuy.com" => ("id", "type"),
         "rizzitgo.com" => ("goodsid", "source"),
@@ -251,7 +263,23 @@ pub fn item_link(platform: &str, item_id: &str) -> Option<Link> {
 /// The item an agent link names; `scanned` turns false if a wrapped URL
 /// could not be scanned.
 fn unwrap_agent(agent: &str, rest: &str, depth: usize, scanned: &mut bool) -> Option<Link> {
-    let rest = strip_fragment(if rest.is_empty() { "/" } else { rest });
+    // An empty path is the root, as a URL parser reads it: `host#x` is `host/#x`.
+    let rooted;
+    let rest = if rest.is_empty() || rest.starts_with('#') {
+        rooted = format!("/{rest}");
+        &rooted
+    } else {
+        rest
+    };
+    let routed;
+    let rest = match FRAGMENT_ROUTES.iter().find(|(a, _)| *a == agent) {
+        Some((_, route)) => {
+            routed = format!("/?{}", rest.strip_prefix(route)?);
+            &routed
+        }
+        None => rest,
+    };
+    let rest = strip_fragment(rest);
     let (path, query) = rest.split_once('?').unwrap_or((rest, ""));
     let mut values: HashMap<String, BTreeSet<String>> = HashMap::new();
     for (key, value) in pyurl::parse_qsl(query) {
@@ -265,15 +293,17 @@ fn unwrap_agent(agent: &str, rest: &str, depth: usize, scanned: &mut bool) -> Op
     };
     let param = |key: &str| values.get(key).and_then(|v| v.iter().next()).cloned();
     if WRAPPED_AGENTS.contains(&agent) {
-        if ambiguous(&WRAPPED_URL_PARAMS) {
-            return None;
-        }
-        for key in WRAPPED_URL_PARAMS {
-            if let Some(wrapped) = param(key).filter(|w| !w.is_empty()) {
-                return wrapped_link(&wrapped, depth + 1, scanned);
-            }
-        }
-        return None;
+        // One wrapped URL, under any of the names: 2 different ones name no
+        // single item.
+        let wrapped: BTreeSet<&String> = WRAPPED_URL_PARAMS
+            .iter()
+            .filter_map(|k| values.get(*k))
+            .flatten()
+            .collect();
+        return match Vec::from_iter(wrapped)[..] {
+            [wrapped] => wrapped_link(wrapped, depth + 1, scanned),
+            _ => None,
+        };
     }
     if let Some((id_key, channel_key)) = agent_query(agent) {
         let ids: HashSet<String> = ID_PARAMS.iter().filter_map(|k| param(k)).collect();
@@ -308,9 +338,10 @@ fn unwrap_agent(agent: &str, rest: &str, depth: usize, scanned: &mut bool) -> Op
     }
     if path_channel(agent, "").is_some()
         && let Some(caps) = PATH_PRODUCT_RE.captures(path)
+        && (&caps[1] == "products") == (agent == "ponybuy.com")
     {
-        let platform = path_channel(agent, &caps[1].to_lowercase()).unwrap_or("");
-        return item_link(platform, &caps[2]);
+        let platform = path_channel(agent, &caps[2].to_lowercase()).unwrap_or("");
+        return item_link(platform, &caps[3]);
     }
     if agent == "cssbuy.com"
         && let Some(caps) = CSSBUY_RE.captures(path)
@@ -332,14 +363,13 @@ fn wrapped_link(url_text: &str, depth: usize, scanned: &mut bool) -> Option<Link
     };
     let caps = caps?;
     let host = caps.name("host")?.as_str().to_lowercase();
-    let cleaned = clean_rest(caps.name("rest").map(|m| m.as_str()));
-    let rest = strip_fragment(&cleaned);
+    let rest = clean_rest(caps.name("rest").map(|m| m.as_str()));
     let platform = platform(&host);
     if platform != "other" {
-        return Some(Link::new(platform, normalize(&host, rest)));
+        return Some(Link::new(platform, normalize(&host, &rest)));
     }
     match agent(&host) {
-        Some(agent) if depth < 2 => unwrap_agent(agent, rest, depth, scanned),
+        Some(agent) if depth < 2 => unwrap_agent(agent, &rest, depth, scanned),
         _ => None,
     }
 }

@@ -12,6 +12,10 @@
   lists every listing of it, cheapest first, with each seller, price,
   posting date and album link, so 2 sellers' prices for one marketplace item
   can be compared.
+- 3 shopping agents still trading join the viewer's **Open purchase links on**
+  menu, and their links in album text are read as the marketplace item they
+  name: OrientDig, PonyBuy (weidian and 1688) and Fishgoo. Each format was
+  checked by opening an item on 16 November 2026.
 - A scrape notices when an album's card in the seller's listing shows a
   different photo count from the last run, without fetching the album: the
   album's `photo_count` takes the new figure, its history records the change
