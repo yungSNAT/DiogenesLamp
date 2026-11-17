@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `lamp scrape --notify COMMAND` runs your command after a run that stored
+  or changed albums, with them as JSON on its stdin: the `lamp export`
+  fields plus `new` and the run's `changes` (price, links, photo count,
+  availability). The README's Alerts section has recipes for a phone alert
+  through ntfy and for email. lamp makes no request of its own, and scraped
+  text reaches the command only on stdin.
 - 3 shopping agents still trading join the viewer's **Open purchase links on**
   menu, and their links in album text are read as the marketplace item they
   name: OrientDig, PonyBuy (weidian and 1688) and Fishgoo. Each format was

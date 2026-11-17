@@ -607,7 +607,6 @@ pub fn export_rows(root: &Path, since: Option<&str>) -> Result<Vec<Map>> {
     };
     let mut rows = Vec::new();
     for album in selected_albums(root)? {
-        let field = |key: &str| album.get(key).cloned().unwrap_or(Value::Null);
         if let Some(since) = since {
             let first_day = match album.get("first_seen") {
                 Some(Value::Str(text)) => crate::isodate::parse_datetime(text)
@@ -618,37 +617,92 @@ pub fn export_rows(root: &Path, since: Option<&str>) -> Result<Vec<Map>> {
                 continue;
             }
         }
-        let price = match album.get("price") {
-            Some(p) if p.truthy() => p.clone(),
-            _ => Value::Null,
-        };
-        let links = match album.get("links") {
-            Some(Value::Array(links)) => links
-                .iter()
-                .filter_map(|l| l.as_object().and_then(|l| l.get("url")).cloned())
-                .collect(),
-            _ => Vec::new(),
-        };
-        let values = [
-            field("seller"),
-            id_of(&album).into(),
-            field("title"),
-            "CNY".into(),
-            price,
-            field("updated_at"),
-            field("album_url"),
-            Value::Array(links),
-            field("description"),
-            field("first_seen"),
-            field("gone_since"),
-        ];
-        rows.push(
-            EXPORT_COLUMNS
-                .iter()
-                .map(|c| c.to_string())
-                .zip(values)
-                .collect(),
-        );
+        rows.push(export_row(&album));
+    }
+    Ok(rows)
+}
+
+/// One `lamp export` row for an album.
+fn export_row(album: &Map) -> Map {
+    let field = |key: &str| album.get(key).cloned().unwrap_or(Value::Null);
+    let price = match album.get("price") {
+        Some(p) if p.truthy() => p.clone(),
+        _ => Value::Null,
+    };
+    let links = match album.get("links") {
+        Some(Value::Array(links)) => links
+            .iter()
+            .filter_map(|l| l.as_object().and_then(|l| l.get("url")).cloned())
+            .collect(),
+        _ => Vec::new(),
+    };
+    let values = [
+        field("seller"),
+        id_of(album).into(),
+        field("title"),
+        "CNY".into(),
+        price,
+        field("updated_at"),
+        field("album_url"),
+        Value::Array(links),
+        field("description"),
+        field("first_seen"),
+        field("gone_since"),
+    ];
+    EXPORT_COLUMNS
+        .iter()
+        .map(|c| c.to_string())
+        .zip(values)
+        .collect()
+}
+
+/// `lamp scrape --notify`: the albums the run at `run_ts` stored for the first
+/// time (`new_ids`, the (seller, album id) pairs it reported as new) or changed,
+/// as `export_rows` rows plus `new` and `changes`, the field, before and
+/// after of each history entry the run recorded. Every album in the shards
+/// the index read counts, duplicates of another listing included: each is a
+/// seller's own copy, with its own price. A seller whose shard the index
+/// could not read has no `album_ids` and is left out.
+pub fn run_rows(
+    root: &Path,
+    run_ts: &str,
+    new_ids: &std::collections::HashSet<(String, String)>,
+) -> Result<Vec<Map>> {
+    let index = read_metadata(&data_path(root, "index.json", false)?, "index.json")?;
+    let mut rows = Vec::new();
+    for seller in sellers_of(&index) {
+        if !matches!(seller.get("album_ids"), Some(Value::Array(_))) {
+            continue;
+        }
+        let id = seller.get("id").map(Value::py_str).unwrap_or_default();
+        let relative = seller.get("shard").map(Value::py_str).unwrap_or_default();
+        let shard = read_metadata(&data_path(root, &relative, false)?, &relative)?;
+        for album in albums_of(&shard) {
+            let new = new_ids.contains(&(id.clone(), id_of(&album)));
+            let changes: Vec<Value> = album
+                .get("history")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_object)
+                .filter(|entry| entry.get("at").and_then(Value::as_str) == Some(run_ts))
+                .map(|entry| {
+                    let field = |key: &str| entry.get(key).cloned().unwrap_or(Value::Null);
+                    Value::Object(crate::obj! {
+                        "field" => field("field"),
+                        "before" => field("before"),
+                        "after" => field("after"),
+                    })
+                })
+                .collect();
+            if !new && changes.is_empty() {
+                continue;
+            }
+            let mut row = export_row(&album);
+            row.insert("new".into(), new.into());
+            row.insert("changes".into(), Value::Array(changes));
+            rows.push(row);
+        }
     }
     Ok(rows)
 }
