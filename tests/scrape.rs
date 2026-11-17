@@ -1919,7 +1919,10 @@ fn a_seller_that_fails_part_way_records_its_failed_fetches() {
     *second.0.panic_on.lock().unwrap() = Some("/albums/103?".into());
     let (summary, _) = notify_run(second.factory(), dir.path(), T2, opts()).unwrap();
     assert!(summary.error.contains("parser bug"), "{}", summary.error);
-    assert_eq!((summary.failed, summary.failed_ids), (1, vec!["101".into()]));
+    assert_eq!(
+        (summary.failed, summary.failed_ids),
+        (1, vec!["101".into()])
+    );
     assert_eq!(
         read_run(dir.path(), "sellerx").unwrap()["failed_ids"].py_str(),
         r#"["101", "104"]"#
