@@ -321,6 +321,8 @@ fn agent_links_unwrap_to_the_marketplace_item() {
         (format!("https://www.fishgoo.com/#/product?productLink={WD_ENC}#&url={TB_ENC}"), wd()),
         (format!("https://www.fishgoo.com/#/product?productLink={WD_ENC}%23x"), wd()),
         (format!("https://www.kakobuy.com/item/details?url={WD_ENC}&link={WD_ENC}"), wd()),
+        (format!("https://www.kakobuy.com/item/details?url=&link={WD_ENC}"), wd()),
+        ("https://orientdig.com/product/?shop_type=taobao&id=560198996624".into(), tb()),
         (format!("https://www.fishgoo.com/#/product?productLink={WD_ENC}&url={TB_ENC}"), none()),
         (format!("https://www.kakobuy.com/item/details?url={WD_ENC}&productLink={TB_ENC}"), none()),
         ("https://www.ponybuy.com/products/1/560198996624".into(), none()),

@@ -196,5 +196,7 @@ test("unwrapping refuses ambiguity, other sites and deep nesting", () => {
     "https://www.fishgoo.com/#/product?productLink=" + WD + "%23x",
     "https://www.fishgoo.com#/product?productLink=" + WD,
     "https://www.kakobuy.com/item/details?url=" + WD + "&link=" + WD,
+    // An empty parameter names nothing, so it is no second wrapped URL.
+    "https://www.kakobuy.com/item/details?url=&link=" + WD,
   ]) assert.equal(unwrapAgentLink(url), "https://weidian.com/item.html?itemID=7652831688", url);
 });
