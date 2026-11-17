@@ -221,6 +221,14 @@ pub fn build_parser() -> Parser {
         Some("YYYY-MM-DD"),
         Some("only albums first stored on this date or later"),
     );
+    export.store(
+        "--site",
+        as_path,
+        "Path",
+        Value::Str(String::new()),
+        Some("DIR"),
+        Some("instead, write the viewer and the whole catalogue as static files in DIR, a new or empty folder, to open from a web host"),
+    );
 
     let choice = |name: &str, help: &str, p: Parser| (name.to_string(), Some(help.to_string()), p);
     parser.subparsers(
@@ -260,7 +268,11 @@ pub fn build_parser() -> Parser {
                 "list albums whose cover looks like an image file",
                 find_photo,
             ),
-            choice("export", "print the indexed albums as CSV or JSON", export),
+            choice(
+                "export",
+                "print the indexed albums as CSV or JSON, or write them as a static site",
+                export,
+            ),
         ],
     );
     parser
@@ -646,6 +658,26 @@ fn maintenance(command: &str, args: &Args) -> Result<i32, Error> {
         "snapshot" => {
             let path = crate::maintenance::snapshot(&data)?;
             out::out(&pyerr::path_str(&path)).map_err(out::os_error)?;
+        }
+        "export" if !args.str("site").is_empty() => {
+            if !args.str("since").is_empty() {
+                return Err(Error::Value(
+                    "--site writes the whole catalogue; leave out --since".into(),
+                ));
+            }
+            let site = args.path("site");
+            let written = crate::maintenance::export_site(&data, &site)?;
+            let missing = match written.missing_covers {
+                0 => String::new(),
+                n => format!(" ({n} not cached, shown without a cover)"),
+            };
+            out::out(&format!(
+                "Wrote {}: the viewer, {} sellers and {} covers{missing}. Put the folder on a web host and open its address; anyone who can open it can read the catalogue.",
+                pyerr::path_str(&site),
+                written.sellers,
+                written.covers
+            ))
+            .map_err(out::os_error)?;
         }
         "export" => {
             let since = args.str("since");

@@ -1314,4 +1314,11 @@ if (typeof ResizeObserver !== "undefined") {
 // Paint the loading state before the first fetch resolves, so the grid is
 // never a blank rectangle with no explanation.
 setStatus();
-void loadAll();
+// saved-work.js runs after this script, and the browser may run a fetch's
+// continuation between the two: an index.json that arrives first would call
+// its functions before they exist. Load once every script has run.
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", () => void loadAll(), { once: true });
+} else {
+  void loadAll();
+}
