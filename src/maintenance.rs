@@ -273,10 +273,11 @@ fn random_hex(n: usize) -> String {
 }
 
 fn zip_time(path: &Path) -> zip::DateTime {
-    use chrono::{Datelike, Timelike};
-    let modified = std::fs::metadata(path).and_then(|m| m.modified()).ok();
-    let local: chrono::DateTime<chrono::Local> =
-        modified.map_or_else(chrono::Local::now, chrono::DateTime::from);
+    let local = std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|modified| jiff::ZonedDateTime::try_from(modified).ok())
+        .unwrap_or_else(jiff::ZonedDateTime::now);
     zip::DateTime::from_date_and_time(
         local.year().clamp(1980, 2107) as u16,
         local.month() as u8,
@@ -313,7 +314,7 @@ fn snapshot_inner(root: &Path, validate: bool) -> Result<PathBuf> {
     }
     let name = format!(
         "{}-{}.zip",
-        chrono::Utc::now().format("%Y%m%dT%H%M%S"),
+        jiff::Timestamp::now().strftime("%Y%m%dT%H%M%S"),
         random_hex(8)
     );
     let path = directory.join(name);
@@ -921,6 +922,27 @@ fn write_site(dir: &Path, copies: &[(PathBuf, String)], made: &mut Made) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A zip member carries its file's modified time as local wall time.
+    #[test]
+    fn zip_time_is_the_local_modified_time() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("a.json");
+        let file = std::fs::File::create(&path).unwrap();
+        // 2027-01-15T08:00:00Z.
+        let modified = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_800_000_000);
+        file.set_modified(modified).unwrap();
+        let time = zip_time(&path);
+        assert_eq!((time.year(), time.month()), (2027, 1));
+        assert!((14..=16).contains(&time.day()), "{time:?}");
+        #[cfg(unix)]
+        if crate::cli::tests::rerun_in_utc_plus_0530(
+            "maintenance::tests::zip_time_is_the_local_modified_time",
+        ) {
+            let fields = (time.day(), time.hour(), time.minute(), time.second());
+            assert_eq!(fields, (15, 13, 30, 0));
+        }
+    }
 
     /// A failed site export removes only what it made: a file another
     /// program put in the folder meanwhile stays, with the folders holding it.

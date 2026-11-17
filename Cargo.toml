@@ -25,7 +25,6 @@ test = true
 fixture-transport = []
 
 [dependencies]
-chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 ctrlc = "3.5"
 fancy-regex = "0.20.0"
 flate2 = "1.1"
@@ -35,6 +34,8 @@ idna = "1.1.0"
 idna_adapter = "~1.1"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 indexmap = "2.14.2"
+# The system time zone, read from the zoneinfo files or, on Windows, a bundled copy.
+jiff = { version = "1.0.0", default-features = false, features = ["std", "tz-system", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 regex = "1.13.1"
 sha2 = "0.11.1"
 terminal_size = "0.4.4"

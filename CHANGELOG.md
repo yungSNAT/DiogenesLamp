@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Dates and times come from jiff instead of chrono, which RustSec lists as
+  unmaintained (RUSTSEC-2026-0543); output is unchanged. A `Retry-After`
+  date after 11:59:59 UTC on 31 December 9999, other than an IMF-fixdate
+  in that year, is now ignored instead of capping the wait at 60 seconds.
 - LoloBuy joins the viewer's **Open purchase links on** menu for weidian
   and 1688 items, and its links in album text are read as the marketplace
   item they name. The format was checked by opening an item on each on

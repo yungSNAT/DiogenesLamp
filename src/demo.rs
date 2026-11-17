@@ -96,8 +96,7 @@ fn json(text: &str) -> Value {
 /// Today, so posting dates spread across the last 3 years and the age
 /// filter has something to cut.
 fn today() -> Date {
-    use chrono::Datelike;
-    let now = chrono::Utc::now().date_naive();
+    let now = jiff::tz::TimeZone::UTC.to_datetime(jiff::Timestamp::now());
     Date::from_ymd(
         i64::from(now.year()),
         i64::from(now.month()),

@@ -446,8 +446,8 @@ fn downloads_honour_retry_after_too() {
 
 #[test]
 fn an_http_date_retry_after_waits_until_that_time() {
-    let date = (chrono::Utc::now() + chrono::TimeDelta::seconds(30))
-        .format("%a, %d %b %Y %H:%M:%S GMT")
+    let date = (jiff::Timestamp::now() + jiff::SignedDuration::from_secs(30))
+        .strftime("%a, %d %b %Y %H:%M:%S GMT")
         .to_string();
     let (client, _, clock) = make_client(global, vec![with_retry_after(429, &date), ok()]);
     assert_eq!(client.get("https://x.example/", None).unwrap().status, 200);
@@ -458,9 +458,7 @@ fn an_http_date_retry_after_waits_until_that_time() {
 
 #[test]
 fn retry_after_values_parse_in_every_form() {
-    let now = chrono::DateTime::parse_from_rfc3339("2026-10-30T00:00:00Z")
-        .unwrap()
-        .to_utc();
+    let now = "2026-10-30T00:00:00Z".parse::<jiff::Timestamp>().unwrap();
     for (value, expected) in [
         ("0", Some(0.0)),
         (" 120 ", Some(MAX_RETRY_AFTER_SECS)),
@@ -484,9 +482,7 @@ fn retry_after_values_parse_in_every_form() {
 
 #[test]
 fn rfc850_years_roll_within_50_years_of_now() {
-    let now = chrono::DateTime::parse_from_rfc3339("2026-10-30T00:00:00Z")
-        .unwrap()
-        .to_utc();
+    let now = "2026-10-30T00:00:00Z".parse::<jiff::Timestamp>().unwrap();
     for (value, expected) in [
         ("Friday, 30-Oct-26 00:00:30 GMT", 30.0),
         ("Thursday, 29-Oct-26 00:00:30 GMT", 0.0),
@@ -502,6 +498,46 @@ fn rfc850_years_roll_within_50_years_of_now() {
             "{value:?}"
         );
     }
+}
+
+#[test]
+fn retry_after_dates_parse_at_their_edges() {
+    let now = "2026-10-30T00:00:00Z".parse::<jiff::Timestamp>().unwrap();
+    for (value, expected) in [
+        ("30 Oct 2026 00:00:30 GMT", Some(30.0)),
+        ("Fri, 30 Oct 2026 01:00:30 +0100", Some(30.0)),
+        ("Fri, 30 Oct 2026 00:00:30 UT", Some(30.0)),
+        ("Sat, 30 Oct 2026 00:00:30 GMT", None),
+        ("Fri, 30 Oct 2026 24:00:30 GMT", None),
+        ("Friday, 30-Oct-27 00:00:00 GMT", Some(MAX_RETRY_AFTER_SECS)),
+        ("Friday, 30-Oct-99 00:00:30 GMT", Some(0.0)),
+        ("Friday, 30-Oct-00 00:00:30 GMT", Some(0.0)),
+        ("Friday, 29-Feb-76 00:00:00 GMT", Some(MAX_RETRY_AFTER_SECS)),
+        ("Friday, 29-Feb-00 00:00:00 GMT", Some(0.0)),
+        ("Friday, 31-Feb-26 00:00:30 GMT", None),
+        ("Friday, 30-Oct-2026 00:00:30 GMT", None),
+        ("Fri Oct 2 00:00:30 2026", Some(0.0)),
+        ("Fri Oct 30 00:00:45 2026", Some(45.0)),
+        ("Sat Oct 30 00:00:30 2026", None),
+        ("Fri Oct 30 00:00:30 26", Some(0.0)),
+    ] {
+        assert_eq!(http::retry_after_seconds(value, now), expected, "{value:?}");
+    }
+}
+
+#[test]
+fn retry_after_counts_whole_milliseconds_from_now() {
+    let now = "2026-10-30T00:00:00.2504Z"
+        .parse::<jiff::Timestamp>()
+        .unwrap();
+    assert_eq!(
+        http::retry_after_seconds("Fri, 30 Oct 2026 00:00:30 GMT", now),
+        Some(29.749)
+    );
+    assert_eq!(
+        http::retry_after_seconds("Fri Oct 30 00:00:00 2026", now),
+        Some(0.0)
+    );
 }
 
 fn png_bytes() -> Vec<u8> {
