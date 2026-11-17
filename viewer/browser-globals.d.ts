@@ -63,6 +63,8 @@ declare const validCatalogueShard: typeof import("./discovery.js").validCatalogu
 declare const validCatalogueIndex: typeof import("./discovery.js").validCatalogueIndex;
 declare const admittedCatalogueShard: typeof import("./discovery.js").admittedCatalogueShard;
 declare const inheritableAliases: typeof import("./discovery.js").inheritableAliases;
+declare const unselectedShardAlbums: typeof import("./discovery.js").unselectedShardAlbums;
+declare const listingCopies: typeof import("./discovery.js").listingCopies;
 declare const PREFS_STORAGE_KEY: typeof import("./prefs.js").PREFS_STORAGE_KEY;
 declare const normalizePrefs: typeof import("./prefs.js").normalizePrefs;
 declare const storedPrefs: typeof import("./prefs.js").storedPrefs;

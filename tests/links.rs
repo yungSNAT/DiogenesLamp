@@ -269,6 +269,7 @@ const WD: &str = "https://weidian.com/item.html?itemID=7652831688";
 const TB: &str = "https://item.taobao.com/item.htm?id=560198996624";
 const ALI: &str = "https://detail.1688.com/offer/691234567890.html";
 const WD_ENC: &str = "https%3A%2F%2Fweidian.com%2Fitem.html%3FitemID%3D7652831688";
+const TB_ENC: &str = "https%3A%2F%2Fitem.taobao.com%2Fitem.htm%3Fid%3D560198996624";
 
 #[test]
 fn agent_links_unwrap_to_the_marketplace_item() {
@@ -308,6 +309,29 @@ fn agent_links_unwrap_to_the_marketplace_item() {
         ("https://www.litbuy.com/product/weidian/7652831688".into(), wd()),
         ("https://hipobuy.com/product/0/691234567890.html".into(), ali()),
         ("https://www.gtbuy.com/product/1/560198996624".into(), tb()),
+        ("https://orientdig.com/product/?shop_type=ali_1688&id=691234567890".into(), ali()),
+        ("https://orientdig.com/product/?shop_type=weidian&id=7652831688".into(), wd()),
+        ("https://www.ponybuy.com/products/3/7652831688".into(), wd()),
+        ("https://www.ponybuy.com/products/2/691234567890".into(), ali()),
+        (format!("https://www.fishgoo.com/#/product?productLink={WD_ENC}"), wd()),
+        ("https://fishgoo.com/#/product?productLink=https%3A%2F%2Fdetail.1688.com%2Foffer%2F691234567890.html".into(), ali()),
+        (format!("https://www.kakobuy.com/item/details?url=https%3A%2F%2Fwww.fishgoo.com%2F%23%2Fproduct%3FproductLink%3D{}", WD_ENC.replace('%', "%25")), wd()),
+        (format!("https://www.fishgoo.com/#/product?productLink={TB_ENC}"), tb()),
+        (format!("https://www.fishgoo.com#/product?productLink={WD_ENC}"), wd()),
+        (format!("https://www.fishgoo.com/#/product?productLink={WD_ENC}#&url={TB_ENC}"), wd()),
+        (format!("https://www.fishgoo.com/#/product?productLink={WD_ENC}%23x"), wd()),
+        (format!("https://www.kakobuy.com/item/details?url={WD_ENC}&link={WD_ENC}"), wd()),
+        (format!("https://www.kakobuy.com/item/details?url=&link={WD_ENC}"), wd()),
+        ("https://orientdig.com/product/?shop_type=taobao&id=560198996624".into(), tb()),
+        (format!("https://www.fishgoo.com/#/product?productLink={WD_ENC}&url={TB_ENC}"), none()),
+        (format!("https://www.kakobuy.com/item/details?url={WD_ENC}&productLink={TB_ENC}"), none()),
+        ("https://www.ponybuy.com/products/1/560198996624".into(), none()),
+        ("https://www.ponybuy.com/product/3/7652831688".into(), none()),
+        ("https://hoobuy.com/products/2/7652831688".into(), none()),
+        (format!("https://www.fishgoo.com/?productLink={WD_ENC}"), none()),
+        (format!("https://www.fishgoo.com/#/home?productLink={WD_ENC}"), none()),
+        (format!("https://www.fishgoo.com/?x=1#/product?productLink={WD_ENC}"), none()),
+        (format!("https://www.fishgoo.com/#/product?productLink={WD_ENC}&productLink=https%3A%2F%2Fweidian.com%2Fitem.html%3FitemID%3D5"), none()),
         ("https://hoobuy.com/product/3/7652831688".into(), none()),
         ("https://usfans.com/product/0/691234567890".into(), none()),
         ("https://rizzitgo.com/detail-page?goodsId=5&source=weidian".into(), none()),

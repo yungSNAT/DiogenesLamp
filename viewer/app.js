@@ -30,6 +30,9 @@ const state = {
   bannedKeys: new Set(), // corpus-global category-label keys, grown per shard
   titleKeyCounts: new Map(), // running t:-key counts feeding bannedKeys
   shardAlbums: new Map(), // seller id -> annotated albums, in fetch order
+  unselectedAlbums: new Map(), // seller id -> shard albums the index did not select
+  listingAliases: {},  // hidden listing id -> the listing shown for it (preview)
+  listingCopies: new Map(), // shown album id -> its other listings (preview)
   failedShards: [],    // sellers whose shard could not be fetched
   aliasNote: "",       // why data/aliases.json was not used in full
   categories: new Set(), // every category seen, collected as shards arrive
@@ -359,6 +362,7 @@ async function shardWorker() {
       const shard = /** @type {import("./controller-types.js").CatalogueShard} */ (await response.json());
       const admitted = admittedCatalogueShard(shard, seller);
       if (!admitted) throw new Error("Invalid or incomplete selected catalogue shard");
+      state.unselectedAlbums.set(seller.id, unselectedShardAlbums(shard, seller));
       shard.albums = admitted;
       let annotated = 0;
       for (const album of shard.albums) {
@@ -401,6 +405,15 @@ function rebuildAlbums() {
   state.albums = selected.albums;
   state.albumAliases = inheritableAliases(state.index || {}, state.albums, selected.aliases,
     state.loadedSellers === state.index?.sellers.length && !state.failedShards?.length);
+  // The preview lists every listing hidden from the grid, under the one
+  // shown: those the index names (every seller's when it is complete, the
+  // sellers it read otherwise) and those the viewer's own selection hid,
+  // even whilst saved work waits for every seller.
+  /** @param {string} id */
+  const shown = id => selected.aliases[id] ?? id;
+  state.listingAliases = {...selected.aliases, ...Object.fromEntries(
+    Object.entries(state.index?.album_aliases || {}).map(([old, target]) => [old, shown(target)]))};
+  state.listingCopies = listingCopies(state.listingAliases, [loaded, ...state.unselectedAlbums.values()]);
 }
 
 // Descriptions arrive as albums are refetched, so for a long while the

@@ -11,6 +11,7 @@ export type ViewerAlbum = Omit<CatalogueAlbum, 'links'> & {
   links: {platform: string; url: string}[];
   last_seen?: string;
   thumb_version?: string;
+  date_published?: string;
   date_modified?: string;
   description?: string;
   description_truncated?: boolean;
@@ -18,6 +19,10 @@ export type ViewerAlbum = Omit<CatalogueAlbum, 'links'> & {
   price_evidence?: {token?: string; rule?: string; field?: string; candidates?: unknown[]};
   history?: {at: string; field?: string; before?: unknown; after?: unknown}[];
 };
+// What the preview's list of an item's listings shows; an unselected
+// album keeps only this.
+export type ListingCopy = Pick<ViewerAlbum, 'id' | 'seller' | 'price' | 'date_published' | 'first_seen'
+  | 'gone_since' | 'album_url'>;
 export type Seller = {id: string; name: string; album_count: number; shard: string;
   album_ids?: string[];
   run?: {last_success?: string; failed_ids?: string[]}};
@@ -44,6 +49,9 @@ export type ViewerState = {
   bannedKeys: Set<string>;
   titleKeyCounts: Map<string, number>;
   shardAlbums: Map<string, ViewerAlbum[]>;
+  unselectedAlbums: Map<string, ListingCopy[]>;
+  listingAliases: Record<string, string>;
+  listingCopies: Map<string, ListingCopy[]>;
   failedShards: string[];
   aliasNote: string;
   categories: Set<string>;
@@ -73,6 +81,7 @@ export interface ViewerElements {
   'save-search': HTMLButtonElement; 'search-name': HTMLInputElement; 'remove-search': HTMLButtonElement;
   'mark-reviewed': HTMLButtonElement; 'preview-favourite': HTMLButtonElement;
   'preview-price': HTMLElement; 'preview-description': HTMLElement; 'preview-links': HTMLDivElement;
+  'preview-copies-note': HTMLElement; 'preview-copies': HTMLUListElement;
   'preview-external': HTMLDivElement; 'preview-title': HTMLElement; 'preview-position': HTMLElement;
   'preview-prev': HTMLButtonElement; 'preview-next': HTMLButtonElement; 'preview-facts': HTMLElement;
   'preview-match': HTMLElement; 'preview-run': HTMLElement; 'preview-cover': HTMLImageElement;

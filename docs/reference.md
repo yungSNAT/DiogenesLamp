@@ -125,7 +125,8 @@ Search titles and seller IDs, or paste an exact album ID, marketplace item
 ID, Yupoo album URL or purchase link. A pasted shopping-agent link
 (KakoBuy, Hoobuy, Oopbuy, Mulebuy, Joyagoo, CSSBuy, Sugargoo, Superbuy,
 LoongBuy, Pikobuy, iTaobuy, BBDbuy, Ootdbuy, Lovegobuy, Cnshopper, Alleurobuy,
-RizzitGO, Vigorbuy, USFans, Litbuy, hipobuy, GTBuy, and the retired CNFans,
+RizzitGO, Vigorbuy, USFans, Litbuy, hipobuy, GTBuy, OrientDig, PonyBuy,
+Fishgoo, and the retired CNFans,
 AllChinaBuy and Pandabuy) is
 unwrapped to the taobao, tmall, weidian or 1688 item it carries, the same
 way the scraper stores such links from album text. Stored descriptions are
@@ -234,7 +235,10 @@ way the note under the header says so and the catalogue loads as usual.
   and open on the agent; the preview shows the marketplace link and the
   agent link side by side. Links are rebuilt from the item id with no
   referral codes, from formats read from the public converters on
-  27 September 2026 (`viewer/agents.js` records the date). An agent that
+  27 September 2026; OrientDig, PonyBuy and Fishgoo were added on
+  16 November 2026 after opening an item on each (`viewer/agents.js`
+  records the dates). PonyBuy's taobao link did not open an item then, so
+  PonyBuy offers none for taobao. An agent that
   shuts down leaves the menu but its old links still resolve. Agents that
   name the marketplace by a channel code have none for tmall, so a tmall
   item keeps its marketplace link only; the agents that wrap the whole
@@ -265,6 +269,19 @@ title can identify a repeated posting within one seller. Short generic titles
 and titles used more than twice within a seller remain separate. Posting date
 wins, using the album ID estimate when no valid date is recorded; the higher
 album ID breaks date ties. **Age** hides listings older than 30/90/180/365 days.
+
+The grid shows the newest listing only, but its preview lists every listing
+of the item, cheapest first: each with its seller, price (or 'Price
+unknown'), posting date (or first-seen date when none was recorded), a link
+to its album, and 'no longer listed' once it has gone. So 2 sellers' prices
+for one marketplace item compare in one place. The older listings come from
+the seller shards already loaded, so the list needs no extra request. The
+index names the listings of every seller the scrape read, so one whose
+seller is still loading, or could not be read, is counted in the list's
+heading. An index from a scrape that could not read every seller, from
+`lamp demo` or from an older lamp does not name every seller's listings, so
+whilst a seller is unread the heading says its count covers only the
+sellers read. An open preview fills in as sellers load.
 
 Favourites, notes, tags and collections on an older duplicate copy to the
 newest listing when its field has no saved entry. Existing values, including
