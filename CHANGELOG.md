@@ -6,12 +6,19 @@
   and 1688 items, and its links in album text are read as the marketplace
   item they name. The format was checked by opening an item on each on
   17 November 2026; its taobao link opened a manual order form instead.
+- Releases add executables for macOS (arm64) and Linux (arm64, statically
+  linked), and the tests now run on macOS as well as Linux and Windows.
 - `lamp scrape --notify COMMAND` runs your command after a run that stored
   or changed albums, with them as JSON on its stdin: the `lamp export`
   fields plus `new` and the run's `changes` (price, links, photo count,
   availability). The README's Alerts section has recipes for a phone alert
   through ntfy and for email. lamp makes no request of its own, and scraped
   text reaches the command only on stdin.
+- A `--notify` run stopped with Ctrl+C, or one that fails before running
+  the command, is no longer lost to alerts: the next `--notify` run reports
+  the albums it stored and changed, as `data/notify-pending.json` records
+  them. Before, a later run saw those albums as known and never reported
+  them as new.
 - A seller that fails part-way through a scrape still counts and names the
   albums it had saved for the first time, and `--notify` reports them as
   new in that run; before, they were never reported as new.

@@ -114,11 +114,15 @@ fn ids(rows: &[Map]) -> Vec<String> {
     rows.iter().map(|r| r["album_id"].py_str()).collect()
 }
 
+fn runs(timestamps: &[&str]) -> HashSet<String> {
+    timestamps.iter().map(|t| t.to_string()).collect()
+}
+
 #[test]
 fn rows_are_the_albums_the_run_stored_or_changed_with_its_changes() {
     let dir = common::tmp();
     catalogue(dir.path(), "New hoodie");
-    let rows = run_rows(dir.path(), RUN, &new_ids()).unwrap();
+    let rows = run_rows(dir.path(), &runs(&[RUN]), &new_ids()).unwrap();
     assert_eq!(ids(&rows), ["1", "2", "4"]);
     let keys: Vec<&str> = rows[0].keys().map(String::as_str).collect();
     let mut want = EXPORT_COLUMNS.to_vec();
@@ -140,9 +144,33 @@ fn rows_are_the_albums_the_run_stored_or_changed_with_its_changes() {
     assert_eq!(rows[2]["gone_since"].as_str(), Some(RUN));
     // Another run's timestamp matches nothing.
     assert!(
-        run_rows(dir.path(), "2026-11-18T03:47:00+11:00", &HashSet::new())
-            .unwrap()
-            .is_empty()
+        run_rows(
+            dir.path(),
+            &runs(&["2026-11-18T03:47:00+11:00"]),
+            &HashSet::new()
+        )
+        .unwrap()
+        .is_empty()
+    );
+}
+
+/// Rows for several runs, as when a notifying run also reports an earlier
+/// one that never gave its rows to a command: each album once, with the
+/// changes of every one of those runs.
+#[test]
+fn rows_for_several_runs_carry_each_runs_changes() {
+    let dir = common::tmp();
+    catalogue(dir.path(), "New hoodie");
+    let rows = run_rows(dir.path(), &runs(&[EARLIER, RUN]), &new_ids()).unwrap();
+    assert_eq!(ids(&rows), ["1", "2", "3", "4"]);
+    let shown = |row: &Map| pyjson::dumps(&row["changes"], Style::Default);
+    assert_eq!(
+        shown(&rows[1]),
+        r#"[{"field": "purchase links", "before": [], "after": []}, {"field": "price", "before": 100, "after": 120}]"#
+    );
+    assert_eq!(
+        shown(&rows[2]),
+        r#"[{"field": "price", "before": 1, "after": 2}]"#
     );
 }
 
@@ -154,7 +182,7 @@ fn the_command_gets_the_rows_on_stdin_and_never_in_its_command_line() {
     let title =
         format!(r#"x"; touch '{m}'; $(touch '{m}') `touch '{m}'` & echo>"{m}" | %PATH% ^& "#);
     catalogue(dir.path(), &title);
-    let rows = run_rows(dir.path(), RUN, &new_ids()).unwrap();
+    let rows = run_rows(dir.path(), &runs(&[RUN]), &new_ids()).unwrap();
     let want = pyjson::dumps(
         &Value::Array(rows.iter().cloned().map(Value::Object).collect()),
         Style::Indent(2),
@@ -181,7 +209,7 @@ fn no_rows_run_no_command() {
 fn a_failing_command_is_an_error_with_its_status() {
     let dir = common::tmp();
     catalogue(dir.path(), "x");
-    let rows = run_rows(dir.path(), RUN, &new_ids()).unwrap();
+    let rows = run_rows(dir.path(), &runs(&[RUN]), &new_ids()).unwrap();
     let error = notify("exit 3", rows).unwrap_err();
     assert!(
         error.starts_with("the command failed (") && error.contains('3'),
@@ -195,7 +223,7 @@ fn a_failing_command_is_an_error_with_its_status() {
 fn a_command_that_reads_nothing_succeeds() {
     let dir = common::tmp();
     catalogue(dir.path(), &"long title ".repeat(100));
-    let rows = run_rows(dir.path(), RUN, &new_ids()).unwrap();
+    let rows = run_rows(dir.path(), &runs(&[RUN]), &new_ids()).unwrap();
     let many: Vec<Map> = (0..300).flat_map(|_| rows.clone()).collect();
     notify("exit 0", many).unwrap();
 }
