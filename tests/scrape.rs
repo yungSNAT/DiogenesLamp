@@ -1774,13 +1774,13 @@ fn scrape_rows(
     run_ts: &str,
     options: Options,
 ) -> lamp::errors::Result<Vec<(String, bool)>> {
-    Ok(notify_run(&make_client(), dir, run_ts, options)?.1)
+    Ok(notify_run(make_client().factory(), dir, run_ts, options)?.1)
 }
 
-/// `scrape_all` for sellerx through `client`: its summary and its `--notify`
-/// rows as (album_id, new) pairs in id order.
+/// `scrape_all` for sellerx with clients from `factory`: its summary and its
+/// `--notify` rows as (album_id, new) pairs in id order.
 fn notify_run(
-    client: &FakeClient,
+    factory: ClientFactory,
     dir: &Path,
     run_ts: &str,
     options: Options,
@@ -1793,7 +1793,7 @@ fn notify_run(
         1,
         8.0,
         None,
-        Some(client.factory()),
+        Some(factory),
         &mut |_| {},
         &Interrupt::default(),
     )?;
@@ -1848,25 +1848,62 @@ fn a_run_asked_for_its_rows_returns_the_albums_it_stored_or_changed() {
 #[test]
 fn a_seller_that_fails_after_a_periodic_save_reports_the_albums_it_saved_as_new() {
     let dir = common::tmp();
-    let ids: Vec<String> = (101..251).map(|a| a.to_string()).collect();
+    let ids: Vec<String> = (101..351).map(|a| a.to_string()).collect();
     let refs: Vec<&str> = ids.iter().map(String::as_str).collect();
     let client = client_of(&seller_of(&refs));
-    // The shard is saved after album 200; album 201 is stored only in memory.
-    *client.0.panic_on.lock().unwrap() = Some("/albums/202?".into());
-    let (summary, rows) = notify_run(&client, dir.path(), T1, notifying()).unwrap();
+    // The shard is saved after albums 200 and 300; album 301 is stored only
+    // in memory.
+    *client.0.panic_on.lock().unwrap() = Some("/albums/302?".into());
+    let (summary, rows) = notify_run(client.factory(), dir.path(), T1, notifying()).unwrap();
     assert!(summary.error.contains("parser bug"), "{}", summary.error);
-    let saved: Vec<(String, bool)> = (101..201).map(|a| (a.to_string(), true)).collect();
+    let saved: Vec<(String, bool)> = (101..301).map(|a| (a.to_string(), true)).collect();
     assert_eq!(rows, saved);
     assert_eq!(
         summary.new_ids,
-        ids[..100],
-        "the unsaved album 201 is not new"
+        ids[..200],
+        "the unsaved album 301 is not new"
     );
     *client.0.panic_on.lock().unwrap() = None;
-    let (summary, rows) = notify_run(&client, dir.path(), T2, notifying()).unwrap();
-    let rest: Vec<(String, bool)> = (201..251).map(|a| (a.to_string(), true)).collect();
+    let (summary, rows) = notify_run(client.factory(), dir.path(), T2, notifying()).unwrap();
+    let rest: Vec<(String, bool)> = (301..351).map(|a| (a.to_string(), true)).collect();
     assert_eq!(rows, rest);
-    assert_eq!(summary.new_ids, ids[100..]);
+    assert_eq!(summary.new_ids, ids[200..]);
+}
+
+/// A client that panics when dropped, after its seller has finished.
+struct PanicsOnDrop(FakeClient);
+
+impl ScrapeClient for PanicsOnDrop {
+    fn get(&self, url: &str, referer: Option<&str>) -> Result<String, FetchError> {
+        self.0.get(url, referer)
+    }
+
+    fn download(&self, url: &str, dest: &Path, referer: Option<&str>) -> Result<bool, FetchError> {
+        self.0.download(url, dest, referer)
+    }
+}
+
+impl Drop for PanicsOnDrop {
+    fn drop(&mut self) {
+        panic!("client drop");
+    }
+}
+
+/// A seller that fails after its final save has stored every album: all of
+/// them are new in this run.
+#[test]
+fn a_seller_that_fails_after_its_final_save_reports_every_album_it_saved_as_new() {
+    let dir = common::tmp();
+    let ids: Vec<String> = (101..251).map(|a| a.to_string()).collect();
+    let refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+    let client = client_of(&seller_of(&refs));
+    let factory: ClientFactory =
+        Arc::new(move || Box::new(PanicsOnDrop(client.clone())) as Box<dyn ScrapeClient>);
+    let (summary, rows) = notify_run(factory, dir.path(), T1, notifying()).unwrap();
+    assert!(summary.error.contains("client drop"), "{}", summary.error);
+    let all: Vec<(String, bool)> = ids.iter().map(|a| (a.clone(), true)).collect();
+    assert_eq!(rows, all);
+    assert_eq!(summary.new_ids, ids);
 }
 
 /// An album stored before `first_seen` was recorded gets the timestamp of

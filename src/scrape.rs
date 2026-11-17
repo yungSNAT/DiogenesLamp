@@ -321,7 +321,7 @@ pub fn scrape_seller(
 }
 
 /// `scrape_seller` into a caller's summary, so a seller that fails still
-/// has it. `saved_new` counts the leading `new_ids` a shard save has stored.
+/// has it. `saved_new` counts the leading `new_ids` the last shard save stored.
 #[allow(clippy::too_many_arguments)]
 fn scrape_into(
     summary: &mut SellerSummary,
@@ -670,6 +670,7 @@ fn scrape_into(
         (summary.returned_ids, summary.recounted_ids) =
             stamp_listing(&mut shard, &listed, &absent, run_ts);
         write_shard(data_dir, &source.id, &shard)?;
+        *saved_new = summary.new_ids.len();
     }
     Ok(())
 }
