@@ -1,24 +1,30 @@
-# v0.1.2
+# v0.1.3
 
-Fixes and small improvements to `lamp`, the DiogenesLamp command. As before,
-there are executables for Linux (x86_64, statically linked) and Windows
-(x86_64); on macOS, install from source with Cargo.
+New commands and alerts for `lamp`, the DiogenesLamp command, and
+executables for 6 systems: Linux (x86_64 and arm64, statically linked), macOS
+(Apple silicon and Intel) and Windows (x86_64 and arm64).
 
-- `lamp` with no arguments, as a double-click on `lamp.exe` runs it, prints
-  the next steps instead of a usage error.
-- `lamp scrape` names each seller's new and returned albums on its result
-  line.
-- A word of a few hundred dotted parts no longer stops an album's purchase
-  link scan: only the rest of that word is skipped, and the album is reported
-  as partly scanned.
-- `lamp prepare-covers` saves no snapshot for a batch with nothing to prepare,
-  and skips covers missing from disk instead of failing on them every run.
-- Album pages with tens of thousands of void tags or attributes parse in
-  linear time.
-- In the viewer, control edges clear 3:1 contrast, focused fields keep the
-  focus ring, and loading counts are announced to screen readers once.
+- `lamp scrape --notify COMMAND` runs your command after a run that stored or
+  changed albums, with them as JSON on its stdin; the README has recipes for
+  a phone alert and for email. Albums from an interrupted run are reported by
+  the next `--notify` run.
+- `lamp export` prints the catalogue as CSV or JSON, optionally only what was
+  added since a date, and `lamp export --site DIR` writes the viewer and
+  catalogue as static files for any web host.
+- `lamp find-photo IMAGE` lists the albums whose cover is the same picture,
+  resized or recompressed.
+- The viewer's preview lists every listing of an item, cheapest first, and an
+  optional `aliases.json` lets a search for your own brand and model names
+  find titles that use the Chinese names and seller codes your sellers write.
+- More shopping agents in the **Open purchase links on** menu: OrientDig,
+  PonyBuy, Fishgoo and LoloBuy.
+- A scrape notices a changed photo count from the seller's listing without
+  fetching the album, and a seller that fails part-way still reports its new
+  albums and records its failed fetches for `--retry-failed`.
+- `lamp restore` refuses a snapshot that names a member twice, and
+  `lamp reindex` over 400 sellers of 200 albums is 3 to 4 times faster.
 
 Check a download before running it, as
-[Download](https://github.com/yungSNAT/DiogenesLamp/blob/v0.1.2/README.md#download)
+[Download](https://github.com/yungSNAT/DiogenesLamp/blob/v0.1.3/README.md#download)
 describes. Everything that changed is in
-[CHANGELOG.md](https://github.com/yungSNAT/DiogenesLamp/blob/v0.1.2/CHANGELOG.md).
+[CHANGELOG.md](https://github.com/yungSNAT/DiogenesLamp/blob/v0.1.3/CHANGELOG.md).
