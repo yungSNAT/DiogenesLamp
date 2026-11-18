@@ -182,8 +182,8 @@ touching it. Each run's per-seller summary is saved in `data/runs/`.
 
 The examples keep `sources.toml` and `data/` in a `lamp` folder in your home
 directory and run at 03:47. Each names `lamp` where the release install puts
-it; replace that with the path `command -v lamp`
-prints (`(Get-Command lamp).Source` in PowerShell).
+it; replace that with the path `command -v lamp` prints (`(Get-Command
+lamp).Source` in PowerShell).
 
 <details>
 <summary>Windows: Task Scheduler (PowerShell)</summary>

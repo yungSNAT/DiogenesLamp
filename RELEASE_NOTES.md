@@ -22,7 +22,7 @@ executables for 6 systems: Linux (x86_64 and arm64, statically linked), macOS
   fetching the album, and a seller that fails part-way still reports its new
   albums and records its failed fetches for `--retry-failed`.
 - `lamp restore` refuses a snapshot that names a member twice, and
-  `lamp reindex` over 400 sellers is 3 to 4 times faster.
+  `lamp reindex` over 400 sellers of 200 albums is 3 to 4 times faster.
 
 Check a download before running it, as
 [Download](https://github.com/yungSNAT/DiogenesLamp/blob/v0.1.3/README.md#download)

@@ -46,7 +46,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run typecheck
       # Only main saves, so pull requests cannot replace the shared entries.
-      # 1 crate on 6 systems stays well inside the 10 GB cache limit.
+      # 1 crate on 6 systems stays inside the 10 GB cache limit.
       - uses: Swatinem/rust-cache@<pin>
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
