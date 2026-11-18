@@ -28,7 +28,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # Every system the release builds for: the release fails unless the
+        # tests pass on each, so a gap shows here before a tag.
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, windows-11-arm, macos-latest, macos-15-intel]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@<pin>
@@ -44,7 +46,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run typecheck
       # Only main saves, so pull requests cannot replace the shared entries.
-      # 1 crate on 3 systems stays well inside the 10 GB cache limit.
+      # 1 crate on 6 systems stays inside the 10 GB cache limit.
       - uses: Swatinem/rust-cache@<pin>
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -121,11 +123,11 @@ jobs:
 const EXPECTED_RELEASE: &str = r#"name: Release
 
 # A v* tag on main's head publishes lamp through release-policy's binary
-# family: Linux (x86_64 and arm64, static), macOS (arm64) and Windows (x86_64)
-# executables, source archives, SBOMs, SHA256SUMS and signed provenance in one
-# immutable release. VERSION, Cargo.toml and the first
-# line of RELEASE_NOTES.md must agree (tests/repo_policy.rs); release-policy
-# refuses a tag that names another version.
+# family: Linux (x86_64 and arm64, static), macOS (x86_64 and arm64) and
+# Windows (x86_64 and arm64) executables, source archives, SBOMs, SHA256SUMS
+# and signed provenance in one immutable release. VERSION, Cargo.toml and the
+# first line of RELEASE_NOTES.md must agree (tests/repo_policy.rs);
+# release-policy refuses a tag that names another version.
 
 on:
   push:
@@ -148,7 +150,7 @@ jobs:
       attestations: write # Record provenance and SBOM attestations for release assets.
       contents: write # Create the draft release, upload assets and publish it.
       id-token: write # Obtain the OIDC identity required to sign attestations.
-    uses: ryanduguid/release-policy/.github/workflows/release-binary.yml@efac799b4380171e9f392e392a20e80f285bfa25 # canaries.json current pin
+    uses: ryanduguid/release-policy/.github/workflows/release-binary.yml@ffbeffd5ff595b9b2fcaa885395ffb21108aaa2b # canaries.json current pin
     with:
       artifact-stem: diogenes-lamp
       binary: lamp
