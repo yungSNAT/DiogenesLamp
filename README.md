@@ -35,18 +35,18 @@ original Yupoo album for the detail photos.
 
 `lamp` is a single executable with the viewer built in. Each
 [release](https://github.com/yungSNAT/DiogenesLamp/releases) carries one for
-Windows (x86_64) and one for Linux (x86_64, statically linked), with a
-`SHA256SUMS` file and signed build provenance. There is no macOS build yet;
-install [from source](#from-source) there.
+Linux (x86_64 and arm64, statically linked), macOS (Apple silicon and Intel)
+and Windows (x86_64 and arm64), with a `SHA256SUMS` file and signed build
+provenance. Elsewhere, install [from source](#from-source).
 
 ### Download
 
-You need only a browser, or the commands below, which use tools every Windows
-and Linux machine has. Each stops if the download does not match
+You need only a browser, or the commands below, which use tools every Windows,
+macOS and Linux machine has. Each stops if the download does not match
 `SHA256SUMS`. On Windows, in PowerShell:
 
-    $base = 'https://github.com/yungSNAT/DiogenesLamp/releases/download/v0.1.2'
-    $asset = 'diogenes-lamp-0.1.2-x86_64-pc-windows-msvc.zip'
+    $base = 'https://github.com/yungSNAT/DiogenesLamp/releases/download/v0.1.3'
+    $asset = 'diogenes-lamp-0.1.3-x86_64-pc-windows-msvc.zip'
     Invoke-WebRequest "$base/$asset" -OutFile $asset
     Invoke-WebRequest "$base/SHA256SUMS" -OutFile SHA256SUMS
     $sum = (Select-String -Path SHA256SUMS -SimpleMatch $asset).Line.Split(' ')[0]
@@ -56,13 +56,27 @@ and Linux machine has. Each stops if the download does not match
 
 Add that folder to your `PATH` to type `lamp` alone. On Linux:
 
-    base=https://github.com/yungSNAT/DiogenesLamp/releases/download/v0.1.2
-    asset=diogenes-lamp-0.1.2-x86_64-unknown-linux-musl.tar.gz
+    base=https://github.com/yungSNAT/DiogenesLamp/releases/download/v0.1.3
+    asset=diogenes-lamp-0.1.3-x86_64-unknown-linux-musl.tar.gz
     curl -fsSLO "$base/$asset" && curl -fsSLO "$base/SHA256SUMS" &&
       awk -v f="$asset" '$2 == f' SHA256SUMS | sha256sum --check &&
       mkdir -p ~/.local/bin && tar -xzf "$asset" -C ~/.local/bin lamp &&
       ~/.local/bin/lamp demo
 
+On macOS:
+
+    base=https://github.com/yungSNAT/DiogenesLamp/releases/download/v0.1.3
+    asset=diogenes-lamp-0.1.3-aarch64-apple-darwin.tar.gz
+    curl -fsSLO "$base/$asset" && curl -fsSLO "$base/SHA256SUMS" &&
+      awk -v f="$asset" '$2 == f' SHA256SUMS | shasum -a 256 --check &&
+      mkdir -p ~/.local/bin && tar -xzf "$asset" -C ~/.local/bin lamp &&
+      ~/.local/bin/lamp demo
+
+On an Intel Mac, put `x86_64-apple-darwin` in the asset name; on Linux on
+arm64, `aarch64-unknown-linux-musl`; on Windows on Arm,
+`aarch64-pc-windows-msvc`. The macOS executables are not notarised, so macOS
+blocks a copy downloaded in a browser until you allow it under System
+Settings, Privacy & Security; the commands above avoid that.
 `~/.local/bin` must be on your `PATH`. The last command of each, `lamp demo`,
 opens the viewer on synthetic data; press Ctrl+C to stop it, then follow
 [Use](#use). To download in a browser instead, take your system's file and
@@ -78,8 +92,8 @@ With the [GitHub CLI](https://cli.github.com/) signed in (`gh auth login`),
 these commands also check the signed provenance, which shows the file was built
 from this repository's tagged source by its release workflow. On Linux:
 
-    tag=v0.1.2
-    asset=diogenes-lamp-0.1.2-x86_64-unknown-linux-musl.tar.gz
+    tag=v0.1.3
+    asset=diogenes-lamp-0.1.3-x86_64-unknown-linux-musl.tar.gz
     gh release download "$tag" --repo yungSNAT/DiogenesLamp --pattern "$asset" --pattern SHA256SUMS &&
       awk -v f="$asset" '$2 == f' SHA256SUMS | sha256sum --check &&
       gh attestation verify "$asset" --repo yungSNAT/DiogenesLamp \
@@ -89,8 +103,8 @@ from this repository's tagged source by its release workflow. On Linux:
 
 On Windows, in PowerShell:
 
-    $tag = 'v0.1.2'
-    $asset = 'diogenes-lamp-0.1.2-x86_64-pc-windows-msvc.zip'
+    $tag = 'v0.1.3'
+    $asset = 'diogenes-lamp-0.1.3-x86_64-pc-windows-msvc.zip'
     gh release download $tag --repo yungSNAT/DiogenesLamp --pattern $asset --pattern SHA256SUMS
     if ($LASTEXITCODE) { throw 'download failed' }
     $sum = (Select-String -Path SHA256SUMS -SimpleMatch $asset).Line.Split(' ')[0]
@@ -168,7 +182,7 @@ touching it. Each run's per-seller summary is saved in `data/runs/`.
 
 The examples keep `sources.toml` and `data/` in a `lamp` folder in your home
 directory and run at 03:47. Each names `lamp` where the release install puts
-it, or `~/.cargo/bin` on macOS; replace that with the path `command -v lamp`
+it; replace that with the path `command -v lamp`
 prints (`(Get-Command lamp).Source` in PowerShell).
 
 <details>
@@ -207,7 +221,7 @@ name. Save this as `~/Library/LaunchAgents/local.diogeneslamp.refresh.plist`:
       <key>Label</key><string>local.diogeneslamp.refresh</string>
       <key>ProgramArguments</key>
       <array>
-        <string>/Users/you/.cargo/bin/lamp</string>
+        <string>/Users/you/.local/bin/lamp</string>
         <string>--sources</string><string>/Users/you/lamp/sources.toml</string>
         <string>--data</string><string>/Users/you/lamp/data</string>
         <string>scrape</string>

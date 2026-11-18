@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.3 (2026-11-19)
 
 - Dates and times come from jiff instead of chrono, which RustSec lists as
   unmaintained (RUSTSEC-2026-0543); output is unchanged. A `Retry-After`
@@ -10,8 +10,9 @@
   and 1688 items, and its links in album text are read as the marketplace
   item they name. The format was checked by opening an item on each on
   17 November 2026; its taobao link opened a manual order form instead.
-- Releases add executables for macOS (arm64) and Linux (arm64, statically
-  linked), and the tests now run on macOS as well as Linux and Windows.
+- Releases add executables for macOS (arm64 and x86_64), Linux (arm64,
+  statically linked) and Windows (arm64), and the tests run on each of the
+  6 systems a release builds for.
 - `lamp scrape --notify COMMAND` runs your command after a run that stored
   or changed albums, with them as JSON on its stdin: the `lamp export`
   fields plus `new` and the run's `changes` (price, links, photo count,
