@@ -1,0 +1,844 @@
+{
+ "generator": "Python 3.15.0, beautifulsoup4 4.15.0, html.parser",
+ "cases": [
+  {
+   "html": "<p> </p><p>\t</p><b>x</b>",
+   "text": "  x",
+   "stripped": "x",
+   "tags": [
+    {
+     "name": "p",
+     "text": " ",
+     "attrs": {}
+    },
+    {
+     "name": "b",
+     "text": "x",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<div>a <span> </span> b</div>",
+   "text": "a   b",
+   "stripped": "a|b",
+   "tags": [
+    {
+     "name": "div",
+     "text": "a   b",
+     "attrs": {}
+    },
+    {
+     "name": "span",
+     "text": " ",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<p>&notit; &notin; &no &amp &AMP; &ampx; &Amp;</p>",
+   "text": "&notit ∉ &no & & &ampx &Amp",
+   "stripped": "&notit ∉ &no & & &ampx &Amp",
+   "tags": [
+    {
+     "name": "p",
+     "text": "&notit ∉ &no & & &ampx &Amp",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<p>&#x; &#; &#x1F600; &#128512; &#xD800; &#55296; &#x80; &#150; &#13;</p>",
+   "text": "&#x; &#; 😀 😀 � � € – \r",
+   "stripped": "&#x; &#; 😀 😀 � � € –",
+   "tags": [
+    {
+     "name": "p",
+     "text": "&#x; &#; 😀 😀 � � € – \r",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<p>&#99999999999999999999; &#x10FFFF; &#x110000; &#0;</p>",
+   "text": "� 􏿿 � �",
+   "stripped": "� 􏿿 � �",
+   "tags": [
+    {
+     "name": "p",
+     "text": "� 􏿿 � �",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<p>&#X41; &#x41 &#65 &#a; &#xg;</p>",
+   "text": "A A A &#a; &#xg;",
+   "stripped": "A A A &#a; &#xg;",
+   "tags": [
+    {
+     "name": "p",
+     "text": "A A A &#a; &#xg;",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<p>x&</p>",
+   "text": "x&",
+   "stripped": "x&",
+   "tags": [
+    {
+     "name": "p",
+     "text": "x&",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<p>x&#</p>",
+   "text": "x&#",
+   "stripped": "x&#",
+   "tags": [
+    {
+     "name": "p",
+     "text": "x&#",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<p>x&#x</p>",
+   "text": "x&#x",
+   "stripped": "x&#x",
+   "tags": [
+    {
+     "name": "p",
+     "text": "x&#x",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<p>x&am</p>",
+   "text": "x&am",
+   "stripped": "x&am",
+   "tags": [
+    {
+     "name": "p",
+     "text": "x&am",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<p>x&#1</p>",
+   "text": "x\u0001",
+   "stripped": "x\u0001",
+   "tags": [
+    {
+     "name": "p",
+     "text": "x\u0001",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<p>x&# y</p>",
+   "text": "x&# y",
+   "stripped": "x&# y",
+   "tags": [
+    {
+     "name": "p",
+     "text": "x&# y",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<p>x& y</p>",
+   "text": "x& y",
+   "stripped": "x& y",
+   "tags": [
+    {
+     "name": "p",
+     "text": "x& y",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<a title='&notit; &no &amp=1 &ampx &#65; &#x41; &#x; &#; &am'>t</a>",
+   "text": "t",
+   "stripped": "t",
+   "tags": [
+    {
+     "name": "a",
+     "text": "t",
+     "attrs": {
+      "title": "&notit; &no &amp=1 &ampx A A &#x; &#; &am"
+     }
+    }
+   ]
+  },
+  {
+   "html": "<a title='&#99999999999; &#x110000; &#0; &#150; &copy=x &copyx &lt;'>t</a>",
+   "text": "t",
+   "stripped": "t",
+   "tags": [
+    {
+     "name": "a",
+     "text": "t",
+     "attrs": {
+      "title": "� � � – &copy=x &copyx <"
+     }
+    }
+   ]
+  },
+  {
+   "html": "<a title=\"a&#\">t</a><b title=\"&#x\">u</b><i title=\"&\">v</i>",
+   "text": "tuv",
+   "stripped": "t|u|v",
+   "tags": [
+    {
+     "name": "a",
+     "text": "t",
+     "attrs": {
+      "title": "a&#"
+     }
+    },
+    {
+     "name": "b",
+     "text": "u",
+     "attrs": {
+      "title": "&#x"
+     }
+    },
+    {
+     "name": "i",
+     "text": "v",
+     "attrs": {
+      "title": "&"
+     }
+    }
+   ]
+  },
+  {
+   "html": "<a b=1 c = 2 d =\"3\" e= '4' f>t</a>",
+   "text": "t",
+   "stripped": "t",
+   "tags": [
+    {
+     "name": "a",
+     "text": "t",
+     "attrs": {
+      "b": "1",
+      "c": "2",
+      "d": "3",
+      "e": "4",
+      "f": ""
+     }
+    }
+   ]
+  },
+  {
+   "html": "<a title=x/y>t</a><i title=x/>u</i>",
+   "text": "tu",
+   "stripped": "t|u",
+   "tags": [
+    {
+     "name": "a",
+     "text": "t",
+     "attrs": {
+      "title": "x/y"
+     }
+    },
+    {
+     "name": "i",
+     "text": "u",
+     "attrs": {
+      "title": "x/"
+     }
+    }
+   ]
+  },
+  {
+   "html": "<a title=\"x\"y=\"z\">t</a>",
+   "text": "t",
+   "stripped": "t",
+   "tags": [
+    {
+     "name": "a",
+     "text": "t",
+     "attrs": {
+      "title": "x",
+      "y": "z"
+     }
+    }
+   ]
+  },
+  {
+   "html": "<a ==x title=y>t</a>",
+   "text": "t",
+   "stripped": "t",
+   "tags": [
+    {
+     "name": "a",
+     "text": "t",
+     "attrs": {
+      "=": "x",
+      "title": "y"
+     }
+    }
+   ]
+  },
+  {
+   "html": "<a title='x' / >t</a>",
+   "text": "t",
+   "stripped": "t",
+   "tags": [
+    {
+     "name": "a",
+     "text": "t",
+     "attrs": {
+      "title": "x"
+     }
+    }
+   ]
+  },
+  {
+   "html": "<a\ttitle\n=\n'x'>t</a>",
+   "text": "t",
+   "stripped": "t",
+   "tags": [
+    {
+     "name": "a",
+     "text": "t",
+     "attrs": {
+      "title": "x"
+     }
+    }
+   ]
+  },
+  {
+   "html": "<a title=`x`>t</a>",
+   "text": "t",
+   "stripped": "t",
+   "tags": [
+    {
+     "name": "a",
+     "text": "t",
+     "attrs": {
+      "title": "`x`"
+     }
+    }
+   ]
+  },
+  {
+   "html": "<a title=>t</a>",
+   "text": "t",
+   "stripped": "t",
+   "tags": [
+    {
+     "name": "a",
+     "text": "t",
+     "attrs": {
+      "title": ""
+     }
+    }
+   ]
+  },
+  {
+   "html": "<a title=\"unterminated>t</a>",
+   "text": "",
+   "stripped": "",
+   "tags": []
+  },
+  {
+   "html": "<a title='un\nterminated>t</a>",
+   "text": "",
+   "stripped": "",
+   "tags": []
+  },
+  {
+   "html": "<a/title=x>t</a>",
+   "text": "t",
+   "stripped": "t",
+   "tags": [
+    {
+     "name": "a",
+     "text": "t",
+     "attrs": {
+      "title": "x"
+     }
+    }
+   ]
+  },
+  {
+   "html": "<a //title=x>t</a>",
+   "text": "t",
+   "stripped": "t",
+   "tags": [
+    {
+     "name": "a",
+     "text": "t",
+     "attrs": {
+      "title": "x"
+     }
+    }
+   ]
+  },
+  {
+   "html": "a<!---->b<!-- x -->c",
+   "text": "abc",
+   "stripped": "a|b|c",
+   "tags": []
+  },
+  {
+   "html": "a<!-->b",
+   "text": "ab",
+   "stripped": "a|b",
+   "tags": []
+  },
+  {
+   "html": "a<!--->b",
+   "text": "ab",
+   "stripped": "a|b",
+   "tags": []
+  },
+  {
+   "html": "a<!-- x --!>b",
+   "text": "ab",
+   "stripped": "a|b",
+   "tags": []
+  },
+  {
+   "html": "a<!-- x -- >b-->c",
+   "text": "ac",
+   "stripped": "a|c",
+   "tags": []
+  },
+  {
+   "html": "a<!-- x --!b-->c",
+   "text": "ac",
+   "stripped": "a|c",
+   "tags": []
+  },
+  {
+   "html": "a<!x>b<!>c",
+   "text": "abc",
+   "stripped": "a|b|c",
+   "tags": []
+  },
+  {
+   "html": "a</ x>b</>c</1>d",
+   "text": "abcd",
+   "stripped": "a|bc|d",
+   "tags": []
+  },
+  {
+   "html": "a<!DOCTYPE html>b<!doctype>c",
+   "text": "abc",
+   "stripped": "a|b|c",
+   "tags": []
+  },
+  {
+   "html": "a<![CDATA[x]]>b<![if x]>c",
+   "text": "axbc",
+   "stripped": "a|x|b|c",
+   "tags": []
+  },
+  {
+   "html": "a<?php x ?>b",
+   "text": "ab",
+   "stripped": "a|b",
+   "tags": []
+  },
+  {
+   "html": "a<!ELEMENT x>b",
+   "text": "ab",
+   "stripped": "a|b",
+   "tags": []
+  },
+  {
+   "html": "a<!-- unterminated",
+   "text": "a",
+   "stripped": "a",
+   "tags": []
+  },
+  {
+   "html": "a<!-- unterminated--",
+   "text": "a",
+   "stripped": "a",
+   "tags": []
+  },
+  {
+   "html": "a<!-- unterminated-",
+   "text": "a",
+   "stripped": "a",
+   "tags": []
+  },
+  {
+   "html": "a<!-- unterminated--!",
+   "text": "a",
+   "stripped": "a",
+   "tags": []
+  },
+  {
+   "html": "a<![CDATA[unterminated",
+   "text": "aunterminated",
+   "stripped": "a|unterminated",
+   "tags": []
+  },
+  {
+   "html": "a<!DOCTYPE unterminated",
+   "text": "a",
+   "stripped": "a",
+   "tags": []
+  },
+  {
+   "html": "a<!x unterminated",
+   "text": "a",
+   "stripped": "a",
+   "tags": []
+  },
+  {
+   "html": "a<? unterminated",
+   "text": "a",
+   "stripped": "a",
+   "tags": []
+  },
+  {
+   "html": "a</unterminated",
+   "text": "a",
+   "stripped": "a",
+   "tags": []
+  },
+  {
+   "html": "a</",
+   "text": "a</",
+   "stripped": "a</",
+   "tags": []
+  },
+  {
+   "html": "a<",
+   "text": "a<",
+   "stripped": "a<",
+   "tags": []
+  },
+  {
+   "html": "a<b",
+   "text": "a",
+   "stripped": "a",
+   "tags": []
+  },
+  {
+   "html": "a<b c='x",
+   "text": "a",
+   "stripped": "a",
+   "tags": []
+  },
+  {
+   "html": "a < b",
+   "text": "a < b",
+   "stripped": "a < b",
+   "tags": []
+  },
+  {
+   "html": "a<1b",
+   "text": "a<1b",
+   "stripped": "a<1b",
+   "tags": []
+  },
+  {
+   "html": "<script>a</b>c</script >d",
+   "text": "d",
+   "stripped": "d",
+   "tags": [
+    {
+     "name": "script",
+     "text": "a</b>c",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<script>a</scriptx>b</script>c",
+   "text": "c",
+   "stripped": "c",
+   "tags": [
+    {
+     "name": "script",
+     "text": "a</scriptx>b",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<style>p{}</style><style>q</STYLE>x",
+   "text": "x",
+   "stripped": "x",
+   "tags": [
+    {
+     "name": "style",
+     "text": "p{}",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<script>unterminated",
+   "text": "",
+   "stripped": "",
+   "tags": [
+    {
+     "name": "script",
+     "text": "unterminated",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<script>x</scr",
+   "text": "",
+   "stripped": "",
+   "tags": [
+    {
+     "name": "script",
+     "text": "x</scr",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<textarea>a<b>&amp;</textarea>c",
+   "text": "a<b>&c",
+   "stripped": "a<b>&|c",
+   "tags": [
+    {
+     "name": "textarea",
+     "text": "a<b>&",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<title>a &lt; <b></title>c",
+   "text": "a < <b>c",
+   "stripped": "a < <b>|c",
+   "tags": [
+    {
+     "name": "title",
+     "text": "a < <b>",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<textarea>unterminated &amp;",
+   "text": "unterminated &",
+   "stripped": "unterminated &",
+   "tags": [
+    {
+     "name": "textarea",
+     "text": "unterminated &",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<xmp><b>x</b></xmp>y",
+   "text": "<b>x</b>y",
+   "stripped": "<b>x</b>|y",
+   "tags": [
+    {
+     "name": "xmp",
+     "text": "<b>x</b>",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<noembed><b>x</noembed>y",
+   "text": "<b>xy",
+   "stripped": "<b>x|y",
+   "tags": [
+    {
+     "name": "noembed",
+     "text": "<b>x",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<iframe><b>x</iframe>y",
+   "text": "<b>xy",
+   "stripped": "<b>x|y",
+   "tags": [
+    {
+     "name": "iframe",
+     "text": "<b>x",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<plaintext><b>x",
+   "text": "<b>x",
+   "stripped": "<b>x",
+   "tags": [
+    {
+     "name": "plaintext",
+     "text": "<b>x",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<p>a<p>b</p></p>c",
+   "text": "abc",
+   "stripped": "a|b|c",
+   "tags": [
+    {
+     "name": "p",
+     "text": "ab",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<b><i>x</b>y</i>z",
+   "text": "xyz",
+   "stripped": "x|y|z",
+   "tags": [
+    {
+     "name": "b",
+     "text": "x",
+     "attrs": {}
+    },
+    {
+     "name": "i",
+     "text": "x",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "</b>a<b>",
+   "text": "a",
+   "stripped": "a",
+   "tags": [
+    {
+     "name": "b",
+     "text": "",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<br>a</br>b",
+   "text": "ab",
+   "stripped": "ab",
+   "tags": []
+  },
+  {
+   "html": "<img>a</img>b",
+   "text": "ab",
+   "stripped": "ab",
+   "tags": []
+  },
+  {
+   "html": "<a><a>x</a></a>",
+   "text": "x",
+   "stripped": "x",
+   "tags": [
+    {
+     "name": "a",
+     "text": "x",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<pre>\n  x\n</pre>",
+   "text": "\n  x\n",
+   "stripped": "x",
+   "tags": [
+    {
+     "name": "pre",
+     "text": "\n  x\n",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<pre><b>  </b></pre>",
+   "text": "  ",
+   "stripped": "",
+   "tags": [
+    {
+     "name": "b",
+     "text": "  ",
+     "attrs": {}
+    },
+    {
+     "name": "pre",
+     "text": "  ",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<ruby>a<rp>(</rp><rt>b</rt><rp>)</rp></ruby>",
+   "text": "a",
+   "stripped": "a",
+   "tags": [
+    {
+     "name": "rt",
+     "text": "b",
+     "attrs": {}
+    },
+    {
+     "name": "rp",
+     "text": "(",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<template><p>x</p></template>y",
+   "text": "y",
+   "stripped": "y",
+   "tags": [
+    {
+     "name": "p",
+     "text": "",
+     "attrs": {}
+    },
+    {
+     "name": "template",
+     "text": "x",
+     "attrs": {}
+    }
+   ]
+  },
+  {
+   "html": "<svg><foreignObject>x</foreignObject></svg>",
+   "text": "x",
+   "stripped": "x",
+   "tags": []
+  },
+  {
+   "html": "<P CLASS=a>x</P>",
+   "text": "x",
+   "stripped": "x",
+   "tags": [
+    {
+     "name": "p",
+     "text": "x",
+     "attrs": {}
+    }
+   ]
+  }
+ ]
+}
