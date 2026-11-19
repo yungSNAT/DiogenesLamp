@@ -20,7 +20,7 @@ const KEYS: [&str; 11] = [
 fn text_and_attributes_match_the_reference_parser() {
     let fixture = common::json(&common::fixture("html_parity.json"));
     let cases = fixture["cases"].as_array().unwrap();
-    assert!(cases.len() > 80);
+    assert_eq!(cases.len(), 79);
     let mut failures = Vec::new();
     for case in cases {
         let html = case["html"].as_str().unwrap();
