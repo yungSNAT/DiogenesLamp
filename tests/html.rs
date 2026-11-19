@@ -43,12 +43,12 @@ fn text_and_attributes_match_the_reference_parser() {
         let root = doc.root();
         check(
             "text",
-            Some(&doc.get_text(root, "", false)),
+            Some(doc.get_text(root, "", false).as_str()),
             get(case, "text").as_str(),
         );
         check(
             "stripped",
-            Some(&doc.get_text(root, "|", true)),
+            Some(doc.get_text(root, "|", true).as_str()),
             get(case, "stripped").as_str(),
         );
         for tag in get(case, "tags").as_array().unwrap() {
@@ -59,7 +59,7 @@ fn text_and_attributes_match_the_reference_parser() {
             };
             check(
                 &format!("{name} text"),
-                Some(&doc.get_text(id, "", false)),
+                Some(doc.get_text(id, "", false).as_str()),
                 get(tag, "text").as_str(),
             );
             let Value::Object(attrs) = get(tag, "attrs") else {
