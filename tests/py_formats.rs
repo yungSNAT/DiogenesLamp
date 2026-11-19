@@ -3,51 +3,15 @@
 
 //! The port of Python's `json` gives what CPython gives. Catalogue files
 //! pass through it, so a difference here changes what is stored. The
-//! expected results in `fixtures/py_formats.json` were produced by the
-//! CPython its `generator` field names.
+//! expected results in `fixtures/py_formats.json` were recorded from CPython
+//! by `fixtures/py_parity.py`; its `generator` field names the command.
 mod common;
 
+use common::{Mismatches, get, rows, text};
 use lamp::pyjson::{self, Style, Value};
 
 fn fixture() -> Value {
     common::json(&common::fixture("py_formats.json"))
-}
-
-fn rows<'a>(fixture: &'a Value, key: &str) -> &'a [Value] {
-    let rows = get(fixture, key).as_array().unwrap();
-    assert!(!rows.is_empty(), "{key}");
-    rows
-}
-
-static NULL: Value = Value::Null;
-
-/// `value[key]`, or null where the object lacks it.
-fn get<'a>(value: &'a Value, key: &str) -> &'a Value {
-    value
-        .as_object()
-        .and_then(|map| map.get(key))
-        .unwrap_or(&NULL)
-}
-
-fn text(value: &Value) -> Option<&str> {
-    value.as_str()
-}
-
-/// Collects mismatches so one run reports them all.
-#[derive(Default)]
-struct Mismatches(Vec<String>);
-
-impl Mismatches {
-    fn check<T: PartialEq + std::fmt::Debug>(&mut self, what: &str, input: &str, got: T, want: T) {
-        if got != want {
-            self.0
-                .push(format!("{what} {input:?}: got {got:?}, want {want:?}"));
-        }
-    }
-
-    fn assert_none(self) {
-        assert!(self.0.is_empty(), "{}", self.0.join("\n"));
-    }
 }
 
 #[test]
