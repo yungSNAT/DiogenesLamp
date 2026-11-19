@@ -1,5 +1,5 @@
 {
-"generator": "Python 3.15.0",
+"generator": "Python 3.15.0: py_parity.py repr splitlines int float strip",
 "repr": [
 ["", "''"],
 ["plain", "'plain'"],
