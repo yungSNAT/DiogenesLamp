@@ -96,7 +96,9 @@ pub fn http_date(timestamp: i64) -> String {
 }
 
 /// `email.utils.parsedate_to_datetime`, kept to a UTC timestamp; None for
-/// dates Python ignores or would not compare (non-UTC offsets).
+/// dates Python ignores or would not compare (non-UTC offsets). Where RFC 9110
+/// section 5.6.7 differs, Python wins: a leap second is ignored, and a 2-digit
+/// year of 69 to 99 is 19xx and 00 to 68 is 20xx, not the RFC's 50-year rule.
 fn parse_http_date(text: &str) -> Option<i64> {
     let mut words: Vec<&str> = text.split_whitespace().collect();
     if words
@@ -105,13 +107,24 @@ fn parse_http_date(text: &str) -> Option<i64> {
     {
         words.remove(0);
     }
+    // An RFC 850 date: `06-Nov-94 08:49:37 GMT`.
+    if words.len() == 3 && words[0].split('-').count() == 3 {
+        let date = words[0];
+        words.splice(0..1, date.split('-'));
+    }
     if words.len() < 4 {
         return None;
     }
-    let (day, month, year) = if words[0].chars().all(|c| c.is_ascii_digit()) {
-        (words[0], words[1], words[2])
+    let (day, month) = if words[0].chars().all(|c| c.is_ascii_digit()) {
+        (words[0], words[1])
     } else {
-        (words[1], words[0], words[2])
+        (words[1], words[0])
+    };
+    // An asctime date puts the year after the time: `Nov  6 08:49:37 1994`.
+    let (year, time) = if words[2].contains(':') {
+        (words[3], words[2])
+    } else {
+        (words[2], words[3])
     };
     let month = [
         "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
@@ -124,16 +137,14 @@ fn parse_http_date(text: &str) -> Option<i64> {
     if year < 100 {
         year += if year > 68 { 1900 } else { 2000 };
     }
-    let time: Vec<i64> = words[3]
-        .split(':')
-        .map(|p| p.parse().unwrap_or(-1))
-        .collect();
+    let time: Vec<i64> = time.split(':').map(|p| p.parse().unwrap_or(-1)).collect();
     let (h, mi, s) = match time.as_slice() {
         [h, m] => (*h, *m, 0),
         [h, m, s] => (*h, *m, *s),
         _ => return None,
     };
-    if h < 0 || mi < 0 || s < 0 {
+    // Python's datetime refuses a leap second, which RFC 9110 allows.
+    if !(0..24).contains(&h) || !(0..60).contains(&mi) || !(0..60).contains(&s) {
         return None;
     }
     match words.get(4).map(|z| z.to_uppercase()) {
@@ -800,5 +811,72 @@ mod tests {
         assert_eq!(guess_type("x/noext"), "application/octet-stream");
         assert_eq!(posix_normpath("/data/../x"), "/x");
         assert_eq!(posix_normpath("/../x"), "/x");
+    }
+
+    const NOV_6_1994: i64 = 784_111_777;
+
+    // RFC 9110 section 5.6.7: a recipient must accept all 3 HTTP-date formats.
+    #[test]
+    fn rfc850_dates_are_read() {
+        assert_eq!(
+            parse_http_date("Sunday, 06-Nov-94 08:49:37 GMT"),
+            Some(NOV_6_1994)
+        );
+    }
+
+    #[test]
+    fn asctime_dates_are_read() {
+        assert_eq!(
+            parse_http_date("Sun Nov  6 08:49:37 1994"),
+            Some(NOV_6_1994)
+        );
+    }
+
+    // Section 13.1.3: a value that is not a valid HTTP-date is ignored.
+    #[test]
+    fn times_out_of_range_are_ignored() {
+        for text in [
+            "Sun, 06 Nov 1994 25:49:37 GMT",
+            "Sun, 06 Nov 1994 24:00:00 GMT",
+            "Sun, 06 Nov 1994 08:60:37 GMT",
+            "Sun, 06 Nov 1994 08:49:60 GMT",
+        ] {
+            assert_eq!(parse_http_date(text), None, "{text}");
+        }
+    }
+
+    // What CPython 3.15's http.server compares a file's mtime against.
+    #[test]
+    fn other_forms_match_http_server() {
+        for (text, expected) in [
+            ("Sun, 06 Nov 1994 08:49:37 GMT", Some(NOV_6_1994)),
+            ("Sunday, 06 Nov 1994 08:49:37 GMT", Some(NOV_6_1994)),
+            ("06 Nov 1994 08:49:37 GMT", Some(NOV_6_1994)),
+            ("06 Nov 1994 08:49:37", Some(NOV_6_1994)),
+            ("06 Nov 1994 08:49", Some(784_111_740)),
+            ("Sun, 06 Nov 94 08:49:37 GMT", Some(NOV_6_1994)),
+            ("Sun, 06 Nov 69 08:49:37 GMT", Some(-4_806_623)),
+            ("Sun, 06 Nov 68 08:49:37 GMT", Some(3_119_417_377)),
+            ("Sun, Nov 06 1994 08:49:37 GMT", Some(NOV_6_1994)),
+            ("Sun, 06 november 1994 08:49:37 UT", Some(NOV_6_1994)),
+            ("Sun, 06 Nov 1994 08:49:37 UTC", Some(NOV_6_1994)),
+            ("Sun, 06 Nov 1994 08:49:37 Z", Some(NOV_6_1994)),
+            ("Sun, 06 Nov 1994 08:49:37 +0000", Some(NOV_6_1994)),
+            ("Sun, 06 Nov 1994 08:49:37 -0000", Some(NOV_6_1994)),
+            ("Sun, 06 Nov 1994 08:49:37 gmt", Some(NOV_6_1994)),
+            ("Sun, 06 Nov 1994 08:49:37 +0100", None),
+            ("Sun, 06 Nov 1994 08:49:37 EST", None),
+            ("Sun, 06 Nov 1994", None),
+            ("Sun, 06 Nov 1994 08:49:x GMT", None),
+            ("Sun, 06 Nov 1994 08 GMT", None),
+            ("Sun, 06 Nov 1994 08:-1:37 GMT", None),
+            ("Sun, 06 Foo 1994 08:49:37 GMT", None),
+            ("Sun, xx Nov 1994 08:49:37 GMT", None),
+            ("Sun, 31 Feb 1994 08:49:37 GMT", None),
+            ("garbage", None),
+            ("", None),
+        ] {
+            assert_eq!(parse_http_date(text), expected, "{text}");
+        }
     }
 }
