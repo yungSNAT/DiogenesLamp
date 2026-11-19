@@ -149,3 +149,55 @@ pub fn run_node(script: &str, input: &str) -> String {
     );
     String::from_utf8_lossy(&output.stdout).into_owned()
 }
+
+/// The rows of a parity fixture's group; an empty group fails.
+pub fn rows<'a>(fixture: &'a Value, key: &str) -> &'a [Value] {
+    let rows = get(fixture, key).as_array().unwrap();
+    assert!(!rows.is_empty(), "{key}");
+    rows
+}
+
+static NULL: Value = Value::Null;
+
+/// `value[key]`, or null where the object lacks it.
+pub fn get<'a>(value: &'a Value, key: &str) -> &'a Value {
+    value
+        .as_object()
+        .and_then(|map| map.get(key))
+        .unwrap_or(&NULL)
+}
+
+pub fn text(value: &Value) -> Option<&str> {
+    value.as_str()
+}
+
+/// A fixture value as `str()` gives it, or `None` for null.
+pub fn option(value: &Value) -> Option<String> {
+    match value {
+        Value::Null => None,
+        other => Some(other.py_str()),
+    }
+}
+
+/// Collects mismatches so one run reports them all.
+#[derive(Default)]
+pub struct Mismatches(Vec<String>);
+
+impl Mismatches {
+    pub fn check<T: PartialEq + std::fmt::Debug>(
+        &mut self,
+        what: &str,
+        input: &str,
+        got: T,
+        want: T,
+    ) {
+        if got != want {
+            self.0
+                .push(format!("{what} {input:?}: got {got:?}, want {want:?}"));
+        }
+    }
+
+    pub fn assert_none(self) {
+        assert!(self.0.is_empty(), "{}", self.0.join("\n"));
+    }
+}
