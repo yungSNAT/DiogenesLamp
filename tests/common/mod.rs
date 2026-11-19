@@ -82,14 +82,18 @@ pub fn encode(image: &image::DynamicImage, format: image::ImageFormat) -> Vec<u8
     out
 }
 
-/// A JPEG carrying an EXIF orientation tag (APP1 inserted after SOI).
+/// A solid red JPEG carrying an EXIF orientation tag.
 pub fn jpeg_with_orientation(width: u32, height: u32, orientation: u16) -> Vec<u8> {
     let image = image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
         width,
         height,
         image::Rgb([200, 20, 20]),
     ));
-    let jpeg = encode(&image, image::ImageFormat::Jpeg);
+    with_orientation(&encode(&image, image::ImageFormat::Jpeg), orientation)
+}
+
+/// `jpeg` with an EXIF orientation tag (APP1 inserted after SOI).
+pub fn with_orientation(jpeg: &[u8], orientation: u16) -> Vec<u8> {
     let mut tiff = Vec::new();
     tiff.extend_from_slice(b"MM\x00\x2a\x00\x00\x00\x08");
     tiff.extend_from_slice(&1u16.to_be_bytes());
