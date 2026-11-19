@@ -1126,7 +1126,9 @@ fn export_site_refuses_a_file_target_and_an_oversized_alias_list() {
     catalogue(&root);
     let target = dir.path().join("site");
     write(&target, "a file");
-    let error = lamp::maintenance::export_site(&root, &target).unwrap_err();
+    let Err(error) = lamp::maintenance::export_site(&root, &target) else {
+        panic!("a file target was accepted");
+    };
     assert!(matches!(error, lamp::errors::Error::Os(_)), "{error:?}");
     assert_eq!(common::read(&target), "a file");
 
@@ -1135,7 +1137,9 @@ fn export_site_refuses_a_file_target_and_an_oversized_alias_list() {
         lamp::maintenance::MAX_METADATA_BYTES + 1,
     );
     let site = dir.path().join("site2");
-    let error = lamp::maintenance::export_site(&root, &site).unwrap_err();
+    let Err(error) = lamp::maintenance::export_site(&root, &site) else {
+        panic!("an oversized alias list was accepted");
+    };
     assert_eq!(error.to_string(), "aliases.json exceeds 256 MB");
     assert!(!site.exists());
 }
