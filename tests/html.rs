@@ -7,6 +7,7 @@
 //! `fixtures/html_parity.py`; the file's `generator` field names the versions.
 mod common;
 
+use common::get;
 use lamp::html::parse;
 use lamp::pyjson::Value;
 
@@ -15,16 +16,6 @@ use lamp::pyjson::Value;
 const KEYS: [&str; 11] = [
     "title", "b", "c", "d", "e", "f", "y", "=", "==x", "/", "class",
 ];
-
-static NULL: Value = Value::Null;
-
-/// `value[key]`, or null where the object lacks it.
-fn get<'a>(value: &'a Value, key: &str) -> &'a Value {
-    value
-        .as_object()
-        .and_then(|map| map.get(key))
-        .unwrap_or(&NULL)
-}
 
 #[test]
 fn text_and_attributes_match_the_reference_parser() {
