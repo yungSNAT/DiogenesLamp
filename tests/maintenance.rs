@@ -1024,7 +1024,13 @@ fn snapshot_refuses_a_snapshots_link_out_of_the_data_directory() {
 fn restore_refuses_oversized_corrupt_or_indexless_snapshots() {
     let dir = common::tmp();
     catalogue(dir.path());
-    let before = tree(dir.path());
+    // The catalogue lock file restore takes is not metadata.
+    let metadata = |root: &Path| {
+        let mut files = tree(root);
+        files.retain(|(path, _)| path.file_name() != Some(std::ffi::OsStr::new(".lamp.lock")));
+        files
+    };
+    let before = metadata(dir.path());
     let index = std::fs::read(dir.path().join("index.json")).unwrap();
     let shard = std::fs::read(dir.path().join("catalog/example.json")).unwrap();
     let scratch = common::tmp();
@@ -1063,7 +1069,7 @@ fn restore_refuses_oversized_corrupt_or_indexless_snapshots() {
     assert!(matches!(error, lamp::errors::Error::BadZip(_)), "{error:?}");
     assert_eq!(error.to_string(), "Bad CRC-32 for file 'index.json'");
 
-    assert_eq!(before, tree(dir.path()));
+    assert_eq!(before, metadata(dir.path()));
 }
 
 #[test]
@@ -1102,7 +1108,7 @@ fn an_oversized_cover_is_reported_and_left_unprepared() {
     );
     sized(&root.join("thumbs/one/1.jpg"), 8 * 1024 * 1024 + 1);
     let result = prepare_covers(root, 9).unwrap();
-    assert_eq!(result["errors"].py_str(), "['1: cover exceeds 8 MB']");
+    assert_eq!(result["errors"].py_str(), r#"["1: cover exceeds 8 MB"]"#);
     assert!(matches!(result["processed"], Value::Int(1)));
     assert!(matches!(result["missing_covers"], Value::Int(0)));
     let shard = read_json(&root.join("catalog/one.json"));
@@ -1159,8 +1165,8 @@ fn export_site_without_aliases_or_covers_copies_the_metadata() {
     let made = lamp::maintenance::export_site(&root, &site).unwrap();
     assert_eq!((made.sellers, made.covers, made.missing_covers), (1, 0, 0));
     assert_eq!(
-        std::fs::read(site.join("catalog/one.json")).unwrap(),
+        std::fs::read(site.join("data/catalog/one.json")).unwrap(),
         std::fs::read(root.join("catalog/one.json")).unwrap()
     );
-    assert!(!site.join("aliases.json").exists());
+    assert!(!site.join("data/aliases.json").exists());
 }
