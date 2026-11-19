@@ -11,7 +11,6 @@ use std::path::Path;
 use image::metadata::Orientation;
 use image::{DynamicImage, GrayImage, ImageFormat, Luma};
 use lamp::covers::{COVER_EDGE, cover_facts, image_hash, open, resize_cover};
-use lamp::pyjson::Value;
 
 /// 9 columns by 8 rows of greys; no two horizontal neighbours are equal and
 /// no flip or rotation maps the table onto itself.
@@ -191,7 +190,7 @@ fn files_that_cannot_be_fingerprinted_say_why() {
     );
     // The digest still records the bytes; the fingerprint stays empty.
     assert_eq!(cover_facts(&path)["cover_hash"].py_str(), "");
-    assert!(matches!(cover_facts(&path)["thumb_version"], Value::Str(_)));
+    assert_eq!(cover_facts(&path)["thumb_version"].py_str().len(), 24);
 
     let text = save(&dir.path().join("note.jpg"), b"not an image");
     let facts = cover_facts(&text);
