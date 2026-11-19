@@ -876,3 +876,287 @@ fn cover_limit_preserves_validation_of_later_shards() {
     }
     assert!(!dir.path().join("snapshots").exists());
 }
+
+/// An album record for seller `seller` with cover path `thumb`.
+fn album_json(id: &str, seller: &str, thumb: &str) -> String {
+    format!(
+        r#"{{"id": "{id}", "seller": "{seller}", "title": "Item {id}", "price": 10, "thumb": "{thumb}",
+            "album_url": "https://{seller}.x.yupoo.com/albums/{id}", "links": []}}"#
+    )
+}
+
+fn write_shard_json(root: &Path, seller: &str, albums: &[String]) {
+    atomic_write_json(
+        &root.join(format!("catalog/{seller}.json")),
+        &json(&format!(
+            r#"{{"seller": "{seller}", "albums": [{}]}}"#,
+            albums.join(",")
+        )),
+    )
+    .unwrap();
+}
+
+fn issues(root: &Path) -> Vec<String> {
+    diagnose(root)["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(Value::py_str)
+        .collect()
+}
+
+#[test]
+fn doctor_reports_an_index_that_disagrees_with_its_shards() {
+    let dir = common::tmp();
+    let root = dir.path();
+    // `one` lists an album its shard lacks and the wrong count; `two` repeats
+    // an ID `one` holds.
+    atomic_write_json(
+        &root.join("index.json"),
+        &json(
+            r#"{"sellers": [
+                {"id": "one", "shard": "catalog/one.json", "album_ids": ["1", "9"], "album_count": 5},
+                {"id": "two", "shard": "catalog/two.json", "album_count": 1}]}"#,
+        ),
+    )
+    .unwrap();
+    write_shard_json(root, "one", &[album_json("1", "one", "")]);
+    write_shard_json(root, "two", &[album_json("1", "two", "")]);
+    assert_eq!(
+        issues(root),
+        [
+            "catalog/one.json: indexed album missing from shard",
+            "catalog/one.json: index count differs from shard",
+            "catalog/two.json: duplicate album ID across shards: 1",
+        ]
+    );
+
+    // A selected album whose host is not canonical cannot stay selected.
+    let dir = common::tmp();
+    let root = dir.path();
+    atomic_write_json(
+        &root.join("index.json"),
+        &json(
+            r#"{"selection_version": 1, "sellers": [
+                {"id": "three", "shard": "catalog/three.json", "album_ids": ["3"], "album_count": 1}]}"#,
+        ),
+    )
+    .unwrap();
+    let wild = album_json("3", "three", "")
+        .replace("https://three.x.yupoo.com", "https://*.three.x.yupoo.com");
+    write_shard_json(root, "three", &[wild]);
+    assert_eq!(
+        issues(root),
+        ["catalog/three.json: selected album is inadmissible: 3"]
+    );
+    assert!(matches!(diagnose(root)["unadmitted"], Value::Int(1)));
+}
+
+#[test]
+fn doctor_counts_failed_detail_pages_from_the_run_summary() {
+    let dir = common::tmp();
+    catalogue(dir.path());
+    atomic_write_json(
+        &dir.path().join("runs/example.json"),
+        &json(r#"{"failed_ids": ["123", "456"]}"#),
+    )
+    .unwrap();
+    let result = diagnose(dir.path());
+    assert_eq!(result["issues"].py_str(), "[]");
+    assert!(matches!(result["detail_failures"], Value::Int(2)));
+}
+
+/// A file of `len` bytes without writing them (sparse where the system allows).
+fn sized(path: &Path, len: u64) {
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::File::create(path).unwrap().set_len(len).unwrap();
+}
+
+#[test]
+fn metadata_beyond_the_size_and_file_limits_is_refused_before_reading() {
+    let dir = common::tmp();
+    let root = dir.path();
+    let big = root.join("catalog/big.json");
+    sized(&big, lamp::maintenance::MAX_METADATA_BYTES + 1);
+    let error = lamp::maintenance::read_metadata(&big, "catalog/big.json").unwrap_err();
+    assert_eq!(error.to_string(), "metadata file exceeds 256 MB");
+    let error = lamp::maintenance::metadata_files(root).unwrap_err();
+    assert_eq!(error.to_string(), "metadata exceeds 256 MB");
+
+    let dir = common::tmp();
+    let runs = dir.path().join("runs");
+    std::fs::create_dir_all(&runs).unwrap();
+    for i in 0..=lamp::maintenance::MAX_METADATA_FILES {
+        std::fs::File::create(runs.join(format!("s{i}.json"))).unwrap();
+    }
+    let error = lamp::maintenance::metadata_files(dir.path()).unwrap_err();
+    assert_eq!(error.to_string(), "too many metadata files");
+}
+
+#[test]
+fn snapshot_refuses_a_snapshots_entry_that_is_not_a_folder() {
+    let dir = common::tmp();
+    catalogue(dir.path());
+    write(&dir.path().join("snapshots"), "not a folder");
+    let error = snapshot(dir.path()).unwrap_err();
+    assert!(matches!(error, lamp::errors::Error::Os(_)), "{error:?}");
+    assert_eq!(common::read(&dir.path().join("snapshots")), "not a folder");
+}
+
+#[cfg(unix)]
+#[test]
+fn snapshot_refuses_a_snapshots_link_out_of_the_data_directory() {
+    let dir = common::tmp();
+    let root = dir.path().join("data");
+    let outside = dir.path().join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    catalogue(&root);
+    std::os::unix::fs::symlink(&outside, root.join("snapshots")).unwrap();
+    let error = snapshot(&root).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "snapshot directory escapes data directory"
+    );
+    assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 0);
+}
+
+#[test]
+fn restore_refuses_oversized_corrupt_or_indexless_snapshots() {
+    let dir = common::tmp();
+    catalogue(dir.path());
+    let before = tree(dir.path());
+    let index = std::fs::read(dir.path().join("index.json")).unwrap();
+    let shard = std::fs::read(dir.path().join("catalog/example.json")).unwrap();
+    let scratch = common::tmp();
+
+    let many = scratch.path().join("many.zip");
+    let names: Vec<String> = (0..=lamp::maintenance::MAX_METADATA_FILES)
+        .map(|i| format!("runs/s{i}.json"))
+        .collect();
+    let members: Vec<(&str, Vec<u8>)> =
+        names.iter().map(|n| (n.as_str(), b"{}".to_vec())).collect();
+    make_zip(&many, &members);
+    let error = restore(dir.path(), &many).unwrap_err();
+    assert_eq!(error.to_string(), "snapshot exceeds recovery limits");
+
+    let indexless = scratch.path().join("indexless.zip");
+    make_zip(&indexless, &[("catalog/example.json", shard)]);
+    let error = restore(dir.path(), &indexless).unwrap_err();
+    assert_eq!(error.to_string(), "snapshot has no index");
+
+    // A stored member whose bytes no longer match its CRC-32.
+    let corrupt = scratch.path().join("corrupt.zip");
+    let mut writer = zip::ZipWriter::new(std::fs::File::create(&corrupt).unwrap());
+    let stored =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    writer.start_file("index.json", stored).unwrap();
+    writer.write_all(&index).unwrap();
+    writer.finish().unwrap();
+    let mut bytes = std::fs::read(&corrupt).unwrap();
+    let at = bytes
+        .windows(index.len())
+        .position(|w| w == index.as_slice())
+        .unwrap();
+    bytes[at + index.len() - 2] ^= 0x01;
+    std::fs::write(&corrupt, bytes).unwrap();
+    let error = restore(dir.path(), &corrupt).unwrap_err();
+    assert!(matches!(error, lamp::errors::Error::BadZip(_)), "{error:?}");
+    assert_eq!(error.to_string(), "Bad CRC-32 for file 'index.json'");
+
+    assert_eq!(before, tree(dir.path()));
+}
+
+#[test]
+fn restore_into_an_empty_data_directory_keeps_no_previous_snapshot() {
+    let source = common::tmp();
+    catalogue(source.path());
+    let archive = snapshot(source.path()).unwrap();
+    let empty = common::tmp();
+    assert_eq!(restore(empty.path(), &archive).unwrap(), None);
+    for name in ["index.json", "catalog/example.json"] {
+        assert_eq!(
+            std::fs::read(empty.path().join(name)).unwrap(),
+            std::fs::read(source.path().join(name)).unwrap(),
+            "{name}"
+        );
+    }
+    assert!(!empty.path().join("snapshots").exists());
+}
+
+#[test]
+fn an_oversized_cover_is_reported_and_left_unprepared() {
+    let dir = common::tmp();
+    let root = dir.path();
+    atomic_write_json(
+        &root.join("index.json"),
+        &json(r#"{"sellers": [{"id": "one", "shard": "catalog/one.json", "album_count": 2}]}"#),
+    )
+    .unwrap();
+    write_shard_json(
+        root,
+        "one",
+        &[
+            album_json("1", "one", "thumbs/one/1.jpg"),
+            album_json("2", "one", ""),
+        ],
+    );
+    sized(&root.join("thumbs/one/1.jpg"), 8 * 1024 * 1024 + 1);
+    let result = prepare_covers(root, 9).unwrap();
+    assert_eq!(result["errors"].py_str(), "['1: cover exceeds 8 MB']");
+    assert!(matches!(result["processed"], Value::Int(1)));
+    assert!(matches!(result["missing_covers"], Value::Int(0)));
+    let shard = read_json(&root.join("catalog/one.json"));
+    for album in obj(&shard)["albums"].as_array().unwrap() {
+        assert!(!obj(album).contains_key("cover_prepared"));
+    }
+}
+
+#[test]
+fn export_refuses_a_bad_since_date() {
+    let dir = common::tmp();
+    catalogue(dir.path());
+    let error = lamp::maintenance::export_rows(dir.path(), Some("2026-13-01")).unwrap_err();
+    assert_eq!(error.to_string(), "not a date: 2026-13-01");
+}
+
+#[test]
+fn export_site_refuses_a_file_target_and_an_oversized_alias_list() {
+    let dir = common::tmp();
+    let root = dir.path().join("data");
+    catalogue(&root);
+    let target = dir.path().join("site");
+    write(&target, "a file");
+    let error = lamp::maintenance::export_site(&root, &target).unwrap_err();
+    assert!(matches!(error, lamp::errors::Error::Os(_)), "{error:?}");
+    assert_eq!(common::read(&target), "a file");
+
+    sized(
+        &root.join("aliases.json"),
+        lamp::maintenance::MAX_METADATA_BYTES + 1,
+    );
+    let site = dir.path().join("site2");
+    let error = lamp::maintenance::export_site(&root, &site).unwrap_err();
+    assert_eq!(error.to_string(), "aliases.json exceeds 256 MB");
+    assert!(!site.exists());
+}
+
+#[test]
+fn export_site_without_aliases_or_covers_copies_the_metadata() {
+    let dir = common::tmp();
+    let root = dir.path().join("data");
+    std::fs::create_dir_all(&root).unwrap();
+    atomic_write_json(
+        &root.join("index.json"),
+        &json(r#"{"sellers": [{"id": "one", "shard": "catalog/one.json", "album_count": 1}]}"#),
+    )
+    .unwrap();
+    write_shard_json(&root, "one", &[album_json("1", "one", "")]);
+    let site = dir.path().join("site");
+    let made = lamp::maintenance::export_site(&root, &site).unwrap();
+    assert_eq!((made.sellers, made.covers, made.missing_covers), (1, 0, 0));
+    assert_eq!(
+        std::fs::read(site.join("catalog/one.json")).unwrap(),
+        std::fs::read(root.join("catalog/one.json")).unwrap()
+    );
+    assert!(!site.join("aliases.json").exists());
+}
