@@ -196,11 +196,17 @@ fn strip_digit_underscores(s: &str) -> Option<String> {
     Some(out)
 }
 
+/// What `int()` and `float()` strip once Unicode spaces are ' ': `Py_ISSPACE`,
+/// the ASCII whitespace other than the `\x1c`-`\x1f` separators.
+fn trim_ascii_space(s: &str) -> &str {
+    s.trim_matches([' ', '\t', '\n', '\x0b', '\x0c', '\r'])
+}
+
 /// The value `int(text)` gives, saturated to the i128 range; `None` where
 /// `int()` raises ValueError (including Python's 4300-digit limit).
 pub fn parse_int(text: &str) -> Option<i128> {
     let text = transform_decimal_and_space(text);
-    let body = text.trim_matches(' ');
+    let body = trim_ascii_space(&text);
     let (negative, digits) = match body.as_bytes().first() {
         Some(b'-') => (true, &body[1..]),
         Some(b'+') => (false, &body[1..]),
@@ -210,7 +216,8 @@ pub fn parse_int(text: &str) -> Option<i128> {
         return None;
     }
     let digits = strip_digit_underscores(digits)?;
-    if digits.trim_start_matches('0').len() > 4300 {
+    // Leading zeros count towards the limit, as they do in CPython.
+    if digits.len() > 4300 {
         return None;
     }
     let mut value: i128 = 0;
@@ -225,7 +232,7 @@ pub fn parse_int(text: &str) -> Option<i128> {
 /// `float(text)`; `None` where Python raises ValueError.
 pub fn parse_float(text: &str) -> Option<f64> {
     let text = transform_decimal_and_space(text);
-    let body = text.trim_matches(' ');
+    let body = trim_ascii_space(&text);
     let unsigned = body.strip_prefix(['+', '-']).unwrap_or(body);
     let lower = unsigned.to_ascii_lowercase();
     if matches!(lower.as_str(), "inf" | "infinity" | "nan") {
