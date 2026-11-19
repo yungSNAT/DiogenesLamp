@@ -510,7 +510,7 @@ fn hand_edited_values_load_as_their_toml_types() {
     let loaded = load_sources(&path).unwrap();
     let odd = &loaded["shop:odd"];
     assert_eq!(odd.name.py_str(), "7");
-    assert_eq!(odd.platform.py_str(), "[1.5, '1979-05-27', {'a': True}]");
+    assert_eq!(odd.platform.py_str(), r#"[1.5, "1979-05-27", {"a": true}]"#);
 }
 
 #[test]
