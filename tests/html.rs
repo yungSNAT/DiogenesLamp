@@ -16,14 +16,24 @@ const KEYS: [&str; 11] = [
     "title", "b", "c", "d", "e", "f", "y", "=", "==x", "/", "class",
 ];
 
+static NULL: Value = Value::Null;
+
+/// `value[key]`, or null where the object lacks it.
+fn get<'a>(value: &'a Value, key: &str) -> &'a Value {
+    value
+        .as_object()
+        .and_then(|map| map.get(key))
+        .unwrap_or(&NULL)
+}
+
 #[test]
 fn text_and_attributes_match_the_reference_parser() {
-    let fixture = common::json(&common::fixture("html_parity.json"));
-    let cases = fixture["cases"].as_array().unwrap();
+    let fixture = &common::json(&common::fixture("html_parity.json"));
+    let cases = get(fixture, "cases").as_array().unwrap();
     assert_eq!(cases.len(), 79);
     let mut failures = Vec::new();
     for case in cases {
-        let html = case["html"].as_str().unwrap();
+        let html = get(case, "html").as_str().unwrap();
         let doc = parse(html);
         let mut check = |what: &str, got: Option<&str>, want: Option<&str>| {
             if got != want {
@@ -34,15 +44,15 @@ fn text_and_attributes_match_the_reference_parser() {
         check(
             "text",
             Some(&doc.get_text(root, "", false)),
-            case["text"].as_str(),
+            get(case, "text").as_str(),
         );
         check(
             "stripped",
             Some(&doc.get_text(root, "|", true)),
-            case["stripped"].as_str(),
+            get(case, "stripped").as_str(),
         );
-        for tag in case["tags"].as_array().unwrap() {
-            let name = tag["name"].as_str().unwrap();
+        for tag in get(case, "tags").as_array().unwrap() {
+            let name = get(tag, "name").as_str().unwrap();
             let Some(id) = doc.select_one(root, name) else {
                 check(name, None, Some("an element"));
                 continue;
@@ -50,9 +60,9 @@ fn text_and_attributes_match_the_reference_parser() {
             check(
                 &format!("{name} text"),
                 Some(&doc.get_text(id, "", false)),
-                tag["text"].as_str(),
+                get(tag, "text").as_str(),
             );
-            let Value::Object(attrs) = &tag["attrs"] else {
+            let Value::Object(attrs) = get(tag, "attrs") else {
                 panic!("attrs");
             };
             for key in KEYS {
