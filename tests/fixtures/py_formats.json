@@ -1,5 +1,5 @@
 {
-"generator": "Python 3.15.0",
+"generator": "Python 3.15.0: py_parity.py json json_pairs urlsplit urlunsplit urljoin unquote quote parse_qsl iso",
 "json": [
 {"in": "null", "default": "null", "compact": "null", "indent": "null", "truthy": false},
 {"in": "true", "default": "true", "compact": "true", "indent": "true", "truthy": true},
@@ -20,8 +20,8 @@
 {"in": "\"a\\\"b\\\\c\\/d\\be\\ff\\ng\\rh\\ti\"", "default": "\"a\\\"b\\\\c/d\\be\\ff\\ng\\rh\\ti\"", "compact": "\"a\\\"b\\\\c/d\\be\\ff\\ng\\rh\\ti\"", "indent": "\"a\\\"b\\\\c/d\\be\\ff\\ng\\rh\\ti\"", "truthy": true},
 {"in": "\"\\u00e9\\u4e2d\"", "default": "\"\u00e9\u4e2d\"", "compact": "\"\u00e9\u4e2d\"", "indent": "\"\u00e9\u4e2d\"", "truthy": true},
 {"in": "\"\\ud83d\\ude00\"", "default": "\"\ud83d\ude00\"", "compact": "\"\ud83d\ude00\"", "indent": "\"\ud83d\ude00\"", "truthy": true},
-{"in": "\"\\ud83d\\u0041\"", "lone_surrogate": true},
-{"in": "\"\\ud83dx\"", "lone_surrogate": true},
+{"in": "\"\\ud83d\\u0041\"", "differs_from_cpython": "CPython keeps the lone surrogate; the port refuses it"},
+{"in": "\"\\ud83dx\"", "differs_from_cpython": "CPython keeps the lone surrogate; the port refuses it"},
 {"in": "\"\\uZZZZ\"", "error": "Invalid \\uXXXX escape: line 1 column 3 (char 2)"},
 {"in": "\"\\u12\"", "error": "Invalid \\uXXXX escape: line 1 column 3 (char 2)"},
 {"in": "\"\\ud83d\\uZZZZ\"", "error": "Invalid \\uXXXX escape: line 1 column 9 (char 8)"},

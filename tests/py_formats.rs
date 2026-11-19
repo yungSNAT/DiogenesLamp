@@ -57,9 +57,11 @@ fn json_matches_python() {
     let fixture = fixture();
     let mut m = Mismatches::default();
     for case in rows(&fixture, "json") {
-        let input = text(&get(case, "in")).unwrap();
+        let input = text(get(case, "in")).unwrap();
         let loaded = pyjson::loads(input);
-        if case.as_object().unwrap().contains_key("lone_surrogate") {
+        // A deliberate difference: CPython keeps a lone surrogate, which a Rust
+        // string cannot hold, so the port refuses the document instead.
+        if case.as_object().unwrap().contains_key("differs_from_cpython") {
             let error = loaded.map(|_| ()).unwrap_err().0;
             m.check(
                 "lone surrogate",
@@ -69,7 +71,7 @@ fn json_matches_python() {
             );
             continue;
         }
-        match (loaded, text(&get(case, "error"))) {
+        match (loaded, text(get(case, "error"))) {
             (Err(error), want) => m.check("error", input, Some(error.0.as_str()), want),
             (Ok(value), Some(want)) => m.check("accepted", input, value.py_str(), want.into()),
             (Ok(value), None) => {
@@ -128,8 +130,8 @@ fn urllib_parse_matches_python() {
     let fixture = fixture();
     let mut m = Mismatches::default();
     for case in rows(&fixture, "urlsplit") {
-        let input = text(&get(case, "in")).unwrap();
-        let split = match (pyurl::urlsplit(input), text(&get(case, "error"))) {
+        let input = text(get(case, "in")).unwrap();
+        let split = match (pyurl::urlsplit(input), text(get(case, "error"))) {
             (Err(error), want) => {
                 m.check("urlsplit error", input, Some(error.as_str()), want);
                 continue;
@@ -160,24 +162,24 @@ fn urllib_parse_matches_python() {
             "hostname",
             input,
             split.hostname(),
-            option(&get(case, "hostname")),
+            option(get(case, "hostname")),
         );
         m.check(
             "username",
             input,
             split.username(),
-            option(&get(case, "username")),
+            option(get(case, "username")),
         );
         m.check(
             "password",
             input,
             split.password(),
-            option(&get(case, "password")),
+            option(get(case, "password")),
         );
         let port = split.port().map(|p| p.map(|p| p.to_string()));
-        let want = match text(&get(case, "port_error")) {
+        let want = match text(get(case, "port_error")) {
             Some(error) => Err(error.to_string()),
-            None => Ok(option(&get(case, "port"))),
+            None => Ok(option(get(case, "port"))),
         };
         m.check("port", input, port, want);
     }
@@ -252,14 +254,14 @@ fn isoformat_parsing_matches_python() {
     let fixture = fixture();
     let mut m = Mismatches::default();
     for case in rows(&fixture, "iso") {
-        let input = text(&get(case, "in")).unwrap();
+        let input = text(get(case, "in")).unwrap();
         m.check(
             "date",
             input,
             isodate::parse_date(input).map(|d| d.ordinal),
-            int(&get(case, "date")),
+            int(get(case, "date")),
         );
-        let want = match &get(case, "datetime") {
+        let want = match get(case, "datetime") {
             Value::Array(pair) => Some((int(&pair[0]).unwrap(), int(&pair[1]))),
             _ => None,
         };
