@@ -61,7 +61,11 @@ fn json_matches_python() {
         let loaded = pyjson::loads(input);
         // A deliberate difference: CPython keeps a lone surrogate, which a Rust
         // string cannot hold, so the port refuses the document instead.
-        if case.as_object().unwrap().contains_key("differs_from_cpython") {
+        if case
+            .as_object()
+            .unwrap()
+            .contains_key("differs_from_cpython")
+        {
             let error = loaded.map(|_| ()).unwrap_err().0;
             m.check(
                 "lone surrogate",
@@ -239,3 +243,4 @@ fn urllib_parse_matches_python() {
         m.check("parse_qsl", input, pyurl::parse_qsl(input), want);
     }
     m.assert_none();
+}
