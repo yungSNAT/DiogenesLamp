@@ -98,6 +98,10 @@
   scrape no longer reads each seller's shard twice to write it. `lamp
   reindex` over 400 sellers of 200 albums took 2.3 to 2.5 s instead of 7.6 to
   10.0 s, with the same `index.json`.
+- Number arguments accept the tabs, newlines and other ASCII whitespace
+  around the number that Python's `int()` and `float()` accept; before, only
+  spaces were stripped and such values were refused. Leading zeros now count
+  towards the 4300-digit limit, as in Python.
 
 ## 0.1.2 (2026-11-13)
 
