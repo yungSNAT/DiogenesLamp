@@ -449,3 +449,97 @@ fn colliding_slugs_are_reported() {
     assert_eq!(report.yupoo_new, 1);
     assert!(report.collisions.is_empty());
 }
+
+#[test]
+fn classify_edge_rows_give_stable_ids_or_none() {
+    let id = |raw: &str| classify_url(raw).map(|s| s.id);
+    // Hyphens already in a host do not double up in its id.
+    assert_eq!(id("https://a--b.com/").as_deref(), Some("a-b-com"));
+    // `;params` are not part of a shortlink's code.
+    assert_eq!(
+        id("https://k.youshop10.com/abc;jsessionid=1").as_deref(),
+        Some("youshop-abc")
+    );
+    assert_eq!(id("https://k.youshop10.com/"), None);
+    assert_eq!(id("https://.x.yupoo.com/"), None);
+    assert_eq!(id("\""), None);
+    let home = classify_url("https://vlink.cc/").unwrap();
+    assert_eq!(home.id, "vlink-home");
+    assert_eq!(home.name.py_str(), "vlink/");
+}
+
+#[test]
+fn new_shops_are_counted_by_platform() {
+    let (_, report) = merge_sources(
+        &Sources::new(),
+        &rows(&[
+            "https://shop1.taobao.com",
+            "https://shop2.taobao.com",
+            "https://example.com",
+        ]),
+    );
+    assert_eq!(report.shops_new, 3);
+    assert_eq!(
+        report.shops_by_platform,
+        [("taobao".to_string(), 2), ("web".to_string(), 1)]
+    );
+}
+
+#[test]
+fn sources_written_to_a_name_without_a_suffix_replace_it_whole() {
+    let dir = common::tmp();
+    let path = dir.path().join("sources");
+    let (merged, _) = merge_sources(&Sources::new(), &rows(&["https://kept.x.yupoo.com"]));
+    write_sources(&path, &merged).unwrap();
+    assert_eq!(load_sources(&path).unwrap(), merged);
+    let names: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    assert_eq!(names, [std::ffi::OsString::from("sources")]);
+}
+
+#[test]
+fn hand_edited_values_load_as_their_toml_types() {
+    let dir = common::tmp();
+    let path = dir.path().join("sources.toml");
+    common::write(
+        &path,
+        "[shops.odd]\nurl = \"https://odd.com\"\nname = 7\nplatform = [1.5, 1979-05-27, { a = true }]\n",
+    );
+    let loaded = load_sources(&path).unwrap();
+    let odd = &loaded["shop:odd"];
+    assert_eq!(odd.name.py_str(), "7");
+    assert_eq!(odd.platform.py_str(), "[1.5, '1979-05-27', {'a': True}]");
+}
+
+#[test]
+fn malformed_sources_files_are_refused_with_the_reason() {
+    let dir = common::tmp();
+    let path = dir.path().join("sources.toml");
+    let cases = [
+        ("[yupoo", "invalid sources file "),
+        ("yupoo = 1\n", "[yupoo] must be a table"),
+        ("[yupoo]\ns = 1\n", "[yupoo.s] must be a table"),
+        ("[yupoo.s]\nurl = 1\n", "[yupoo.s] needs a url string"),
+        (
+            "[shops.\"a b\"]\nurl = \"https://a.com\"\n",
+            "unsafe TOML id: 'a b'",
+        ),
+        ("[shops.s]\nname = \"s\"\n", "[shops.s] needs a url"),
+    ];
+    for (text, reason) in cases {
+        common::write(&path, text);
+        let error = load_sources(&path).unwrap_err().to_string();
+        assert!(error.contains(reason), "{text:?}: {error}");
+    }
+    // A seller id with no lower-case spelling the catalogue accepts gets no example.
+    common::write(&path, "[yupoo.\"a b\"]\nurl = \"https://a.x.yupoo.com\"\n");
+    let error = load_sources(&path).unwrap_err().to_string();
+    assert!(
+        error.ends_with(
+            "Yupoo seller id 'a b' may use only a-z, 0-9, '_' and '-'; rename its table"
+        ),
+        "{error}"
+    );
+}
