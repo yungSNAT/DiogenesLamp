@@ -2470,7 +2470,9 @@ fn album_links_without_an_id_are_not_a_layout_change() {
     let client = make_client();
     let page = list_item("101", "Item A")
         + &list_item("102", "Item B")
-        + &"<a href=\"/albums/?tab=new\">all</a>".repeat(4);
+        + &["new", "hot", "old", "all"]
+            .map(|tab| format!("<a href=\"/albums/?tab={tab}\">{tab}</a>"))
+            .concat();
     client.set("albums?page=1", page);
     let summary = run(&client, dir.path(), T2, opts());
     assert_eq!(summary.error, "");
