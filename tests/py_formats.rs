@@ -55,9 +55,11 @@ fn json_matches_python() {
     let fixture = fixture();
     let mut m = Mismatches::default();
     for case in rows(&fixture, "json") {
-        let input = text(&get(case, "in")).unwrap();
+        let input = text(get(case, "in")).unwrap();
         let loaded = pyjson::loads(input);
-        if case.as_object().unwrap().contains_key("lone_surrogate") {
+        // A deliberate difference: CPython keeps a lone surrogate, which a Rust
+        // string cannot hold, so the port refuses the document instead.
+        if case.as_object().unwrap().contains_key("differs_from_cpython") {
             let error = loaded.map(|_| ()).unwrap_err().0;
             m.check(
                 "lone surrogate",
@@ -67,7 +69,7 @@ fn json_matches_python() {
             );
             continue;
         }
-        match (loaded, text(&get(case, "error"))) {
+        match (loaded, text(get(case, "error"))) {
             (Err(error), want) => m.check("error", input, Some(error.0.as_str()), want),
             (Ok(value), Some(want)) => m.check("accepted", input, value.py_str(), want.into()),
             (Ok(value), None) => {
@@ -112,4 +114,3 @@ fn json_matches_python() {
         );
     }
     m.assert_none();
-}
