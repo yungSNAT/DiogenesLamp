@@ -361,3 +361,57 @@ fn data_path_survives_a_sibling_creating_its_directory() {
         expected
     );
 }
+
+#[test]
+fn a_replace_that_keeps_failing_leaves_the_destination_and_no_temporary_file() {
+    let dir = common::tmp();
+    // A non-empty folder at the destination refuses every replace.
+    let dest = dir.path().join("index.json");
+    write(&dest.join("keep.txt"), "kept");
+    let error = atomic_write_json(&dest, &json(r#"{"sellers": []}"#)).unwrap_err();
+    assert!(matches!(error, lamp::errors::Error::Os(_)), "{error:?}");
+    assert_eq!(read(&dest.join("keep.txt")), "kept");
+    let left: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    assert_eq!(left, vec![std::ffi::OsString::from("index.json")]);
+}
+
+#[test]
+fn a_temporary_file_in_a_missing_folder_is_an_os_error() {
+    let dir = common::tmp();
+    let missing = dir.path().join("missing");
+    let error = lamp::storage::create_temp(&missing, "index.json.", ".tmp").unwrap_err();
+    assert!(matches!(error, lamp::errors::Error::Os(_)), "{error:?}");
+    assert!(!missing.exists());
+}
+
+#[test]
+fn merge_album_keeps_the_date_an_album_was_first_found_gone() {
+    let old = with(
+        &record(),
+        &[("gone_since", "2026-09-01T00:00:00+10:00".into())],
+    );
+    let merged = merge_album(Some(&old), &record(), "2026-09-02T00:00:00+10:00");
+    assert_eq!(merged["gone_since"].py_str(), "2026-09-01T00:00:00+10:00");
+    let merged = merge_album(Some(&record()), &record(), "2026-09-02T00:00:00+10:00");
+    assert!(!merged.contains_key("gone_since"));
+}
+
+#[test]
+fn unreadable_run_and_pending_files_are_errors_not_empty_state() {
+    let dir = common::tmp();
+    std::fs::create_dir_all(dir.path().join("runs/sellerx.json")).unwrap();
+    let error = read_run(dir.path(), "sellerx").unwrap_err().to_string();
+    assert!(error.starts_with("unreadable run summary "), "{error}");
+    std::fs::create_dir_all(dir.path().join("notify-pending.json/inside")).unwrap();
+    let error = lamp::storage::read_pending(dir.path())
+        .unwrap_err()
+        .to_string();
+    assert!(error.starts_with("unreadable "), "{error}");
+    // Clearing the pending runs must not report success while the file stays.
+    let error = lamp::storage::write_pending(dir.path(), &Map::new()).unwrap_err();
+    assert!(matches!(error, lamp::errors::Error::Os(_)), "{error:?}");
+    assert!(dir.path().join("notify-pending.json/inside").is_dir());
+}

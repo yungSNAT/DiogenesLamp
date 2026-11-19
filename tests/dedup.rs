@@ -186,6 +186,12 @@ fn duplicate_keys_match_the_browser_rules() {
         album("11", "one", &link("https://m.tb.cn//h.ABC")),
         album("12", "one", &link("https://m.tb.cn/四个汉字")),
         album("13", "one", &link("https://ｔａｏｂａｏ.com/?id=7")),
+        album(
+            "14",
+            "one",
+            &link("https://weidian.com/item.html?itemID=1234567890123456789012345"),
+        ),
+        album("15", "one", r#"{"title": null}"#),
     ];
     let input = pyjson::dumps(
         &Value::Array(rows.iter().cloned().map(Value::Object).collect()),
