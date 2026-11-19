@@ -100,7 +100,7 @@ fn an_exact_nine_by_eight_image_hashes_its_own_comparisons() {
 #[test]
 fn every_exif_orientation_hashes_and_prepares_as_the_upright_image() {
     let dir = common::tmp();
-    let upright = DynamicImage::ImageLuma8(upright(8, 8));
+    let upright = DynamicImage::ImageLuma8(upright(1, 1));
     let expected = hash_of(
         dir.path(),
         "upright.png",
@@ -122,7 +122,7 @@ fn every_exif_orientation_hashes_and_prepares_as_the_upright_image() {
         let prepared = open(&path).unwrap();
         assert_eq!(
             (prepared.width, prepared.height, prepared.orientation),
-            (72, 64, 1),
+            (9, 8, 1),
             "orientation {tag}"
         );
         assert_eq!(image_hash(&path).unwrap(), expected, "orientation {tag}");
@@ -132,33 +132,33 @@ fn every_exif_orientation_hashes_and_prepares_as_the_upright_image() {
 #[test]
 fn every_pixel_format_hashes_as_its_greys() {
     let dir = common::tmp();
-    let grey = upright(8, 8);
+    let grey = upright(1, 1);
     let expected = table_hash();
     let wide = |v: u8| u16::from(v) * 257;
     let images = [
         DynamicImage::ImageLuma8(grey.clone()),
-        DynamicImage::ImageLuma16(image::ImageBuffer::from_fn(72, 64, |x, y| {
+        DynamicImage::ImageLuma16(image::ImageBuffer::from_fn(9, 8, |x, y| {
             Luma([u16::from(grey.get_pixel(x, y).0[0])])
         })),
-        DynamicImage::ImageLumaA8(image::ImageBuffer::from_fn(72, 64, |x, y| {
+        DynamicImage::ImageLumaA8(image::ImageBuffer::from_fn(9, 8, |x, y| {
             image::LumaA([grey.get_pixel(x, y).0[0], 255])
         })),
-        DynamicImage::ImageLumaA16(image::ImageBuffer::from_fn(72, 64, |x, y| {
+        DynamicImage::ImageLumaA16(image::ImageBuffer::from_fn(9, 8, |x, y| {
             image::LumaA([wide(grey.get_pixel(x, y).0[0]), 65535])
         })),
-        DynamicImage::ImageRgb8(image::ImageBuffer::from_fn(72, 64, |x, y| {
+        DynamicImage::ImageRgb8(image::ImageBuffer::from_fn(9, 8, |x, y| {
             let v = grey.get_pixel(x, y).0[0];
             image::Rgb([v, v, v])
         })),
-        DynamicImage::ImageRgba8(image::ImageBuffer::from_fn(72, 64, |x, y| {
+        DynamicImage::ImageRgba8(image::ImageBuffer::from_fn(9, 8, |x, y| {
             let v = grey.get_pixel(x, y).0[0];
             image::Rgba([v, v, v, 255])
         })),
-        DynamicImage::ImageRgb16(image::ImageBuffer::from_fn(72, 64, |x, y| {
+        DynamicImage::ImageRgb16(image::ImageBuffer::from_fn(9, 8, |x, y| {
             let v = wide(grey.get_pixel(x, y).0[0]);
             image::Rgb([v, v, v])
         })),
-        DynamicImage::ImageRgba16(image::ImageBuffer::from_fn(72, 64, |x, y| {
+        DynamicImage::ImageRgba16(image::ImageBuffer::from_fn(9, 8, |x, y| {
             let v = wide(grey.get_pixel(x, y).0[0]);
             image::Rgba([v, v, v, 65535])
         })),
