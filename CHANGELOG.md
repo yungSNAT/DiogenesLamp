@@ -102,6 +102,11 @@
   around the number that Python's `int()` and `float()` accept; before, only
   spaces were stripped and such values were refused. Leading zeros now count
   towards the 4300-digit limit, as in Python.
+- `lamp serve` honours an `If-Modified-Since` date in the RFC 850 or
+  asctime format, which HTTP recipients must accept, and answers 304 Not
+  Modified when the file is no newer; before, it ignored such dates and sent
+  the whole file. A date with a time out of range, such as an hour of 25, is
+  now ignored instead of compared.
 
 ## 0.1.2 (2026-11-13)
 
