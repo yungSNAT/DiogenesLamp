@@ -1,15 +1,15 @@
 // Copyright 2026 Ryan Duguid
 // SPDX-License-Identifier: Apache-2.0
 
-//! The ports of Python's `json` and `urllib.parse` give what CPython
-//! gives. Catalogue files and links pass through them, so a difference
-//! here changes what is stored or matched. The
+//! The ports of Python's `json`, `urllib.parse` and `datetime.fromisoformat`
+//! give what CPython gives. Catalogue files, links and dates pass through
+//! them, so a difference here changes what is stored or matched. The
 //! expected results in `fixtures/py_formats.json` were produced by the
 //! CPython its `generator` field names.
 mod common;
 
 use lamp::pyjson::{self, Style, Value};
-use lamp::pyurl;
+use lamp::{isodate, pyurl};
 
 fn fixture() -> Value {
     common::json(&common::fixture("py_formats.json"))
@@ -235,6 +235,35 @@ fn urllib_parse_matches_python() {
             })
             .collect();
         m.check("parse_qsl", input, pyurl::parse_qsl(input), want);
+    }
+    m.assert_none();
+}
+
+fn int(value: &Value) -> Option<i64> {
+    match value {
+        Value::Int(i) => Some(i64::try_from(*i).unwrap()),
+        Value::Null => None,
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn isoformat_parsing_matches_python() {
+    let fixture = fixture();
+    let mut m = Mismatches::default();
+    for case in rows(&fixture, "iso") {
+        let input = text(&get(case, "in")).unwrap();
+        m.check(
+            "date",
+            input,
+            isodate::parse_date(input).map(|d| d.ordinal),
+            int(&get(case, "date")),
+        );
+        let want = match &get(case, "datetime") {
+            Value::Array(pair) => Some((int(&pair[0]).unwrap(), int(&pair[1]))),
+            _ => None,
+        };
+        m.check("datetime", input, isodate::parse_datetime(input), want);
     }
     m.assert_none();
 }
