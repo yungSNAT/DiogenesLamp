@@ -2392,3 +2392,89 @@ fn scrape_lock_precedes_any_fetch_and_dry_runs_create_nothing() {
     assert!(outcome.summaries.is_empty());
     assert!(!target.exists());
 }
+
+#[test]
+fn a_detail_without_a_readable_date_is_due() {
+    let due = |album: &str, run_ts: &str| lamp::scrape::detail_due(obj(&json(album)), run_ts, 7);
+    assert!(due("{}", T2));
+    assert!(due(r#"{"updated_at": 5}"#, T2));
+    assert!(due(r#"{"updated_at": "not a date"}"#, T2));
+    assert!(due(
+        r#"{"updated_at": "2026-08-17T12:00:00+10:00"}"#,
+        "not a date"
+    ));
+    assert!(!due(r#"{"updated_at": "2026-08-17T12:00:00+10:00"}"#, T2));
+    assert!(due(
+        r#"{"updated_at": "2026-08-17T12:00:00+10:00"}"#,
+        "2026-08-24T12:00:00+10:00"
+    ));
+}
+
+#[test]
+fn a_run_time_that_is_not_a_date_is_refused_before_fetching() {
+    let dir = common::tmp();
+    let client = make_client();
+    let error = scrape_seller(
+        &client,
+        &seller(),
+        dir.path(),
+        "garbage-time",
+        &opts(),
+        &AtomicBool::new(false),
+        &RefreshBudget::new(100),
+    )
+    .unwrap_err();
+    assert_eq!(error.to_string(), "Invalid isoformat string: 'garbage-ti'");
+    assert!(client.calls().is_empty());
+    assert!(!dir.path().join("catalog/sellerx.json").exists());
+}
+
+#[test]
+fn a_stop_between_albums_keeps_the_albums_already_scraped() {
+    let dir = common::tmp();
+    let client = make_client();
+    let stop = Arc::new(AtomicBool::new(false));
+    let flag = stop.clone();
+    *client.0.hook.lock().unwrap() = Some(Arc::new(move |url: &str| {
+        if url.contains("/albums/101?") {
+            flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+    }));
+    let summary = scrape_seller(
+        &client,
+        &seller(),
+        dir.path(),
+        T2,
+        &opts(),
+        &stop,
+        &RefreshBudget::new(100),
+    )
+    .unwrap();
+    assert_eq!(summary.error, "interrupted; progress so far is saved");
+    assert!(!client.called("/albums/102?"));
+    assert_eq!(shard(dir.path()).keys().collect::<Vec<_>>(), ["101"]);
+}
+
+#[test]
+fn an_album_page_without_a_title_keeps_the_listing_title() {
+    let dir = common::tmp();
+    let client = make_client();
+    client.set("/albums/101", album_page("", "plain text"));
+    run(&client, dir.path(), T2, opts());
+    assert_eq!(shard(dir.path())["101"]["title"].py_str(), "Item A");
+}
+
+#[test]
+fn album_links_without_an_id_are_not_a_layout_change() {
+    let dir = common::tmp();
+    let client = make_client();
+    let page = list_item("101", "Item A")
+        + &list_item("102", "Item B")
+        + &["new", "hot", "old", "all"]
+            .map(|tab| format!("<a href=\"/albums/?tab={tab}\">{tab}</a>"))
+            .concat();
+    client.set("albums?page=1", page);
+    let summary = run(&client, dir.path(), T2, opts());
+    assert_eq!(summary.error, "");
+    assert_eq!(shard(dir.path()).len(), 2);
+}

@@ -245,7 +245,8 @@ fn separator_location(s: &[char]) -> Option<usize> {
     Some(8)
 }
 
-/// `datetime.fromisoformat(s)` as microseconds since 0001-01-01T00:00 in
+/// `datetime.fromisoformat(s)` as microseconds from the start of ordinal day 0
+/// (whole days count `Date::ordinal`, so 0001-01-01T00:00 is one day) in
 /// local wall time, plus the UTC offset in microseconds when one is given.
 pub fn parse_datetime(s: &str) -> Option<(i64, Option<i64>)> {
     let chars: Vec<char> = s.chars().collect();
