@@ -996,12 +996,14 @@ fn ipv6_answers_wrapping_ipv4_are_judged_by_the_ipv4_address() {
     let check = |answer: &str| {
         http::validated_target("https://catalogue.example/", &static_answers(&[answer]))
     };
-    for answer in ["::ffff:8.8.8.8", "2002:808:808::1", "64:ff9b::808:808"] {
+    // 6to4 (2002::/16) is refused whatever it wraps: it is not global.
+    for answer in ["::ffff:8.8.8.8", "64:ff9b::808:808"] {
         let target = check(answer).unwrap_or_else(|e| panic!("{answer}: {e}"));
         assert_eq!(target.connect_ips, [answer]);
     }
     for answer in [
         "::ffff:10.0.0.1",
+        "2002:808:808::1",
         "2002:a00:1::1",
         "64:ff9b::a00:1",
         "2001::1",
