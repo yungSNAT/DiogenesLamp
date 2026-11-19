@@ -96,7 +96,9 @@ pub fn http_date(timestamp: i64) -> String {
 }
 
 /// `email.utils.parsedate_to_datetime`, kept to a UTC timestamp; None for
-/// dates Python ignores or would not compare (non-UTC offsets).
+/// dates Python ignores or would not compare (non-UTC offsets). Where RFC 9110
+/// section 5.6.7 differs, Python wins: a leap second is ignored, and a 2-digit
+/// year of 69 to 99 is 19xx and 00 to 68 is 20xx, not the RFC's 50-year rule.
 fn parse_http_date(text: &str) -> Option<i64> {
     let mut words: Vec<&str> = text.split_whitespace().collect();
     if words
