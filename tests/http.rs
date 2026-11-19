@@ -969,3 +969,225 @@ fn every_validated_address_is_tried_and_proxy_errors_stop_at_once() {
     assert!(matches!(proxy, Err(TransportError::Proxy(_))));
     assert_eq!(*tried.lock().unwrap(), ["8.8.8.8"]);
 }
+
+#[test]
+fn url_refusals_name_the_reason() {
+    let refused = |url: &str| normalise_url(url).unwrap_err();
+    assert_eq!(refused(""), "refusing empty URL");
+    for url in ["https://a\\b/", "https://a\u{7f}b/", "https://[::1/"] {
+        assert_eq!(refused(url), format!("refusing malformed URL: {url}"));
+    }
+    let long_label = format!("https://{}.example/", "a".repeat(64));
+    for url in ["https://a..b/", long_label.as_str()] {
+        assert_eq!(refused(url), format!("refusing invalid host: {url}"));
+    }
+    assert_eq!(
+        normalise_url("https://Bücher.Example/x?q=1#f").unwrap(),
+        (
+            "https://xn--bcher-kva.example/x?q=1".to_string(),
+            "xn--bcher-kva.example".to_string(),
+            443
+        )
+    );
+}
+
+#[test]
+fn ipv6_answers_wrapping_ipv4_are_judged_by_the_ipv4_address() {
+    let check = |answer: &str| {
+        http::validated_target("https://catalogue.example/", &static_answers(&[answer]))
+    };
+    // 6to4 (2002::/16) is refused whatever it wraps: it is not global.
+    for answer in ["::ffff:8.8.8.8", "64:ff9b::808:808"] {
+        let target = check(answer).unwrap_or_else(|e| panic!("{answer}: {e}"));
+        assert_eq!(target.connect_ips, [answer]);
+    }
+    for answer in [
+        "::ffff:10.0.0.1",
+        "2002:808:808::1",
+        "2002:a00:1::1",
+        "64:ff9b::a00:1",
+        "2001::1",
+        "64:ff9b:1::1",
+    ] {
+        assert_eq!(
+            check(answer).unwrap_err(),
+            format!("DNS returned non-global address for catalogue.example: {answer}")
+        );
+    }
+    assert_eq!(
+        check("fe80::1%eth0").unwrap_err(),
+        "DNS returned scoped address for catalogue.example: fe80::1%eth0"
+    );
+}
+
+#[test]
+fn page_text_follows_the_declared_or_default_charset() {
+    let text = |content_type: Option<&str>, body: &[u8]| {
+        http::Page {
+            status: 200,
+            content: body.to_vec(),
+            content_type: content_type.map(String::from),
+        }
+        .text()
+    };
+    let utf8 = "café".as_bytes();
+    assert_eq!(text(Some("text/html"), utf8), "cafÃ©");
+    assert_eq!(text(Some("application/json"), utf8), "café");
+    assert_eq!(text(Some("image/png"), utf8), "café");
+    assert_eq!(text(None, b"caf\xe9"), "caf\u{fffd}");
+    assert_eq!(
+        text(Some("text/plain; charset=US-ASCII"), utf8),
+        "caf\u{fffd}\u{fffd}"
+    );
+    assert_eq!(
+        text(Some("text/html; charset=\"latin_1\""), b"caf\xe9"),
+        "café"
+    );
+}
+
+#[test]
+fn a_redirect_to_a_malformed_url_is_refused() {
+    let (client, calls, _) = make_client(
+        global,
+        vec![Ok(FakeResponse::new(
+            302,
+            b"",
+            &[("Location", "https://[::1/")],
+        ))],
+    );
+    let Err(error) = client.get("https://catalogue.example/", None) else {
+        panic!("a malformed redirect was followed");
+    };
+    assert!(
+        matches!(&error, FetchError::Fetch(m) if m == "refusing malformed URL: https://[::1/"),
+        "{error}"
+    );
+    assert_eq!(calls.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn downloads_refuse_what_is_not_a_whole_image() {
+    let payload = png_bytes();
+    for response in [
+        FakeResponse::new(200, &payload, &[("Content-Type", "text/html")]),
+        FakeResponse::new(200, b"", &[("Content-Type", "image/png")]).chunks(vec![]),
+    ] {
+        let dir = common::tmp();
+        assert!(!download_into(dir.path(), response, "thumb.png"));
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
+    // Empty chunks in a stream are skipped, not taken as the end.
+    let dir = common::tmp();
+    let split = FakeResponse::new(200, b"", &[("Content-Type", "image/png")])
+        .chunks(vec![Ok(Vec::new()), Ok(payload.clone())]);
+    assert!(download_into(dir.path(), split, "thumb.png"));
+    assert_eq!(
+        std::fs::read(dir.path().join("thumb.png")).unwrap(),
+        payload
+    );
+    // A destination whose folder cannot be made fails without an error.
+    let dir = common::tmp();
+    common::write(&dir.path().join("thumbs"), b"a file");
+    let response = FakeResponse::new(200, &payload, &[("Content-Type", "image/png")]);
+    assert!(!download_into(dir.path(), response, "thumbs/thumb.png"));
+    assert_eq!(common::read(&dir.path().join("thumbs")), "a file");
+}
+
+#[test]
+fn downloads_report_blocks_and_give_up_after_server_errors() {
+    let dir = common::tmp();
+    let (client, _, _) = make_client(global, vec![Ok(FakeResponse::new(403, b"", &[]))]);
+    let result = client.download(
+        "https://images.example/a.png",
+        &dir.path().join("a.png"),
+        None,
+    );
+    assert!(matches!(result, Err(FetchError::Blocked(403))));
+    let failures = (0..RETRIES)
+        .map(|_| Ok(FakeResponse::new(500, b"", &[])))
+        .collect();
+    let (client, calls, _) = make_client(global, failures);
+    let result = client.download(
+        "https://images.example/a.png",
+        &dir.path().join("a.png"),
+        None,
+    );
+    assert!(matches!(result, Ok(false)));
+    assert_eq!(calls.lock().unwrap().len(), RETRIES as usize);
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn the_system_clock_measures_and_waits() {
+    let clock = http::SystemClock::default();
+    let start = clock.now();
+    clock.sleep(0.0);
+    clock.sleep(-1.0);
+    clock.sleep(0.02);
+    assert!(clock.now() - start >= 0.02);
+}
+
+#[test]
+fn the_system_resolver_answers_for_localhost() {
+    let answers = http::default_resolver("localhost", 443).unwrap();
+    assert!(
+        answers.iter().any(|a| a == "127.0.0.1" || a == "::1"),
+        "{answers:?}"
+    );
+}
+
+#[test]
+fn the_real_transport_connects_only_to_the_pinned_address() {
+    use std::io::Read;
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    // A transport that never connects fails the test instead of hanging it.
+    listener.set_nonblocking(true).unwrap();
+    let server = std::thread::spawn(move || {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let mut stream = loop {
+            match listener.accept() {
+                Ok((stream, _)) => break stream,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    if std::time::Instant::now() > deadline {
+                        return Vec::new();
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(e) => panic!("{e}"),
+            }
+        };
+        stream.set_nonblocking(false).unwrap();
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(10)))
+            .unwrap();
+        let mut hello = vec![0u8; 4096];
+        let n = stream.read(&mut hello).unwrap();
+        hello.truncate(n);
+        // Dropping the stream ends the handshake.
+        hello
+    });
+    // The name has no DNS answer: only the pinned address can be reached.
+    let target = Target {
+        url: "https://pinned.invalid/albums".into(),
+        hostname: "pinned.invalid".into(),
+        connect_ips: vec!["not an address".into(), "127.0.0.1".into()],
+        port,
+    };
+    let headers: Headers = vec![("Host".into(), "pinned.invalid".into())];
+    let result = http::open_pinned(&target, &headers);
+    assert!(matches!(result, Err(TransportError::Request(_))));
+    let hello = server.join().unwrap();
+    assert_eq!(hello.first(), Some(&0x16), "a TLS handshake record");
+    assert!(
+        hello.windows(14).any(|w| w == b"pinned.invalid"),
+        "the ClientHello names the host"
+    );
+
+    let unparsable = Target {
+        connect_ips: vec!["not an address".into()],
+        ..target
+    };
+    let result = http::open_pinned(&unparsable, &headers);
+    assert!(matches!(result, Err(TransportError::Request(m)) if m == "bad address not an address"));
+}
