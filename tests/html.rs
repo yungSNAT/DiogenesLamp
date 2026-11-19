@@ -3,8 +3,8 @@
 
 //! The parser that reads album titles and descriptions gives the text and
 //! attributes `BeautifulSoup(html, "html.parser")` gives. The expected
-//! results in `fixtures/html_parity.json` were produced by that parser; the
-//! file's `generator` field names the versions.
+//! results in `fixtures/html_parity.json` were recorded from that parser by
+//! `fixtures/html_parity.py`; the file's `generator` field names the versions.
 mod common;
 
 use lamp::html::parse;
@@ -65,6 +65,9 @@ fn text_and_attributes_match_the_reference_parser() {
             let Value::Object(attrs) = get(tag, "attrs") else {
                 panic!("attrs");
             };
+            for key in attrs.keys().filter(|k| !KEYS.contains(&k.as_str())) {
+                check(&format!("{name}[{key}]"), Some("not in KEYS"), None);
+            }
             for key in KEYS {
                 check(
                     &format!("{name}[{key}]"),

@@ -1,4 +1,4 @@
-{"generator": "Python 3.15.0, beautifulsoup4 4.15.0, html.parser",
+{"generator": "Python 3.15.0, beautifulsoup4 4.15.0, html.parser: html_parity.py",
  "cases": [
 {"html": "<p> </p><p>\t</p><b>x</b>", "text": "  x", "stripped": "x", "tags": [{"name": "p", "text": " ", "attrs": {}}, {"name": "b", "text": "x", "attrs": {}}]},
 {"html": "<div>a <span> </span> b</div>", "text": "a   b", "stripped": "a|b", "tags": [{"name": "div", "text": "a   b", "attrs": {}}, {"name": "span", "text": " ", "attrs": {}}]},
