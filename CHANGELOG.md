@@ -100,8 +100,8 @@
   10.0 s, with the same `index.json`.
 - Number arguments accept the tabs, newlines and other ASCII whitespace
   around the number that Python's `int()` and `float()` accept; before, only
-  spaces were stripped and such values were refused. Leading zeros now count towards the 4300-digit limit,
-  as in Python.
+  spaces were stripped and such values were refused. Leading zeros now count
+  towards the 4300-digit limit, as in Python.
 
 ## 0.1.2 (2026-11-13)
 
