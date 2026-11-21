@@ -366,7 +366,7 @@ mod tests {
             ("\u{a5}0.5", "{}"),
             (
                 "\u{a5}0009.5",
-                "{\"amount\": 10, \"token\": \"\\u00a50009.5\", \"rule\": \"currency\", \"candidates\": [10]}",
+                "{\"amount\": 10, \"token\": \"\u{a5}0009.5\", \"rule\": \"currency\", \"candidates\": [10]}",
             ),
             ("\u{a5}99999.5", "{}"),
             (
@@ -376,11 +376,11 @@ mod tests {
             ("p12345", "{}"),
             (
                 "\u{a5}\u{a0}180",
-                "{\"amount\": 180, \"token\": \"\\u00a5\\u00a0180\", \"rule\": \"currency\", \"candidates\": [180]}",
+                "{\"amount\": 180, \"token\": \"\u{a5}\u{a0}180\", \"rule\": \"currency\", \"candidates\": [180]}",
             ),
             (
                 "180\u{3000}\u{5143}",
-                "{\"amount\": 180, \"token\": \"180\\u3000\\u5143\", \"rule\": \"currency\", \"candidates\": [180]}",
+                "{\"amount\": 180, \"token\": \"180\u{3000}\u{5143}\", \"rule\": \"currency\", \"candidates\": [180]}",
             ),
             (
                 "RMB 1,280.49",
@@ -388,7 +388,7 @@ mod tests {
             ),
             (
                 "\u{a5}180 220\u{5143} P300",
-                "{\"amount\": 180, \"token\": \"\\u00a5180\", \"rule\": \"currency\", \"candidates\": [180, 220, 300]}",
+                "{\"amount\": 180, \"token\": \"\u{a5}180\", \"rule\": \"currency\", \"candidates\": [180, 220, 300]}",
             ),
         ] {
             let evidence = pyjson::dumps(&price_evidence(text).into(), pyjson::Style::Default);
