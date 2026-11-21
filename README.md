@@ -33,11 +33,16 @@ original Yupoo album for the detail photos.
 
 ## Install
 
-`lamp` is a single executable with the viewer built in. Each
-[release](https://github.com/yungSNAT/DiogenesLamp/releases) carries one for
-Linux (x86_64 and arm64, statically linked), macOS (Apple silicon and Intel)
-and Windows (x86_64 and arm64), with a `SHA256SUMS` file and signed build
-provenance. Elsewhere, install [from source](#from-source).
+`lamp` is a single executable with the viewer built in. The release workflow
+builds for Linux (x86_64 and arm64, statically linked), macOS (Apple silicon
+and Intel) and Windows (x86_64 and arm64), with a `SHA256SUMS` file and signed
+build provenance. Check the release's asset list for the platforms covered by
+that version.
+
+The commands below use the version prepared in this branch. If its tag has
+yet to be published, use the
+[latest published release](https://github.com/yungSNAT/DiogenesLamp/releases/latest)
+or install [from source](#from-source) if it has no asset for your platform.
 
 ### Download
 
