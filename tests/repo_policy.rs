@@ -24,14 +24,24 @@ permissions:
 
 jobs:
   test:
+    # Branch protection and release.yml require these check names.
+    name: test (${{ matrix.os }})
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        # Every system the release builds for: the release fails unless the
-        # tests pass on each, so a gap shows here before a tag.
-        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, windows-11-arm, macos-latest, macos-15-intel]
-    runs-on: ${{ matrix.os }}
+        # Every system the release builds for, on the image release.yml's
+        # pinned release-binary.yml builds it on: the release fails unless the
+        # tests pass on each, so a gap shows here before a tag. `os` only
+        # names the check, as the image behind a -latest label moves.
+        include:
+          - { os: ubuntu-latest, image: ubuntu-24.04 }
+          - { os: ubuntu-24.04-arm, image: ubuntu-24.04-arm }
+          - { os: windows-latest, image: windows-2025 }
+          - { os: windows-11-arm, image: windows-11-arm }
+          - { os: macos-latest, image: macos-15 }
+          - { os: macos-15-intel, image: macos-15-intel }
+    runs-on: ${{ matrix.image }}
     steps:
       - uses: actions/checkout@<pin>
         with:
