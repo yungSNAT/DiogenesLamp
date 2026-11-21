@@ -338,7 +338,8 @@ mod tests {
                 "{text}"
             );
         }
-        let datetimes: &[(&str, Option<(i64, Option<i64>)>)] = &[
+        type Parsed = Option<(i64, Option<i64>)>;
+        let datetimes: &[(&str, Parsed)] = &[
             ("2026-08-01T10:0", None),
             ("2026-08-01T10:00x00", None),
             ("2026-W01-", None),
