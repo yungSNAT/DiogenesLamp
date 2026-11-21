@@ -316,6 +316,91 @@ pub fn parse_datetime(s: &str) -> Option<(i64, Option<i64>)> {
 mod tests {
     use super::*;
 
+    // What CPython 3.15.0's date.fromisoformat, datetime.fromisoformat and
+    // date.fromordinal give.
+    #[test]
+    fn parsing_matches_fromisoformat() {
+        let dates: &[(&str, Option<&str>)] = &[
+            ("0000-W01-1", None),
+            ("2026-W01x1", None),
+            ("2026W01-", None),
+            ("2026-W53-1", Some("2026-12-28")),
+            ("2020W537", Some("2021-01-03")),
+            ("2026-W00-1", None),
+            ("2026-W01-8", None),
+            ("2026-13-01", None),
+            ("2026-0101", None),
+        ];
+        for &(text, expected) in dates {
+            assert_eq!(
+                parse_date(text).map(Date::isoformat).as_deref(),
+                expected,
+                "{text}"
+            );
+        }
+        type Parsed = Option<(i64, Option<i64>)>;
+        let datetimes: &[(&str, Parsed)] = &[
+            ("2026-08-01T10:0", None),
+            ("2026-08-01T10:00x00", None),
+            ("2026-W01-", None),
+            ("2026-W01-10:00", Some((63902685600000000, None))),
+            ("2026-W01-1T10:00", Some((63902685600000000, None))),
+            ("2026W0110:00", None),
+            ("2026W01110:00", Some((63902685600000000, None))),
+            ("2026-08-01T1", None),
+            ("2026-08-01T10:00+1", None),
+            ("2026-08-01T10:00+01:0", None),
+            (
+                "2026-08-01T10:00+01:00",
+                Some((63921261600000000, Some(3600000000))),
+            ),
+            (
+                "2026-08-01T10:00-01:30",
+                Some((63921261600000000, Some(-5400000000))),
+            ),
+            ("2026-08-01T10:00Z", Some((63921261600000000, Some(0)))),
+            ("2026-08-01T24:00", Some((63921312000000000, None))),
+            ("2026-08-01T24:01", None),
+            ("2026-08-01T10:00:00.5", Some((63921261600500000, None))),
+            (
+                "2026-08-01T10:00:00,1234567",
+                Some((63921261600123456, None)),
+            ),
+            ("2026-08-01T10:00:00.", None),
+            ("2026-08-01T10:00:00x5", None),
+            ("2026-08-01T25:00", None),
+            ("2026-08-01T10:00+24:00", None),
+            ("9999-12-31T24:00", None),
+        ];
+        for &(text, expected) in datetimes {
+            assert_eq!(parse_datetime(text), expected, "{text}");
+        }
+        for year in [1, 4, 99, 100, 101, 399, 400, 401, 1600, 2000, 2026, 9999] {
+            for (month, day) in [(1, 1), (12, 31)] {
+                let date = Date::from_ymd(year, month, day).unwrap();
+                let back = Date::from_ordinal(date.ordinal).unwrap();
+                assert_eq!(back.ymd(), (year, month, day));
+            }
+        }
+        let ordinals = [
+            (1, 365),
+            (4, 1461),
+            (99, 36159),
+            (100, 36524),
+            (101, 36889),
+            (399, 145731),
+            (400, 146097),
+            (401, 146462),
+            (1600, 584388),
+            (2000, 730485),
+            (2026, 739981),
+            (9999, 3652059),
+        ];
+        for (year, ordinal) in ordinals {
+            assert_eq!(Date::from_ymd(year, 12, 31).unwrap().ordinal, ordinal);
+        }
+    }
+
     #[test]
     fn ordinals_and_formats() {
         assert_eq!(Date::from_ymd(1, 1, 1).unwrap().ordinal, 1);
