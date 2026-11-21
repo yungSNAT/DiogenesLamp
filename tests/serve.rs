@@ -385,3 +385,187 @@ fn the_embedded_viewer_matches_the_viewer_directory() {
         );
     }
 }
+
+/// Sends `raw` unchanged, closes the writing half and returns every byte the
+/// server sent back.
+fn exchange(port: u16, raw: &[u8]) -> Vec<u8> {
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    stream.write_all(raw).unwrap();
+    stream.shutdown(std::net::Shutdown::Write).unwrap();
+    let mut data = Vec::new();
+    stream.read_to_end(&mut data).unwrap();
+    data
+}
+
+#[test]
+fn a_directory_without_its_slash_is_redirected_with_its_query() {
+    let dir = common::tmp();
+    let (viewer, data) = layout(dir.path());
+    write(&viewer.join("sub/index.html"), "<p>sub</p>");
+    let server = start(Viewer::Dir(viewer), &data);
+    let moved = get(server.port, "/sub?x=1");
+    assert_eq!(
+        (
+            moved.status,
+            moved.header("Location"),
+            moved.header("Content-Length")
+        ),
+        (301, Some("/sub/?x=1"), Some("0"))
+    );
+    assert!(moved.body.is_empty());
+    for path in ["/sub/", "/sub%2F", "/sub%2f"] {
+        let reply = get(server.port, path);
+        assert_eq!(
+            (reply.status, reply.body.as_slice()),
+            (200, &b"<p>sub</p>"[..]),
+            "{path}"
+        );
+    }
+}
+
+/// `//host` would make the redirect's Location a link to another site.
+#[test]
+fn a_leading_double_slash_cannot_redirect_to_another_host() {
+    let dir = common::tmp();
+    let (viewer, data) = layout(dir.path());
+    write(&viewer.join("evil.example/index.html"), "x");
+    let server = start(Viewer::Dir(viewer), &data);
+    for path in ["//evil.example", "///evil.example"] {
+        let reply = get(server.port, path);
+        assert_eq!(
+            (reply.status, reply.header("Location")),
+            (301, Some("/evil.example/")),
+            "{path}"
+        );
+    }
+    assert_eq!(get(server.port, "//data/index.json").status, 200);
+}
+
+#[test]
+fn a_file_asked_for_as_a_directory_is_not_found() {
+    let dir = common::tmp();
+    let (viewer, data) = layout(dir.path());
+    let on_disk = start(Viewer::Dir(viewer), &data);
+    assert_eq!(get(on_disk.port, "/index.html").status, 200);
+    assert_eq!(get(on_disk.port, "/index.html/").status, 404);
+    let embedded = start(Viewer::Embedded, &data);
+    assert_eq!(get(embedded.port, "/app.js").status, 200);
+    for path in ["/app.js/", "/missing.js", "/nested/app.js"] {
+        let reply = get(embedded.port, path);
+        assert_eq!(
+            (reply.status, reply.header("Cache-Control")),
+            (404, Some("no-store")),
+            "{path}"
+        );
+    }
+}
+
+#[test]
+fn the_embedded_viewer_serves_its_index_at_the_root() {
+    let dir = common::tmp();
+    let server = start(Viewer::Embedded, &dir.path().join("empty-data"));
+    let root = get(server.port, "/");
+    assert_eq!(root.status, 200);
+    assert_eq!(root.header("Content-type"), Some("text/html"));
+    assert_eq!(root.body, lamp::viewer::get("index.html").unwrap());
+}
+
+#[test]
+fn a_missing_shard_is_not_found_and_not_cached() {
+    let dir = common::tmp();
+    let (viewer, data) = layout(dir.path());
+    write(&data.join("catalog/sellerx.json"), "{}");
+    let server = start(Viewer::Dir(viewer), &data);
+    let reply = get(server.port, "/data/catalog/sellery.json");
+    assert_eq!(
+        (
+            reply.status,
+            reply.header("Cache-Control"),
+            reply.header("ETag")
+        ),
+        (404, Some("no-store"), None)
+    );
+}
+
+/// An HTTP/0.9 request gets the bare body: no status line or headers.
+#[test]
+fn a_simple_request_gets_only_the_body() {
+    let dir = common::tmp();
+    let (viewer, data) = layout(dir.path());
+    let server = start(Viewer::Dir(viewer), &data);
+    assert_eq!(
+        exchange(server.port, b"GET /data/index.json\r\n"),
+        br#"{"generated_at": "x"}"#
+    );
+}
+
+#[test]
+fn header_lines_over_64_kib_are_refused() {
+    let dir = common::tmp();
+    let (viewer, data) = layout(dir.path());
+    let server = start(Viewer::Dir(viewer), &data);
+    // A header line of `len` bytes, counting its CRLF.
+    let line = |len: usize| format!("X-Long: {}\r\n", "a".repeat(len - 10));
+    let fits = exchange(
+        server.port,
+        format!("GET /data/index.json HTTP/1.0\r\n{}\r\n", line(65_536)).as_bytes(),
+    );
+    assert!(fits.starts_with(b"HTTP/1.0 200 OK\r\n"));
+    // Nothing follows the long line, so the server reads every byte sent.
+    let over = exchange(
+        server.port,
+        format!("GET /data/index.json HTTP/1.0\r\n{}", line(65_537)).as_bytes(),
+    );
+    let over = String::from_utf8_lossy(&over);
+    assert!(over.starts_with("HTTP/1.0 431 Line too long\r\n"), "{over}");
+    assert!(over.contains("got more than 65536 bytes when reading header line"));
+    assert!(!over.contains("generated_at"));
+}
+
+#[test]
+fn more_than_100_headers_are_refused() {
+    let dir = common::tmp();
+    let (viewer, data) = layout(dir.path());
+    let server = start(Viewer::Dir(viewer), &data);
+    let headers = |n: usize| (0..n).map(|i| format!("X-{i}: v\r\n")).collect::<String>();
+    let fits = exchange(
+        server.port,
+        format!("GET /data/index.json HTTP/1.0\r\n{}\r\n", headers(100)).as_bytes(),
+    );
+    assert!(fits.starts_with(b"HTTP/1.0 200 OK\r\n"));
+    let over = exchange(
+        server.port,
+        format!("GET /data/index.json HTTP/1.0\r\n{}", headers(101)).as_bytes(),
+    );
+    let over = String::from_utf8_lossy(&over);
+    assert!(
+        over.starts_with("HTTP/1.0 431 Too many headers\r\n"),
+        "{over}"
+    );
+    assert!(over.contains("got more than 100 headers"));
+}
+
+/// http.server's replies to these die before a byte is sent; the connection
+/// closes and the server keeps serving.
+#[test]
+fn malformed_request_lines_close_without_a_reply() {
+    let dir = common::tmp();
+    let (viewer, data) = layout(dir.path());
+    let server = start(Viewer::Dir(viewer), &data);
+    let long = vec![b'G'; 65_537];
+    for raw in [
+        &b""[..],
+        b"   \r\n",
+        &long,
+        b"GET / HTTP/1\r\n",
+        b"GET / FOO/1.0\r\n",
+        b"GET / HTTP/2.0\r\n",
+        b"GET / x HTTP/1.0\r\n",
+        b"HEAD /\r\n",
+        b"/\r\n",
+    ] {
+        let label = String::from_utf8_lossy(&raw[..raw.len().min(20)]).into_owned();
+        assert_eq!(exchange(server.port, raw), b"", "{label}");
+    }
+    assert_eq!(get(server.port, "/data/index.json").status, 200);
+}
