@@ -1206,13 +1206,13 @@ fn prepare_covers_command_exits_1_only_when_a_cover_failed() {
     let data = dir.path().to_string_lossy().into_owned();
     let (code, out, err) = lamp(&["--data", &data, "prepare-covers", "--limit", "2"], None);
     assert_eq!(code, 0, "{err}");
-    let report = common::json(&out);
+    let report = common::json(&out).as_object().unwrap().clone();
     assert!(matches!(report["processed"], Value::Int(2)), "{out}");
     assert_eq!(report["errors"].py_str(), "[]");
     write(&dir.path().join("thumbs/third/21.png"), "not an image");
     let (code, out, _) = lamp(&["--data", &data, "prepare-covers"], None);
     assert_eq!(code, 1, "{out}");
-    let report = common::json(&out);
+    let report = common::json(&out).as_object().unwrap().clone();
     assert!(matches!(report["processed"], Value::Int(4)), "{out}");
     assert_eq!(report["errors"].as_array().unwrap().len(), 1);
 }
