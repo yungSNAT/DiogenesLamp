@@ -1170,3 +1170,49 @@ fn export_site_without_aliases_or_covers_copies_the_metadata() {
     );
     assert!(!site.join("data/aliases.json").exists());
 }
+
+/// The lines the snapshot and restore commands print name the files a user
+/// recovers from.
+#[test]
+fn snapshot_and_restore_commands_print_their_paths() {
+    let dir = common::tmp();
+    catalogue(dir.path());
+    let data = dir.path().to_string_lossy().into_owned();
+    let (code, out, err) = lamp(&["--data", &data, "snapshot"], None);
+    assert_eq!(code, 0, "{err}");
+    let archive = out.trim_end().to_string();
+    assert!(Path::new(&archive).is_file(), "{out}");
+    let shard = dir.path().join("catalog/example.json");
+    let original = std::fs::read(&shard).unwrap();
+    write(&shard, "corrupt");
+    let (code, out, err) = lamp(&["--data", &data, "restore", &archive], None);
+    assert_eq!(code, 0, "{err}");
+    let previous = out
+        .trim_end()
+        .strip_prefix("Metadata restored. Previous files saved at: ")
+        .unwrap_or_else(|| panic!("{out}"));
+    assert_eq!(
+        zip_member(Path::new(previous), "catalog/example.json"),
+        b"corrupt"
+    );
+    assert_eq!(std::fs::read(&shard).unwrap(), original);
+}
+
+/// `prepare-covers` prints its report and exits 1 only when a cover failed.
+#[test]
+fn prepare_covers_command_exits_1_only_when_a_cover_failed() {
+    let dir = common::tmp();
+    several_sellers(dir.path());
+    let data = dir.path().to_string_lossy().into_owned();
+    let (code, out, err) = lamp(&["--data", &data, "prepare-covers", "--limit", "2"], None);
+    assert_eq!(code, 0, "{err}");
+    let report = common::json(&out);
+    assert!(matches!(report["processed"], Value::Int(2)), "{out}");
+    assert_eq!(report["errors"].py_str(), "[]");
+    write(&dir.path().join("thumbs/third/21.png"), "not an image");
+    let (code, out, _) = lamp(&["--data", &data, "prepare-covers"], None);
+    assert_eq!(code, 1, "{out}");
+    let report = common::json(&out);
+    assert!(matches!(report["processed"], Value::Int(4)), "{out}");
+    assert_eq!(report["errors"].as_array().unwrap().len(), 1);
+}
