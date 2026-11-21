@@ -813,6 +813,35 @@ mod tests {
         assert_eq!(posix_normpath("/../x"), "/x");
     }
 
+    // What CPython 3.15's SimpleHTTPRequestHandler.guess_type returns.
+    #[test]
+    fn compressed_and_suffixed_names_match_http_server() {
+        for (path, expected) in [
+            ("x/a.tgz", "application/x-tar"),
+            ("x/a.taz", "application/x-tar"),
+            ("x/a.svgz", "image/svg+xml"),
+            ("x/a.js.br", "text/javascript"),
+            ("x/a.tar.gz", "application/gzip"),
+            ("x/A.JS.BR", "application/octet-stream"),
+        ] {
+            assert_eq!(guess_type(path), expected, "{path}");
+        }
+    }
+
+    // What CPython 3.15's posixpath.normpath returns.
+    #[test]
+    fn normpath_matches_posixpath() {
+        for (path, expected) in [
+            ("", "."),
+            ("a/..", "."),
+            ("//a//b", "//a/b"),
+            ("///a", "/a"),
+            ("/a/./b/", "/a/b"),
+        ] {
+            assert_eq!(posix_normpath(path), expected, "{path}");
+        }
+    }
+
     const NOV_6_1994: i64 = 784_111_777;
 
     // RFC 9110 section 5.6.7: a recipient must accept all 3 HTTP-date formats.
