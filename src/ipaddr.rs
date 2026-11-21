@@ -371,6 +371,103 @@ mod tests {
         assert!(parse_v6("fe80::1%").is_err());
     }
 
+    // What CPython 3.15's IPv4Address and IPv6Address give: str() or the error.
+    #[test]
+    fn parsing_matches_ipaddress() {
+        let v4: &[(&str, Result<&str, &str>)] = &[
+            ("", Err("Address cannot be empty")),
+            ("1..2.3", Err("Empty octet not permitted in '1..2.3'")),
+            (
+                "1.2.3.0004",
+                Err("At most 3 characters permitted in '0004' in '1.2.3.0004'"),
+            ),
+            ("1.2.3", Err("Expected 4 octets in '1.2.3'")),
+            (
+                "1.2.3.a",
+                Err("Only decimal digits permitted in 'a' in '1.2.3.a'"),
+            ),
+            (
+                "1.2.3.04",
+                Err("Leading zeros are not permitted in '04' in '1.2.3.04'"),
+            ),
+            (
+                "1.2.3.256",
+                Err("Octet 256 (> 255) not permitted in '1.2.3.256'"),
+            ),
+            ("0.0.0.0", Ok("0.0.0.0")),
+            ("255.255.255.255", Ok("255.255.255.255")),
+        ];
+        let v6: &[(&str, Result<&str, &str>)] = &[
+            ("", Err("Address cannot be empty")),
+            ("1::g", Err("Only hex digits permitted in 'g' in '1::g'")),
+            (
+                "1::12345",
+                Err("At most 4 characters permitted in '12345' in '1::12345'"),
+            ),
+            (
+                "1:2:3:4:5:6:7:8:9:10",
+                Err("At most 8 colons permitted in '1:2:3:4:5:6:7:8:9:10'"),
+            ),
+            (
+                ":1::2",
+                Err("Leading ':' only permitted as part of '::' in ':1::2'"),
+            ),
+            (
+                "1::2:",
+                Err("Trailing ':' only permitted as part of '::' in '1::2:'"),
+            ),
+            (
+                "1::2:3:4:5:6:7:8",
+                Err("Expected at most 7 other parts with '::' in '1::2:3:4:5:6:7:8'"),
+            ),
+            (
+                "1:2:3",
+                Err("Exactly 8 parts expected without '::' in '1:2:3'"),
+            ),
+            ("::", Ok("::")),
+            ("1::", Ok("1::")),
+            ("1:0:0::", Ok("1::")),
+            (
+                ":1:2:3:4:5:6:7",
+                Err("Leading ':' only permitted as part of '::' in ':1:2:3:4:5:6:7'"),
+            ),
+            (
+                "1:2:3:4:5:6:7:",
+                Err("Trailing ':' only permitted as part of '::' in '1:2:3:4:5:6:7:'"),
+            ),
+            ("1:2:3:4:5:6:7:8", Ok("1:2:3:4:5:6:7:8")),
+            ("fe80::1%eth0", Ok("fe80::1%eth0")),
+            ("::ffff:1.2.3.4", Ok("::ffff:1.2.3.4")),
+            ("1:2:3:4:5:6:1.2.3.4", Ok("1:2:3:4:5:6:102:304")),
+            (
+                "1::1.2.3",
+                Err("Expected 4 octets in '1.2.3' in '1::1.2.3'"),
+            ),
+            (
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                Err(
+                    "At most 45 characters expected in 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'",
+                ),
+            ),
+        ];
+        for &(text, expected) in v4 {
+            let got = parse_v4(text).map(v4_str);
+            assert_eq!(
+                got,
+                expected.map(String::from).map_err(String::from),
+                "{text}"
+            );
+        }
+        for &(text, expected) in v6 {
+            let got = parse_v6(text).map(|(v, scope)| ip_str(Ip::V6(v), scope.as_deref()));
+            assert_eq!(
+                got,
+                expected.map(String::from).map_err(String::from),
+                "{text}"
+            );
+        }
+    }
+
     #[test]
     fn global_registry() {
         assert!(v4_is_global(parse_v4("8.8.8.8").unwrap()));
