@@ -9,6 +9,7 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 /// A scratch root with the system temporary directory, a working directory
@@ -69,13 +70,22 @@ fn demo(dirs: &Dirs, port: &str) -> Command {
     command
 }
 
+/// A port that was free when chosen and that no other test here was given:
+/// the tests run at once, and 2 given one port meet each other's demo.
 fn free_port() -> String {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-        .to_string()
+    static GIVEN: Mutex<Vec<u16>> = Mutex::new(Vec::new());
+    loop {
+        let port = TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let mut given = GIVEN.lock().unwrap();
+        if !given.contains(&port) {
+            given.push(port);
+            return port.to_string();
+        }
+    }
 }
 
 /// GET `path` once the port accepts. The server binds before it writes the
@@ -152,8 +162,8 @@ fn demo_serves_synthetic_data_and_writes_nowhere_near_named_data() {
 #[test]
 fn demo_on_a_busy_port_writes_nothing() {
     let dirs = dirs();
-    let busy = TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = busy.local_addr().unwrap().port().to_string();
+    let port = free_port();
+    let _busy = TcpListener::bind(("127.0.0.1", port.parse::<u16>().unwrap())).unwrap();
     let output = demo(&dirs, &port).output().unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert_eq!(output.status.code(), Some(1), "{stderr}");
