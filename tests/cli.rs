@@ -341,3 +341,143 @@ fn help_and_usage_follow_argparse() {
     assert_eq!(code, 2);
     assert!(err.ends_with("lamp scrape: error: ambiguous option: --re could match --refresh-details-days, --refresh-limit, --retry-failed\n"));
 }
+
+/// Excel's other Unicode exports: UTF-16 big-endian and UTF-8 with a BOM.
+#[test]
+fn import_accepts_utf16_big_endian_and_utf8_with_a_bom() {
+    // The link starts the file, so a byte order mark left in would spoil it.
+    let row = "https://sellerx.x.yupoo.com/\n";
+    let mut big_endian = vec![0xfe, 0xff];
+    for unit in row.encode_utf16() {
+        big_endian.extend_from_slice(&unit.to_be_bytes());
+    }
+    let mut bom = vec![0xef, 0xbb, 0xbf];
+    bom.extend_from_slice(row.as_bytes());
+    for blob in [big_endian, bom] {
+        let dir = common::tmp();
+        let dump = dir.path().join("dump.csv");
+        write(&dump, blob);
+        let s = dir.path().join("s.toml");
+        let (code, out, err) = lamp(
+            &[
+                "--sources",
+                &s.to_string_lossy(),
+                "import",
+                &dump.to_string_lossy(),
+            ],
+            None,
+        );
+        assert_eq!(code, 0, "{err}");
+        assert!(
+            out.starts_with(
+                "1 rows read, 0 invalid
+yupoo sellers: 1 new"
+            ),
+            "{out}"
+        );
+        assert!(read(&s).contains("[yupoo.sellerx]"));
+    }
+}
+
+#[test]
+fn import_reports_a_dump_it_cannot_read() {
+    let dir = common::tmp();
+    let s = dir.path().join("s.toml");
+    let (code, _, err) = lamp(
+        &[
+            "--sources",
+            &s.to_string_lossy(),
+            "import",
+            &dir.path().to_string_lossy(),
+        ],
+        None,
+    );
+    assert_eq!(code, 1);
+    assert!(err.starts_with("error: "), "{err}");
+    assert!(!s.exists());
+}
+
+/// A sources file lamp cannot read is reported, never replaced.
+#[test]
+fn a_corrupt_sources_file_is_reported_and_left_unchanged() {
+    let dir = common::tmp();
+    let s = dir.path().join("s.toml");
+    write(&s, "[yupoo.sellerx\n");
+    let dump = dir.path().join("dump.csv");
+    write(&dump, "1\thttps://sellery.x.yupoo.com/\n");
+    let sources = s.to_string_lossy().into_owned();
+    for args in [
+        vec!["--sources", &sources, "import", dump.to_str().unwrap()],
+        vec!["--sources", &sources, "scrape"],
+    ] {
+        let (code, _, err) = lamp(&args, Some(dir.path()));
+        assert_eq!(code, 1, "{args:?}");
+        assert!(err.starts_with("error: invalid sources file"), "{err}");
+        assert_eq!(read(&s), "[yupoo.sellerx\n");
+    }
+}
+
+#[test]
+fn report_lines_count_refreshed_and_deferred_details() {
+    let summary = SellerSummary {
+        scraped: 1,
+        dated: 1,
+        refreshed: 3,
+        deferred: 2,
+        ..SellerSummary::new("s")
+    };
+    assert_eq!(
+        report_line(&summary, 1, 1, false),
+        "[1/1] s: 1 scraped, 0 skipped, 0 failed (3 details refreshed, 2 deferred by budget)"
+    );
+    let none = SellerSummary {
+        scraped: 1,
+        dated: 1,
+        ..SellerSummary::new("s")
+    };
+    assert!(!report_line(&none, 1, 1, false).contains("refreshed"));
+}
+
+/// Ctrl+C stops `lamp serve` with exit code 0 and frees its port. Signalled
+/// with `kill -INT`, so Unix only.
+#[cfg(unix)]
+#[test]
+fn serve_stops_cleanly_on_ctrl_c() {
+    use std::io::BufRead;
+    let dir = common::tmp();
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
+        .to_string();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_lamp"))
+        .args([
+            "--data",
+            &dir.path().to_string_lossy(),
+            "serve",
+            "--no-browser",
+            "--port",
+            &port,
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdout = std::io::BufReader::new(child.stdout.take().unwrap());
+    let mut line = String::new();
+    stdout.read_line(&mut line).unwrap();
+    assert_eq!(
+        line,
+        format!("serving on http://127.0.0.1:{port}/ (Ctrl+C to stop)\n")
+    );
+    let signalled = Command::new("kill")
+        .args(["-INT", &child.id().to_string()])
+        .status()
+        .unwrap();
+    assert!(signalled.success());
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("no index.json"));
+    assert!(std::net::TcpListener::bind(("127.0.0.1", port.parse::<u16>().unwrap())).is_ok());
+}
