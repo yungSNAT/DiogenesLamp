@@ -352,6 +352,71 @@ pub fn parse_album_page(html_text: &str) -> AlbumDetail {
 mod tests {
     use super::*;
 
+    // What the Python parser this was ported from (55dc447^, CPython 3.15.0) gives.
+    #[test]
+    fn helpers_match_the_python_parser() {
+        for (text, expected) in [
+            ("xRMB120", "{}"),
+            (
+                "ap120 p130",
+                "{\"amount\": 130, \"token\": \"p130\", \"rule\": \"shorthand\", \"candidates\": [130]}",
+            ),
+            ("\u{e9}180p", "{}"),
+            ("\u{a5}1234567", "{}"),
+            ("\u{a5}0.5", "{}"),
+            (
+                "\u{a5}0009.5",
+                "{\"amount\": 10, \"token\": \"\u{a5}0009.5\", \"rule\": \"currency\", \"candidates\": [10]}",
+            ),
+            ("\u{a5}99999.5", "{}"),
+            (
+                "180rmbx 190rmb",
+                "{\"amount\": 190, \"token\": \"190rmb\", \"rule\": \"currency\", \"candidates\": [190]}",
+            ),
+            ("p12345", "{}"),
+            (
+                "\u{a5}\u{a0}180",
+                "{\"amount\": 180, \"token\": \"\u{a5}\u{a0}180\", \"rule\": \"currency\", \"candidates\": [180]}",
+            ),
+            (
+                "180\u{3000}\u{5143}",
+                "{\"amount\": 180, \"token\": \"180\u{3000}\u{5143}\", \"rule\": \"currency\", \"candidates\": [180]}",
+            ),
+            (
+                "RMB 1,280.49",
+                "{\"amount\": 1280, \"token\": \"RMB 1,280.49\", \"rule\": \"currency\", \"candidates\": [1280]}",
+            ),
+            (
+                "\u{a5}180 220\u{5143} P300",
+                "{\"amount\": 180, \"token\": \"\u{a5}180\", \"rule\": \"currency\", \"candidates\": [180, 220, 300]}",
+            ),
+        ] {
+            let evidence = pyjson::dumps(&price_evidence(text).into(), pyjson::Style::Default);
+            assert_eq!(evidence, expected, "{text}");
+        }
+        for (href, expected) in [
+            ("/albums/123?uid=1", Some("123")),
+            ("/albums/abc/albums/45", Some("45")),
+            ("/albums/", None),
+            (
+                "https://x.yupoo.com/albums/\u{661}\u{662}\u{663}",
+                Some("\u{661}\u{662}\u{663}"),
+            ),
+            ("/category/1", None),
+        ] {
+            assert_eq!(album_href_id(href).as_deref(), expected, "{href}");
+        }
+        for (text, expected) in [
+            ("12 photos", 12),
+            ("ab12cd34", 12),
+            ("", 0),
+            ("x", 0),
+            ("\u{663} photos", 3),
+        ] {
+            assert_eq!(first_int(text), expected, "{text}");
+        }
+    }
+
     #[test]
     fn prices_match_python() {
         for (text, amount) in [
