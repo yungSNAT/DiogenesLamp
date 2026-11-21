@@ -481,3 +481,100 @@ fn serve_stops_cleanly_on_ctrl_c() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("no index.json"));
     assert!(std::net::TcpListener::bind(("127.0.0.1", port.parse::<u16>().unwrap())).is_ok());
 }
+
+/// `lamp scrape`'s usage, as CPython 3.15.0's argparse wraps it at 80 columns.
+const SCRAPE_USAGE: &str = r#"usage: lamp scrape [-h] [--seller SELLER] [--full] [--refresh-details-days N]
+                   [--refresh-limit N] [--retry-failed] [--workers WORKERS]
+                   [--rps RPS] [--max-age-days N] [--dry-run]
+                   [--notify COMMAND]
+"#;
+
+/// `lamp scrape -h` from CPython 3.15.0's argparse with the same parser.
+const SCRAPE_HELP: &str = r#"usage: lamp scrape [-h] [--seller SELLER] [--full] [--refresh-details-days N]
+                   [--refresh-limit N] [--retry-failed] [--workers WORKERS]
+                   [--rps RPS] [--max-age-days N] [--dry-run]
+                   [--notify COMMAND]
+
+options:
+  -h, --help            show this help message and exit
+  --seller SELLER       scrape only this seller id
+  --full                re-fetch unchanged albums
+  --refresh-details-days N
+                        also refresh unchanged details last checked N days ago
+  --refresh-limit N     maximum extra unchanged-detail requests across this
+                        run
+  --retry-failed        retry only album IDs recorded as failed in earlier
+                        runs
+  --workers WORKERS
+  --rps RPS             global request rate cap
+  --max-age-days N      skip albums posted more than N days ago (0 = no age
+                        limit); stock that old is usually gone
+  --dry-run             preview scrape work without fetching album pages or
+                        saving files
+  --notify COMMAND      after a run that stores or changes albums, run COMMAND
+                        in the system shell with them as JSON on its stdin
+                        (not after --dry-run or Ctrl+C)
+"#;
+
+/// The scrape usage wraps, and its help lays out long option names and help
+/// text, as argparse does.
+#[test]
+fn scrape_help_and_usage_errors_match_argparse() {
+    let (code, out, _) = lamp(&["scrape", "-h"], None);
+    assert_eq!((code, out.as_str()), (0, SCRAPE_HELP));
+    for (args, message) in [
+        (
+            ["scrape", "--workers", "0"],
+            "argument --workers: must be 1 or greater",
+        ),
+        // `-.5` reads as a number, not an option, so it reaches --rps.
+        (
+            ["scrape", "--rps", "-.5"],
+            "argument --rps: must be a finite number greater than 0",
+        ),
+    ] {
+        let (code, out, err) = lamp(&args, None);
+        assert_eq!(code, 2, "{args:?}");
+        assert!(out.is_empty());
+        assert_eq!(
+            err,
+            format!("{SCRAPE_USAGE}lamp scrape: error: {message}\n"),
+            "{args:?}"
+        );
+    }
+}
+
+#[test]
+fn arguments_that_look_like_options_follow_argparse() {
+    let (code, _, err) = lamp(&["scrape", "extra"], None);
+    assert_eq!(code, 2);
+    assert!(
+        err.ends_with("\nlamp: error: unrecognized arguments: extra\n"),
+        "{err}"
+    );
+    // A negative number is a value, so the scrape starts and finds no sources.
+    let dir = common::tmp();
+    let (code, _, err) = lamp(
+        &["--sources", "none.toml", "scrape", "--max-age-days", "-5"],
+        Some(dir.path()),
+    );
+    assert_eq!(
+        (code, err.as_str()),
+        (1, "error: no sources - run 'lamp import' first\n")
+    );
+    // After `--`, and on its own, `-` starts a file name.
+    for (args, name) in [
+        (
+            &["--sources", "s.toml", "import", "--", "-x.csv"][..],
+            "-x.csv",
+        ),
+        (&["--sources", "s.toml", "import", "-"], "-"),
+    ] {
+        let (code, _, err) = lamp(args, Some(dir.path()));
+        assert_eq!(
+            (code, err),
+            (1, format!("error: dump file not found: {name}\n")),
+            "{args:?}"
+        );
+    }
+}
