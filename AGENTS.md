@@ -1,7 +1,8 @@
 # Repository instructions
 
-Before changing code, read the README's Development and Politeness and scope
-sections. `lamp` is a Rust binary; the viewer assets are built into it, so a
+Before changing code, read the Development section of
+[CONTRIBUTING.md](CONTRIBUTING.md) and the README's Politeness and scope
+section. `lamp` is a Rust binary; the viewer assets are built into it, so a
 viewer edit takes effect at the next `cargo build` or `cargo run`.
 
 - For `viewer/` changes, read [DESIGN.md](DESIGN.md) and [PRODUCT.md](PRODUCT.md).
