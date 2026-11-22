@@ -14,7 +14,6 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use sha2::{Digest, Sha256};
 
-use crate::mimetable;
 use crate::pyerr;
 use crate::pystr;
 use crate::pyurl;
@@ -156,60 +155,20 @@ fn parse_http_date(text: &str) -> Option<i64> {
     Some((date.ordinal - 719_163) * 86_400 + h * 3600 + mi * 60 + s)
 }
 
-/// `SimpleHTTPRequestHandler.guess_type`.
-fn guess_type(path: &str) -> String {
-    fn splitext(path: &str) -> (String, String) {
-        let sep = path.rfind(['/', '\\']).map_or(0, |i| i + 1);
-        let name = &path[sep..];
-        let lead = name.len() - name.trim_start_matches('.').len();
-        match name[lead..].rfind('.') {
-            Some(i) => (
-                path[..sep + lead + i].to_string(),
-                name[lead + i..].to_string(),
-            ),
-            None => (path.to_string(), String::new()),
-        }
+/// The Content-Type of a file lamp writes or embeds, by its extension.
+fn guess_type(path: &str) -> &'static str {
+    let ext = Path::new(path).extension().and_then(|e| e.to_str());
+    match ext.map(str::to_ascii_lowercase).as_deref() {
+        Some("html" | "htm") => "text/html",
+        Some("css") => "text/css",
+        Some("js") => "text/javascript",
+        Some("json") => "application/json",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("png") => "image/png",
+        Some("webp") => "image/webp",
+        Some("zip") => "application/zip",
+        _ => "application/octet-stream",
     }
-    let (_, ext) = splitext(path);
-    match ext.as_str() {
-        ".gz" => return "application/gzip".into(),
-        ".Z" => return "application/octet-stream".into(),
-        ".bz2" => return "application/x-bzip2".into(),
-        ".xz" => return "application/x-xz".into(),
-        _ => {}
-    }
-    match ext.to_lowercase().as_str() {
-        ".gz" => return "application/gzip".into(),
-        ".bz2" => return "application/x-bzip2".into(),
-        ".xz" => return "application/x-xz".into(),
-        _ => {}
-    }
-    let path = if cfg!(windows) && path.as_bytes().get(1) == Some(&b':') {
-        &path[2..]
-    } else {
-        path
-    };
-    let (mut base, mut ext) = splitext(path);
-    while let Some((_, replacement)) = mimetable::SUFFIXES
-        .iter()
-        .find(|(k, _)| *k == ext.to_lowercase())
-    {
-        let (b, e) = splitext(&format!("{base}{replacement}"));
-        base = b;
-        ext = e;
-    }
-    if mimetable::ENCODINGS.contains(&ext.as_str()) {
-        let (_, e) = splitext(&base);
-        ext = e;
-    }
-    let ext = ext.to_lowercase();
-    mimetable::TYPES
-        .iter()
-        .find(|(k, _)| *k == ext)
-        .map_or_else(
-            || "application/octet-stream".into(),
-            |(_, v)| (*v).to_string(),
-        )
 }
 
 /// `posixpath.normpath`.
@@ -529,7 +488,7 @@ impl Handler<'_> {
                     return;
                 };
                 self.send_response(200, None);
-                self.send_header("Content-type", &ctype);
+                self.send_header("Content-type", ctype);
                 self.send_header("Content-Length", &data.len().to_string());
                 self.end_headers();
                 self.write_body(data);
@@ -564,7 +523,7 @@ impl Handler<'_> {
                     return;
                 }
                 self.send_response(200, None);
-                self.send_header("Content-type", &ctype);
+                self.send_header("Content-type", ctype);
                 self.send_header(
                     "Content-Length",
                     &meta.map_or(data.len() as u64, |m| m.len()).to_string(),
@@ -813,19 +772,20 @@ mod tests {
         assert_eq!(posix_normpath("/../x"), "/x");
     }
 
-    // What CPython 3.15's SimpleHTTPRequestHandler.guess_type returns.
+    // Files lamp never writes are served as bytes, compressed ones included.
     #[test]
-    fn compressed_and_suffixed_names_match_http_server() {
-        for (path, expected) in [
-            ("x/a.tgz", "application/x-tar"),
-            ("x/a.taz", "application/x-tar"),
-            ("x/a.svgz", "image/svg+xml"),
-            ("x/a.js.br", "text/javascript"),
-            ("x/a.tar.gz", "application/gzip"),
-            ("x/A.JS.BR", "application/octet-stream"),
+    fn other_names_are_octet_streams() {
+        for path in [
+            "x/a.tgz",
+            "x/a.js.br",
+            "x/a.tar.gz",
+            "x/.json",
+            "x/a.",
+            "x.d/noext",
         ] {
-            assert_eq!(guess_type(path), expected, "{path}");
+            assert_eq!(guess_type(path), "application/octet-stream", "{path}");
         }
+        assert_eq!(guess_type("x/A.JPEG"), "image/jpeg");
     }
 
     // What CPython 3.15's posixpath.normpath returns.
