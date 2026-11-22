@@ -289,7 +289,8 @@ fn active_workflow_inventory_is_exact() {
             "no-ai-attribution.yml",
             "osv-scanner.yml",
             "release.yml",
-            "scorecard.yml"
+            "scorecard.yml",
+            "virustotal.yml"
         ]
     );
 }
