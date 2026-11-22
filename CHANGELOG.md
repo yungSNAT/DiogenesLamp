@@ -121,7 +121,8 @@
   prefix such as `--re` is reported as an unexpected argument without
   listing the options it could match, and a value that is not a whole
   number is reported as 'must be a whole number' instead of naming the
-  check that refused it.
+  check that refused it. A numeric option followed by another option, as in
+  `--workers --full`, now reports `--full` as the option's invalid value.
 
 ## 0.1.2 (2026-11-13)
 
