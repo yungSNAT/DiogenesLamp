@@ -36,15 +36,17 @@ pub fn temp_name(prefix: &str, suffix: &str) -> String {
 
 /// Create a new temporary file beside `dest`, as NamedTemporaryFile does.
 pub fn create_temp(dir: &Path, prefix: &str, suffix: &str) -> Result<(PathBuf, std::fs::File)> {
-    for _ in 0..100 {
-        let path = dir.join(temp_name(prefix, suffix));
-        match OpenOptions::new().write(true).create_new(true).open(&path) {
-            Ok(file) => return Ok((path, file)),
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(e) => return Err(Error::Os(pyerr::os_error(&e, Call::Open, &path))),
-        }
-    }
-    Err(Error::Os("No usable temporary file name found".into()))
+    // 100 names, as tempfile tries, before giving up.
+    (0..100)
+        .map(|_| dir.join(temp_name(prefix, suffix)))
+        .find_map(
+            |path| match OpenOptions::new().write(true).create_new(true).open(&path) {
+                Ok(file) => Some(Ok((path, file))),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => None,
+                Err(e) => Some(Err(Error::Os(pyerr::os_error(&e, Call::Open, &path)))),
+            },
+        )
+        .unwrap_or_else(|| Err(Error::Os("No usable temporary file name found".into())))
 }
 
 /// Write JSON through a temporary file and a replace, so readers never see
@@ -357,12 +359,8 @@ pub fn reindex(data_dir: &Path) -> Result<(i128, usize)> {
         .and_then(Value::as_array)
         .map(|s| {
             s.iter()
-                .map(
-                    |seller| match seller.as_object().and_then(|m| m.get("album_count")) {
-                        Some(Value::Int(n)) => *n,
-                        _ => 0,
-                    },
-                )
+                // Strict, so write_index has just counted every seller.
+                .filter_map(|seller| seller.as_object()?.get("album_count")?.as_int())
                 .sum()
         })
         .unwrap_or(0);

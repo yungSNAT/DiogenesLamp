@@ -45,6 +45,11 @@ impl Value {
         }
     }
 
+    pub fn as_int(&self) -> Option<i128> {
+        let Value::Int(i) = self else { return None };
+        Some(*i)
+    }
+
     pub fn as_object(&self) -> Option<&Map> {
         match self {
             Value::Object(map) => Some(map),
@@ -57,11 +62,6 @@ impl Value {
             Value::Object(map) => Some(map),
             _ => None,
         }
-    }
-
-    /// `type(value) is int` (bool excluded).
-    pub fn is_int(&self) -> bool {
-        matches!(self, Value::Int(_) | Value::BigInt(_))
     }
 
     /// Python truthiness.
@@ -718,6 +718,42 @@ mod tests {
         loads(text).unwrap_err().0
     }
 
+    // The accessors and str() on the types a caller meets.
+    #[test]
+    fn accessors_and_str_by_type() {
+        let mut number = Value::Int(1);
+        assert!(number.as_array_mut().is_none());
+        assert!(number.as_object_mut().is_none());
+        for (value, text) in [
+            (Value::Null, "None"),
+            (Value::Bool(true), "True"),
+            (Value::Bool(false), "False"),
+            (Value::Int(-3), "-3"),
+            (
+                Value::BigInt("123456789012345678901234567890123456789012".into()),
+                "123456789012345678901234567890123456789012",
+            ),
+            (Value::Float(0.5), "0.5"),
+            (Value::Str("s".into()), "s"),
+            (Value::Array(vec![Value::Int(1)]), "[1]"),
+        ] {
+            assert_eq!(value.py_str(), text);
+        }
+        assert_eq!(DecodeError("bad".into()).to_string(), "bad");
+    }
+
+    // Python's == between floats and ints of any size.
+    #[test]
+    fn floats_equal_ints_only_at_the_same_whole_value() {
+        let big = |s: &str| Value::BigInt(s.into());
+        let sextillion = "1000000000000000000000";
+        assert!(py_eq(&Value::Float(1e21), &big(sextillion)));
+        assert!(py_eq(&big(&format!("-{sextillion}")), &Value::Float(-1e21)));
+        assert!(!py_eq(&Value::Float(1e21), &big(&format!("-{sextillion}"))));
+        assert!(!py_eq(&Value::Float(f64::INFINITY), &Value::Int(1)));
+        assert!(!py_eq(&Value::Float(0.5), &Value::Int(0)));
+    }
+
     #[test]
     fn errors_match_the_c_scanner() {
         let cases = [
@@ -797,6 +833,15 @@ mod tests {
             ("[1e]", "Expecting ',' delimiter: line 1 column 3 (char 2)"),
             ("[-NaN]", "Expecting value: line 1 column 2 (char 1)"),
             ("1\n\n2", "Extra data: line 3 column 1 (char 3)"),
+            (
+                "{\"a\": 1, 2}",
+                "Expecting property name enclosed in double quotes: line 1 column 10 (char 9)",
+            ),
+            // Not CPython's: it keeps the lone surrogate the escape names.
+            (
+                "\"\\ud800abcdefgh\"",
+                "lone surrogate \\ud800 is not supported: line 1 column 2 (char 1)",
+            ),
         ];
         for (text, expected) in cases {
             assert_eq!(err(text), expected, "{text:?}");

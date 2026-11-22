@@ -611,3 +611,56 @@ fn malformed_request_lines_close_without_a_reply() {
     }
     assert_eq!(get(server.port, "/data/index.json").status, 200);
 }
+
+/// A directory path that Python's urlsplit refuses (an unclosed `[` in what
+/// reads as a host) ends the request without a reply, as its ValueError did.
+#[test]
+fn a_directory_path_urlsplit_refuses_closes_without_a_reply() {
+    let dir = common::tmp();
+    let (viewer, data) = layout(dir.path());
+    // Windows drops the `x:` word, which names a drive there.
+    let folder = if cfg!(windows) {
+        viewer.join("[")
+    } else {
+        viewer.join("x:").join("[")
+    };
+    std::fs::create_dir_all(&folder).unwrap();
+    let server = start(Viewer::Dir(viewer), &data);
+    assert_eq!(exchange(server.port, b"GET x://[/ HTTP/1.0\r\n\r\n"), b"");
+    assert_eq!(get(server.port, "/").status, 200);
+}
+
+/// A file that opens but cannot be read ends the request without a reply.
+#[cfg(target_os = "linux")]
+#[test]
+fn an_unreadable_file_closes_without_a_reply() {
+    let dir = common::tmp();
+    let (viewer, data) = layout(dir.path());
+    // Reading this process's memory from address 0 fails with EIO.
+    std::os::unix::fs::symlink("/proc/self/mem", viewer.join("mem")).unwrap();
+    let server = start(Viewer::Dir(viewer), &data);
+    assert_eq!(exchange(server.port, b"GET /mem HTTP/1.0\r\n\r\n"), b"");
+    assert_eq!(get(server.port, "/").status, 200);
+}
+
+/// A connection reset before or during the headers is dropped quietly, and
+/// the server goes on answering.
+#[cfg(unix)]
+#[test]
+fn a_reset_connection_is_dropped() {
+    use std::time::Duration;
+    let dir = common::tmp();
+    let (viewer, data) = layout(dir.path());
+    let server = start(Viewer::Dir(viewer), &data);
+    for sent in [&b""[..], b"GET / HTTP/1.0\r\n"] {
+        let mut stream = TcpStream::connect(("127.0.0.1", server.port)).unwrap();
+        stream.write_all(sent).unwrap();
+        // Long enough for the server to accept and block reading.
+        std::thread::sleep(Duration::from_millis(200));
+        // A zero linger makes the close a reset.
+        rustix::net::sockopt::set_socket_linger(&stream, Some(Duration::ZERO)).unwrap();
+        drop(stream);
+    }
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(get(server.port, "/").status, 200);
+}

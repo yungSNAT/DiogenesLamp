@@ -707,3 +707,119 @@ fn serve_on_a_busy_port_fails() {
         "{err}"
     );
 }
+
+/// Ctrl+C during a scrape stops it with exit code 130 and says what was kept.
+/// The report lines fill stdout's pipe until it is read, so the run is still
+/// going when the signal arrives. Signalled with `kill -INT`, so Unix only.
+#[cfg(unix)]
+#[test]
+fn ctrl_c_stops_a_scrape_with_exit_code_130() {
+    use std::io::BufRead;
+    const SELLERS: usize = 3000;
+    let dir = common::tmp();
+    let sources = dir.path().join("many.toml");
+    let mut toml = String::new();
+    for n in 0..SELLERS {
+        toml.push_str(&format!(
+            "[yupoo.s{n}]\nurl = \"https://127.0.{}.{}\"\nname = \"s{n}\"\n",
+            n / 250,
+            n % 250 + 1
+        ));
+    }
+    write(&sources, toml);
+    for (dry_run, saved) in [
+        (
+            false,
+            " sellers; finished work is saved and index.json is written",
+        ),
+        (true, " sellers"),
+    ] {
+        let data = dir.path().join(format!("d{dry_run}"));
+        let mut args = vec![
+            "--sources".to_string(),
+            sources.to_string_lossy().into_owned(),
+            "--data".to_string(),
+            data.to_string_lossy().into_owned(),
+            "scrape".to_string(),
+        ];
+        if dry_run {
+            args.push("--dry-run".into());
+        }
+        let mut child = Command::new(env!("CARGO_BIN_EXE_lamp"))
+            .args(&args)
+            .env_remove("PYTHONUNBUFFERED")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut stdout = std::io::BufReader::new(child.stdout.take().unwrap());
+        let mut line = String::new();
+        stdout.read_line(&mut line).unwrap();
+        assert!(line.starts_with(&format!("[1/{SELLERS}] ")), "{line}");
+        let signalled = Command::new("kill")
+            .args(["-INT", &child.id().to_string()])
+            .status()
+            .unwrap();
+        assert!(signalled.success());
+        let mut rest = String::new();
+        stdout.read_to_string(&mut rest).unwrap();
+        let output = child.wait_with_output().unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(130), "{stderr}");
+        let last = stderr.lines().last().unwrap_or_default();
+        assert!(last.starts_with("interrupted after "), "{stderr}");
+        assert!(last.ends_with(&format!("of {SELLERS}{saved}")), "{stderr}");
+    }
+}
+
+/// Without --no-browser, serve opens the URL with the desktop's opener: here
+/// a stand-in xdg-open that records it.
+#[cfg(target_os = "linux")]
+#[test]
+fn serve_opens_the_browser_at_its_url() {
+    use std::io::BufRead;
+    use std::os::unix::fs::PermissionsExt;
+    let dir = common::tmp();
+    let bin = dir.path().join("bin");
+    let opener = bin.join("xdg-open");
+    write(&opener, "#!/bin/sh\nprintf '%s' \"$1\" > \"$0.url\"\n");
+    std::fs::set_permissions(&opener, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_lamp"))
+        .args([
+            "--data",
+            &dir.path().to_string_lossy(),
+            "serve",
+            "--port",
+            "0",
+        ])
+        .env("PATH", &bin)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdout = std::io::BufReader::new(child.stdout.take().unwrap());
+    let mut line = String::new();
+    stdout.read_line(&mut line).unwrap();
+    let url = line
+        .strip_prefix("serving on ")
+        .and_then(|rest| rest.strip_suffix(" (Ctrl+C to stop)\n"))
+        .unwrap_or_else(|| panic!("{line}"))
+        .to_string();
+    let recorded = bin.join("xdg-open.url");
+    let started = std::time::Instant::now();
+    while read_url(&recorded).is_empty() && started.elapsed() < Duration::from_secs(30) {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let signalled = Command::new("kill")
+        .args(["-INT", &child.id().to_string()])
+        .status()
+        .unwrap();
+    assert!(signalled.success());
+    assert_eq!(child.wait().unwrap().code(), Some(0));
+    assert_eq!(read_url(&recorded), url);
+}
+
+#[cfg(target_os = "linux")]
+fn read_url(path: &std::path::Path) -> String {
+    std::fs::read_to_string(path).unwrap_or_default()
+}

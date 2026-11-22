@@ -123,6 +123,11 @@
   number is reported as 'must be a whole number' instead of naming the
   check that refused it. A numeric option followed by another option, as in
   `--workers --full`, now reports `--full` as the option's invalid value.
+- On Windows, a path argument with an incomplete UNC prefix, such as
+  `\\server`, is no longer read as `\server` on the current drive: paths
+  now split into drive and root as Python's `PureWindowsPath` splits them,
+  so `\\server\share` also gains its trailing `\`, and any character before
+  a colon, as in `1:`, names a drive (#248).
 
 ## 0.1.2 (2026-11-13)
 

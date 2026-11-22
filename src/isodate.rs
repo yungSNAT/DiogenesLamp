@@ -57,12 +57,11 @@ impl Date {
     }
 
     pub fn ymd(self) -> (i64, i64, i64) {
+        // 400 years have 146,097 days, so this never passes the year; the
+        // test of every ordinal holds it to that.
         let mut year = (self.ordinal * 400 / 146_097).max(1);
         while days_before_year(year + 1) < self.ordinal {
             year += 1;
-        }
-        while days_before_year(year) >= self.ordinal {
-            year -= 1;
         }
         let mut day = self.ordinal - days_before_year(year);
         let mut month = 1;
@@ -398,6 +397,14 @@ mod tests {
         ];
         for (year, ordinal) in ordinals {
             assert_eq!(Date::from_ymd(year, 12, 31).unwrap().ordinal, ordinal);
+        }
+    }
+
+    #[test]
+    fn every_ordinal_reads_back_as_its_date() {
+        for ordinal in 1..=MAX_ORDINAL {
+            let (year, month, day) = Date { ordinal }.ymd();
+            assert_eq!(Date::from_ymd(year, month, day), Some(Date { ordinal }));
         }
     }
 
