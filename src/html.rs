@@ -35,6 +35,15 @@ enum Kind {
     },
 }
 
+impl Kind {
+    fn element(&self) -> Option<(&str, &[(String, String)])> {
+        match self {
+            Kind::Element { name, attrs } => Some((name, attrs)),
+            Kind::Text { .. } => None,
+        }
+    }
+}
+
 #[derive(Debug)]
 struct Node {
     kind: Kind,
@@ -85,10 +94,10 @@ struct Builder {
 
 impl Builder {
     fn name(&self, id: usize) -> &str {
-        match &self.nodes[id].kind {
-            Kind::Element { name, .. } => name,
-            Kind::Text { .. } => "",
-        }
+        let element = self.nodes[id].kind.element();
+        element
+            .expect("the open-element stacks hold only elements")
+            .0
     }
 
     fn current(&self) -> usize {
@@ -151,10 +160,8 @@ impl Builder {
         id
     }
 
+    /// Its one caller keeps the root on the stack.
     fn pop_tag(&mut self) {
-        if self.stack.len() <= 1 {
-            return;
-        }
         let Some(id) = self.stack.pop() else { return };
         if let Kind::Element { name, .. } = &self.nodes[id].kind
             && let Some(count) = self.open_counts.get_mut(name)
@@ -237,32 +244,19 @@ impl Builder {
                 .chars()
                 .all(|c| c.is_ascii() && (c as u8 as char).is_digit(radix));
         let (number, extra) = if whole {
-            (Some(big_number(digits, radix)), String::new())
+            (big_number(digits, radix), String::new())
         } else {
-            // _DECIMAL/_HEX_REFERENCE_WITH_FOLLOWING_DATA: "^([0-9]+)(.*)",
-            // where "." stops at a newline and hex digits are lowercase only.
-            let lead = digits
-                .bytes()
-                .take_while(|b| {
-                    if hex {
-                        b.is_ascii_digit() || (b'a'..=b'f').contains(b)
-                    } else {
-                        b.is_ascii_digit()
-                    }
-                })
-                .count();
-            if lead == 0 {
-                (None, digits.to_string())
-            } else {
-                let rest = &digits[lead..];
-                let line = rest.split('\n').next().unwrap_or("");
-                (Some(big_number(&digits[..lead], radix)), line.to_string())
-            }
+            // _DECIMAL_REFERENCE_WITH_FOLLOWING_DATA: "^([0-9]+)(.*)", where
+            // "." stops at a newline. Only a decimal reference cut off by the
+            // end of input gets here (a hex one is all hex digits), and the
+            // tokenizer passes it only after a leading digit, so the pattern
+            // always matches and bs4's no-match case cannot occur.
+            let lead = digits.bytes().take_while(u8::is_ascii_digit).count();
+            let rest = &digits[lead..];
+            let line = rest.split('\n').next().unwrap_or("");
+            (big_number(&digits[..lead], radix), line.to_string())
         };
-        let text = match number {
-            None => String::new(),
-            Some(n) => numeric_character_reference(n),
-        };
+        let text = numeric_character_reference(number);
         self.data(&text);
         self.data(&extra);
     }
@@ -482,9 +476,7 @@ struct Tokenizer<'a> {
 
 /// `[a-zA-Z][^\t\n\r\f />]*` followed by `(?:[\t\n\r\f ]|/(?!>))*`.
 fn tagfind(b: &[u8], p: usize) -> Option<(usize, usize, usize)> {
-    if !b.get(p).is_some_and(u8::is_ascii_alphabetic) {
-        return None;
-    }
+    b.get(p).filter(|c| c.is_ascii_alphabetic())?;
     let mut j = p + 1;
     while j < b.len() && !is_tag_ws(b[j]) && b[j] != b'/' && b[j] != b'>' {
         j += 1;
@@ -582,10 +574,7 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn find(&self, needle: &str, from: usize) -> Option<usize> {
-        if from > self.b.len() {
-            return None;
-        }
-        self.raw[from..].find(needle).map(|p| p + from)
+        self.raw.get(from..)?.find(needle).map(|p| p + from)
     }
 
     fn interesting(&self, i: usize) -> Option<usize> {
@@ -651,8 +640,6 @@ impl<'a> Tokenizer<'a> {
                         || (v.starts_with('"') && v.ends_with('"')))
                 {
                     v = &v[1..v.len() - 1];
-                } else if v == "'" || v == "\"" {
-                    v = "";
                 }
                 value = Some(if v.is_empty() {
                     String::new()
@@ -736,9 +723,7 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn parse_html_declaration(&self, i: usize, out: &mut Builder) -> Option<usize> {
-        if self.starts(i, "<!--") {
-            return self.parse_comment(i, out);
-        }
+        // goahead has taken `<!--` already.
         if self.starts(i, "<![CDATA[") {
             let j = self.find("]]>", i + 9)?;
             out.special(&self.raw[i + 9..j], StrKind::CData);
@@ -860,7 +845,8 @@ impl<'a> Tokenizer<'a> {
                 } else {
                     break;
                 }
-            } else if self.starts(i, "&") {
+            } else {
+                // `interesting` stops only at `<` or `&`.
                 if let Some((name_end, term)) = self.match_entityref(i) {
                     out.entityref(&self.raw[i + 1..name_end]);
                     i = if term == Some(b';') {
@@ -1058,10 +1044,7 @@ impl Document {
     }
 
     fn element(&self, id: NodeId) -> Option<(&str, &[(String, String)])> {
-        match &self.nodes[id].kind {
-            Kind::Element { name, attrs } => Some((name, attrs)),
-            Kind::Text { .. } => None,
-        }
+        self.nodes[id].kind.element()
     }
 
     /// `tag.get(key)` when it is a plain string (class-like attributes are lists).
@@ -1236,5 +1219,57 @@ mod tests {
             .map(|id| doc.get_text(id, "", false))
             .collect();
         assert_eq!(found, ["1", "2", "3"]);
+    }
+
+    // What CPython 3.15's html.unescape returns for each input.
+    #[test]
+    fn unescape_matches_html_unescape() {
+        for (input, expected) in [
+            ("plain", "plain"),
+            ("a&amp;b&lt", "a&b<"),
+            ("&#1;x", "x"),
+            ("&#128;&#x41;", "\u{20ac}A"),
+            ("&notit;", "\u{ac}it;"),
+            ("&zzzz;", "&zzzz;"),
+            ("&#;", "&#;"),
+            ("&#x;", "&#x;"),
+            ("&;", "&;"),
+            ("&", "&"),
+            ("&amp", "&"),
+        ] {
+            assert_eq!(unescape(input), expected, "{input:?}");
+        }
+    }
+
+    #[test]
+    fn selectors_match_tags_classes_and_attributes() {
+        let doc = parse(
+            "<a class='x y' href='/1' rel='next' title='t'>1</a>\
+             <a class='x' href='/2'>2</a><td headers='h'>3</td>",
+        );
+        let texts = |selector: &str| -> Vec<String> {
+            doc.select(doc.root(), selector)
+                .into_iter()
+                .map(|id| doc.get_text(id, "", false))
+                .collect()
+        };
+        assert_eq!(texts("a.x"), ["1", "2"]);
+        assert_eq!(texts("a.x.y"), ["1"]);
+        assert_eq!(texts("a[href=\"/2\"]"), ["2"]);
+        assert_eq!(texts("a[href=/3]"), Vec::<String>::new());
+        assert_eq!(texts("A.y, td"), ["1", "3"]);
+        // Not bs4 parity: SoupSieve rejects this selector and the one with
+        // an unquoted "/3" above. The subset only ever gets parse.rs's fixed
+        // selectors, and this pins that it ignores trailing text rather than
+        // looping or panicking.
+        assert_eq!(texts("a[href=\"/1\"]junk"), ["1"]);
+        let first = doc.select_one(doc.root(), "a").unwrap();
+        assert_eq!(doc.attr(first, "title"), Some("t"));
+        assert_eq!(doc.attr(first, "missing"), None);
+        // bs4 keeps multi-valued attributes as lists, so they are not strings.
+        assert_eq!(doc.attr(first, "rel"), None);
+        assert_eq!(doc.attr(first, "class"), None);
+        let td = doc.select_one(doc.root(), "td").unwrap();
+        assert_eq!(doc.attr(td, "headers"), None);
     }
 }

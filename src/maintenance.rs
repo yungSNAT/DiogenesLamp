@@ -437,54 +437,57 @@ pub fn prepare_covers(root: &Path, limit: i128) -> Result<Map> {
         let relative = seller.get("shard").map(Value::py_str).unwrap_or_default();
         let mut shard = read_metadata(&data_path(root, &relative, false)?, &relative)?;
         let mut changed = false;
-        if let Some(Value::Array(albums)) = shard.as_object_mut().and_then(|m| m.get_mut("albums"))
+        // read_metadata has checked the shard: its albums are objects.
+        let albums = shard
+            .as_object_mut()
+            .and_then(|m| m.get_mut("albums"))
+            .and_then(Value::as_array_mut);
+        for album in albums
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_object_mut)
         {
-            for album in albums.iter_mut() {
-                if processed >= limit {
-                    break;
+            if processed >= limit {
+                break;
+            }
+            let thumb = match album.get("thumb") {
+                Some(Value::Str(t)) if !t.is_empty() => t.clone(),
+                _ => continue,
+            };
+            let path = data_path(root, &thumb, true)?;
+            // A cover missing from disk is the next scrape's to fetch, so
+            // it neither takes a snapshot nor counts against the limit.
+            if !path.is_file() {
+                missing_covers += 1;
+                continue;
+            }
+            if album
+                .get("cover_prepared")
+                .is_some_and(|v| pyjson::py_eq(v, &Value::Int(1)))
+            {
+                continue;
+            }
+            if snapshot_path.is_none() {
+                snapshot_path = Some(snapshot_inner(root, true)?);
+            }
+            processed += 1;
+            let attempt = (|| -> Result<()> {
+                let size = stat_len(&path)?;
+                if size > 8 * 1024 * 1024 {
+                    return value("cover exceeds 8 MB");
                 }
-                let Some(album) = album.as_object_mut() else {
-                    continue;
-                };
-                let thumb = match album.get("thumb") {
-                    Some(Value::Str(t)) if !t.is_empty() => t.clone(),
-                    _ => continue,
-                };
-                let path = data_path(root, &thumb, true)?;
-                // A cover missing from disk is the next scrape's to fetch, so
-                // it neither takes a snapshot nor counts against the limit.
-                if !path.is_file() {
-                    missing_covers += 1;
-                    continue;
+                before_bytes += i128::from(size);
+                resized += i128::from(resize_cover(&path)?);
+                after_bytes += i128::from(stat_len(&path)?);
+                for (k, v) in cover_facts(&path) {
+                    album.insert(k, v);
                 }
-                if album
-                    .get("cover_prepared")
-                    .is_some_and(|v| pyjson::py_eq(v, &Value::Int(1)))
-                {
-                    continue;
-                }
-                if snapshot_path.is_none() {
-                    snapshot_path = Some(snapshot_inner(root, true)?);
-                }
-                processed += 1;
-                let attempt = (|| -> Result<()> {
-                    let size = stat_len(&path)?;
-                    if size > 8 * 1024 * 1024 {
-                        return value("cover exceeds 8 MB");
-                    }
-                    before_bytes += i128::from(size);
-                    resized += i128::from(resize_cover(&path)?);
-                    after_bytes += i128::from(stat_len(&path)?);
-                    for (k, v) in cover_facts(&path) {
-                        album.insert(k, v);
-                    }
-                    album.insert("cover_prepared".into(), Value::Int(1));
-                    Ok(())
-                })();
-                match attempt {
-                    Ok(()) => changed = true,
-                    Err(e) => errors.push(format!("{}: {e}", id_of(album))),
-                }
+                album.insert("cover_prepared".into(), Value::Int(1));
+                Ok(())
+            })();
+            match attempt {
+                Ok(()) => changed = true,
+                Err(e) => errors.push(format!("{}: {e}", id_of(album))),
             }
         }
         if changed {
@@ -630,13 +633,13 @@ fn export_row(album: &Map) -> Map {
         Some(p) if p.truthy() => p.clone(),
         _ => Value::Null,
     };
-    let links = match album.get("links") {
-        Some(Value::Array(links)) => links
-            .iter()
-            .filter_map(|l| l.as_object().and_then(|l| l.get("url")).cloned())
-            .collect(),
-        _ => Vec::new(),
-    };
+    let links: Vec<Value> = album
+        .get("links")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|l| l.as_object().and_then(|l| l.get("url")).cloned())
+        .collect();
     let values = [
         field("seller"),
         id_of(album).into(),
@@ -865,9 +868,7 @@ impl Made {
 
     /// A new file at `target` holding `bytes`; one already there is an error.
     fn file(&mut self, target: &Path, bytes: &mut dyn Read) -> Result<()> {
-        if let Some(parent) = target.parent() {
-            self.dir(parent)?;
-        }
+        target.parent().map_or(Ok(()), |parent| self.dir(parent))?;
         let error = |e: std::io::Error| Error::Os(pyerr::os_error(&e, Call::Open, target));
         let mut out = std::fs::File::create_new(target).map_err(error)?;
         self.files.push(target.to_path_buf());

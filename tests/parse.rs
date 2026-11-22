@@ -339,3 +339,24 @@ fn live_album_list_parses() {
             .all(|s| !s.id.is_empty() && !s.thumb_url.is_empty())
     );
 }
+
+// JSON-LD arrays can mix scalars with objects; only objects carry dates.
+#[test]
+fn parse_album_page_ld_json_arrays_skip_scalars() {
+    let html = "<script type=\"application/ld+json\">[1, \"x\", null, \
+        {\"@graph\": [{\"datePublished\": \"2025-01-02T03:04:05+08:00\"}]}]</script>";
+    assert_eq!(
+        parse_album_page(html).date_published,
+        "2025-01-02T03:04:05+08:00"
+    );
+}
+
+// A card whose link is not an album is skipped.
+#[test]
+fn parse_album_list_skips_cards_without_an_album_link() {
+    let html = "<a class=\"album__main\" href=\"/categories/1\" title=\"x\"></a>\
+        <a class=\"album3__main\" href=\"/albums/42?uid=1\" title=\"Kept\"></a>";
+    let stubs = parse_album_list(html);
+    assert_eq!(stubs.len(), 1);
+    assert_eq!(stubs[0].id, "42");
+}

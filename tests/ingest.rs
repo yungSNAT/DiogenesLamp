@@ -460,6 +460,10 @@ fn classify_edge_rows_give_stable_ids_or_none() {
         id("https://k.youshop10.com/abc;jsessionid=1").as_deref(),
         Some("youshop-abc")
     );
+    assert_eq!(
+        id("https://k.youshop10.com/a;b/c").as_deref(),
+        Some("youshop-a-b-c")
+    );
     assert_eq!(id("https://k.youshop10.com/"), None);
     assert_eq!(id("https://.x.yupoo.com/"), None);
     assert_eq!(id("\""), None);

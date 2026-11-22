@@ -122,7 +122,10 @@
 {"in": "1a:rest", "parts": [null, null, "1a:rest", null, null], "hostname": null, "username": null, "password": null, "port": null},
 {"in": "https://h/\u00e9", "parts": ["https", "h", "/\u00e9", null, null], "hostname": "h", "username": null, "password": null, "port": null},
 {"in": "https://\u00e9.com/", "parts": ["https", "\u00e9.com", "/", null, null], "hostname": "\u00e9.com", "username": null, "password": null, "port": null},
-{"in": "https://h:\u0661\u0662/", "parts": ["https", "h:\u0661\u0662", "/", null, null], "hostname": "h", "username": null, "password": null, "port_error": "Port could not be cast to integer value as '\u0661\u0662'"}
+{"in": "https://h:\u0661\u0662/", "parts": ["https", "h:\u0661\u0662", "/", null, null], "hostname": "h", "username": null, "password": null, "port_error": "Port could not be cast to integer value as '\u0661\u0662'"},
+{"in": "https://[v1]/", "error": "IPvFuture address is invalid"},
+{"in": "https://a[::1]/", "error": "Invalid IPv6 URL"},
+{"in": "https://[a]@h/", "error": "'h' does not appear to be an IPv4 or IPv6 address"}
 ],
 "urlunsplit": [
 [["https", "h", "/p", "q", "f"], "https://h/p?q#f"],
@@ -177,6 +180,7 @@
 ["https://a/b/c/d;p?q", "https:?z", "https://a/b/c/d;p?z"],
 ["https://a/b/c/d;p?q", "https:#z", "https://a/b/c/d;p?q#z"],
 ["https://a/b/c/d;p?q", "//[::1/x", null, "Invalid IPv6 URL"],
+["https://a/b/c/d;p?q", "/..", "https://a/"],
 ["", "x", "x"],
 ["https://a/b", "", "https://a/b"],
 ["mailto:a", "b", "b"],
@@ -199,7 +203,8 @@
 ["a+b", "a+b", "a+b"],
 ["%C3%A9%", "\u00e9%", "\u00e9%"],
 ["plain", "plain", "plain"],
-["", "", ""]
+["", "", ""],
+["\u00e9%41\u20ac", "\u00e9A\u20ac", "\u00e9A\u20ac"]
 ],
 "quote": [
 ["a b/c?d", "/", "a%20b/c%3Fd"],

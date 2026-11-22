@@ -710,6 +710,7 @@ fn pinned_agents_refuse_proxies_and_redirects() {
 #[test]
 fn agent_cache_reuses_per_host_and_address_and_evicts_the_oldest() {
     let mut cache: Lru<u32> = Lru::new(http::MAX_AGENTS_PER_THREAD);
+    assert!(cache.is_empty());
     let key = |h: &str, ip: &str| (h.to_string(), ip.to_string(), 443u16);
     let mut made = 0;
     for _ in 0..3 {
@@ -869,6 +870,14 @@ fn download_bounds_mime_dimensions_and_truncation() {
     let dir = common::tmp();
     let payload = png_bytes();
     let length = payload.len().to_string();
+    // No temporary file fits beside a 250-byte name, so nothing is written.
+    let long_name = format!("{}.png", "n".repeat(246));
+    assert!(!download_into(
+        dir.path(),
+        FakeResponse::new(200, &payload, &[("Content-Type", "image/png")]),
+        &long_name
+    ));
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
     assert!(download_into(
         dir.path(),
         FakeResponse::new(
@@ -1043,6 +1052,8 @@ fn page_text_follows_the_declared_or_default_charset() {
         text(Some("text/html; charset=\"latin_1\""), b"caf\xe9"),
         "café"
     );
+    // Other parameters are passed over, so text/* falls back to ISO-8859-1.
+    assert_eq!(text(Some("text/html; q=1; boundary"), utf8), "cafÃ©");
 }
 
 #[test]
@@ -1174,7 +1185,10 @@ fn the_real_transport_connects_only_to_the_pinned_address() {
         connect_ips: vec!["not an address".into(), "127.0.0.1".into()],
         port,
     };
-    let headers: Headers = vec![("Host".into(), "pinned.invalid".into())];
+    let headers: Headers = vec![
+        ("Host".into(), "pinned.invalid".into()),
+        ("User-Agent".into(), "lamp-test".into()),
+    ];
     let result = http::open_pinned(&target, &headers);
     assert!(matches!(result, Err(TransportError::Request(_))));
     let hello = server.join().unwrap();
@@ -1190,4 +1204,36 @@ fn the_real_transport_connects_only_to_the_pinned_address() {
     };
     let result = http::open_pinned(&unparsable, &headers);
     assert!(matches!(result, Err(TransportError::Request(m)) if m == "bad address not an address"));
+}
+
+// A format Pillow could open but lamp does not decode has no dimensions.
+#[test]
+fn verify_image_refuses_an_undecoded_format() {
+    let dir = common::tmp();
+    let gif = dir.path().join("x.gif");
+    common::write(&gif, b"GIF89a\x01\x00\x01\x00\x00\x00\x00;");
+    assert_eq!(
+        http::verify_image(&gif, "image/gif"),
+        Err("image has invalid dimensions".into())
+    );
+}
+
+// The scraper reaches the client through ScrapeClient, which keeps its rules.
+#[test]
+fn the_scrape_client_trait_downloads_through_the_client() {
+    let dir = common::tmp();
+    let payload = png_bytes();
+    let (client, _, _) = make_client(
+        global,
+        vec![Ok(FakeResponse::new(
+            200,
+            &payload,
+            &[("Content-Type", "image/png")],
+        ))],
+    );
+    let dest = dir.path().join("t.png");
+    let fetched =
+        lamp::scrape::ScrapeClient::download(&client, "https://images.example/t.png", &dest, None);
+    assert_eq!(fetched, Ok(true));
+    assert_eq!(std::fs::read(&dest).unwrap(), payload);
 }
