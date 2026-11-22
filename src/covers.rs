@@ -414,22 +414,9 @@ pub fn resize_cover(path: &Path) -> Result<bool> {
     if let Some((w, h)) = thumbnail_size(image.width(), image.height(), COVER_EDGE) {
         image = image.resize_exact(w, h, image::imageops::FilterType::Lanczos3);
     }
-    if opened.format == ImageFormat::Jpeg
-        && !matches!(
-            image,
-            DynamicImage::ImageRgb8(_) | DynamicImage::ImageLuma8(_)
-        )
-    {
-        image = DynamicImage::ImageRgb8(image.to_rgb8());
-    }
-    if opened.format == ImageFormat::WebP
-        && !matches!(
-            image,
-            DynamicImage::ImageRgb8(_) | DynamicImage::ImageRgba8(_)
-        )
-    {
-        image = DynamicImage::ImageRgba8(image.to_rgba8());
-    }
+    // Pillow converts a JPEG to RGB unless it is RGB or L, and a WebP to RGBA
+    // unless it is RGB or RGBA. The image crate's decoders give only those
+    // (CMYK JPEGs arrive as RGB), so the pixels go to the encoder as they are.
     let mut encoded = Vec::new();
     let write_result = match opened.format {
         ImageFormat::Jpeg => {

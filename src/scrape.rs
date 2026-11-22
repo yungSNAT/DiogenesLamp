@@ -348,12 +348,11 @@ fn scrape_into(
         Ok((shard, failures, missing_before))
     });
     let (mut shard, pending_failures, missing_before) = match loaded {
-        Ok(found) => found,
         Err(Error::Value(message)) => {
             summary.error = message;
             return Ok(());
         }
-        Err(other) => return Err(other),
+        other => other?,
     };
     let today = isodate::parse_date(pystr::prefix_chars(run_ts, 10)).ok_or_else(|| {
         Error::Value(format!(

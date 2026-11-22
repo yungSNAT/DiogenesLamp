@@ -45,25 +45,37 @@ const ERROR_TEMPLATE: &str = "<!DOCTYPE HTML>
 </html>
 ";
 
+/// `http.server`'s phrases for the codes this server sends.
+const STATUS_TEXT: [(u16, &str, &str); 6] = [
+    (200, "OK", "Request fulfilled, document follows"),
+    (
+        301,
+        "Moved Permanently",
+        "Object moved permanently -- see URI list",
+    ),
+    (
+        304,
+        "Not Modified",
+        "Document has not changed since given time",
+    ),
+    (404, "Not Found", "Nothing matches the given URI"),
+    (
+        431,
+        "Request Header Fields Too Large",
+        "The server refused this request because the request header fields are too large",
+    ),
+    (
+        501,
+        "Not Implemented",
+        "Server does not support this operation",
+    ),
+];
+
 fn status_text(code: u16) -> (&'static str, &'static str) {
-    match code {
-        200 => ("OK", "Request fulfilled, document follows"),
-        301 => (
-            "Moved Permanently",
-            "Object moved permanently -- see URI list",
-        ),
-        304 => ("Not Modified", "Document has not changed since given time"),
-        400 => ("Bad Request", "Bad request syntax or unsupported method"),
-        404 => ("Not Found", "Nothing matches the given URI"),
-        414 => ("URI Too Long", "URI is too long"),
-        431 => (
-            "Request Header Fields Too Large",
-            "The server refused this request because the request header fields are too large",
-        ),
-        501 => ("Not Implemented", "Server does not support this operation"),
-        505 => ("HTTP Version Not Supported", "Cannot fulfill request"),
-        _ => ("???", "???"),
-    }
+    STATUS_TEXT
+        .iter()
+        .find(|(known, _, _)| *known == code)
+        .map_or(("???", "???"), |(_, short, long)| (short, long))
 }
 
 /// Where viewer files come from: a directory, or the copies in the binary.
@@ -260,7 +272,7 @@ impl Resolved {
 struct Handler<'a> {
     viewer: &'a Viewer,
     data_dir: &'a Path,
-    stream: &'a mut TcpStream,
+    stream: &'a TcpStream,
     path: String,
     command: String,
     request_version: String,
@@ -327,28 +339,21 @@ impl Handler<'_> {
         let explain = explain.unwrap_or(long).to_string();
         self.send_response(code, Some(&message));
         self.send_header("Connection", "close");
-        let mut body = None;
-        if code >= 200 && !matches!(code, 204 | 205 | 304) {
-            let escape = |s: &str| {
-                s.replace('&', "&amp;")
-                    .replace('<', "&lt;")
-                    .replace('>', "&gt;")
-            };
-            let content = ERROR_TEMPLATE
-                .replace("%(code)d", &code.to_string())
-                .replace("%(code)s", &code.to_string())
-                .replace("%(message)s", &escape(&message))
-                .replace("%(explain)s", &escape(&explain));
-            self.send_header("Content-Type", "text/html;charset=utf-8");
-            self.send_header("Content-Length", &content.len().to_string());
-            body = Some(content.into_bytes());
-        }
+        // Every code sent here is 400 or above, so each error has a body.
+        let escape = |s: &str| {
+            s.replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;")
+        };
+        let content = ERROR_TEMPLATE
+            .replace("%(code)d", &code.to_string())
+            .replace("%(code)s", &code.to_string())
+            .replace("%(message)s", &escape(&message))
+            .replace("%(explain)s", &escape(&explain));
+        self.send_header("Content-Type", "text/html;charset=utf-8");
+        self.send_header("Content-Length", &content.len().to_string());
         self.end_headers();
-        if self.command != "HEAD"
-            && let Some(body) = body
-        {
-            let _ = self.stream.write_all(&body);
-        }
+        self.write_body(content.as_bytes());
     }
 
     fn translate_path(&self, path: &str) -> Resolved {
@@ -394,40 +399,40 @@ impl Handler<'_> {
     fn send_head(&mut self) {
         self.shard_etag = None;
         let request_path = pyurl::unquote(self.path.split('?').next().unwrap_or(""));
-        if request_path.starts_with("/data/catalog/") && request_path.ends_with(".json") {
-            let path = self.path.clone();
-            if let Resolved::Disk(target, _) = self.translate_path(&path) {
-                let shard = pyerr::resolve(&target);
-                if shard.starts_with(pyerr::resolve(&self.data_dir.join("catalog")))
-                    && let Ok(body) = std::fs::read(&shard)
-                {
-                    let digest = Sha256::digest(&body);
-                    let etag = format!(
-                        "\"{}\"",
-                        digest
-                            .iter()
-                            .map(|b| format!("{b:02x}"))
-                            .collect::<String>()
-                    );
-                    self.shard_etag = Some(etag.clone());
-                    let validators = self.header("If-None-Match").unwrap_or("").to_string();
-                    let matched = validators.split(',').any(|v| {
-                        let v = pystr::strip(v);
-                        let v = v.strip_prefix("W/").unwrap_or(v);
-                        v == "*" || v == etag
-                    });
-                    if matched {
-                        self.send_response(304, None);
-                        self.end_headers();
-                        return;
-                    }
-                    self.send_response(200, None);
-                    self.send_header("Content-Type", "application/json");
-                    self.send_header("Content-Length", &body.len().to_string());
+        if request_path.starts_with("/data/catalog/")
+            && request_path.ends_with(".json")
+            && let Resolved::Disk(target, _) = self.translate_path(&self.path)
+        {
+            let shard = pyerr::resolve(&target);
+            if shard.starts_with(pyerr::resolve(&self.data_dir.join("catalog")))
+                && let Ok(body) = std::fs::read(&shard)
+            {
+                let digest = Sha256::digest(&body);
+                let etag = format!(
+                    "\"{}\"",
+                    digest
+                        .iter()
+                        .map(|b| format!("{b:02x}"))
+                        .collect::<String>()
+                );
+                self.shard_etag = Some(etag.clone());
+                let validators = self.header("If-None-Match").unwrap_or("").to_string();
+                let matched = validators.split(',').any(|v| {
+                    let v = pystr::strip(v);
+                    let v = v.strip_prefix("W/").unwrap_or(v);
+                    v == "*" || v == etag
+                });
+                if matched {
+                    self.send_response(304, None);
                     self.end_headers();
-                    self.write_body(&body);
                     return;
                 }
+                self.send_response(200, None);
+                self.send_header("Content-Type", "application/json");
+                self.send_header("Content-Length", &body.len().to_string());
+                self.end_headers();
+                self.write_body(&body);
+                return;
             }
         }
         self.simple_send_head();
@@ -500,11 +505,10 @@ impl Handler<'_> {
                 self.write_body(data);
             }
             Resolved::Disk(path, _) => {
-                let opened = if path.is_dir() {
-                    None
-                } else {
-                    std::fs::File::open(&path).ok()
-                };
+                // Python cannot open a directory; Rust can on Unix.
+                let opened = (!path.is_dir())
+                    .then(|| std::fs::File::open(&path).ok())
+                    .flatten();
                 let Some(mut file) = opened else {
                     self.send_error(404, Some("File not found"), None);
                     return;
@@ -546,11 +550,8 @@ fn latin1(b: u8) -> u8 {
     b
 }
 
-fn handle(stream: &mut TcpStream, viewer: &Viewer, data_dir: &Path) {
-    let Ok(clone) = stream.try_clone() else {
-        return;
-    };
-    let mut reader = BufReader::new(clone);
+fn handle(stream: &TcpStream, viewer: &Viewer, data_dir: &Path) {
+    let mut reader = BufReader::new(stream);
     let mut raw = Vec::new();
     if reader
         .by_ref()
@@ -710,35 +711,36 @@ impl Server {
     pub fn serve_forever(&self) {
         while !self.shutdown.load(Ordering::SeqCst) {
             match self.listener.accept() {
-                Ok((mut stream, _)) => {
+                Ok((stream, _)) => {
                     let _ = stream.set_nonblocking(false);
                     let viewer = self.viewer.clone();
                     let data_dir = self.data_dir.clone();
                     std::thread::spawn(move || {
-                        handle(&mut stream, &viewer, &data_dir);
+                        handle(&stream, &viewer, &data_dir);
                         let _ = stream.shutdown(std::net::Shutdown::Both);
                     });
                 }
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    std::thread::sleep(Duration::from_millis(10));
-                }
+                // Nothing waiting (WouldBlock), or a failed accept: try again.
                 Err(_) => std::thread::sleep(Duration::from_millis(10)),
             }
         }
     }
 }
 
+/// The program and leading arguments that open a URL in the default browser.
+#[cfg(windows)]
+const OPENER: (&str, &[&str]) = ("rundll32", &["url.dll,FileProtocolHandler"]);
+#[cfg(target_os = "macos")]
+const OPENER: (&str, &[&str]) = ("open", &[]);
+#[cfg(all(unix, not(target_os = "macos")))]
+const OPENER: (&str, &[&str]) = ("xdg-open", &[]);
+
 /// Open the default browser at `url`, as `webbrowser.open` does.
 fn open_browser(url: &str) {
-    #[cfg(windows)]
-    let result = std::process::Command::new("rundll32")
-        .args(["url.dll,FileProtocolHandler", url])
+    let _ = std::process::Command::new(OPENER.0)
+        .args(OPENER.1)
+        .arg(url)
         .spawn();
-    #[cfg(target_os = "macos")]
-    let result = std::process::Command::new("open").arg(url).spawn();
-    #[cfg(all(unix, not(target_os = "macos")))]
-    let result = std::process::Command::new("xdg-open").arg(url).spawn();
-    let _ = result;
 }
 
 /// `lamp serve`: print the URL, optionally open a browser, serve until Ctrl+C.

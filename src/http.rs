@@ -112,11 +112,9 @@ impl RateLimiter {
 
     /// Admit against the clock after every sleep: other hosts can proceed
     /// while this host waits, so a reserved global slot may no longer fit.
+    /// Fixture responses never wait.
     pub fn wait(&self, host: &str) {
-        if cfg!(feature = "fixture-transport") {
-            return;
-        }
-        loop {
+        while !cfg!(feature = "fixture-transport") {
             let delay = {
                 let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
                 let now = self.clock.now();
@@ -652,10 +650,8 @@ impl Client {
                             continue;
                         }
                         observed += chunk.len() as u64;
-                        if observed > MAX_IMAGE_BYTES {
-                            return Ok(false);
-                        }
-                        if file.write_all(&chunk).is_err() {
+                        // Too large, or not stored: either way no image.
+                        if observed > MAX_IMAGE_BYTES || file.write_all(&chunk).is_err() {
                             return Ok(false);
                         }
                     }

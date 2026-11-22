@@ -51,17 +51,19 @@ fn python_stdout(unbuffered: bool) -> Box<dyn Write + Send> {
         .map(std::fs::File::from);
     // A missing Windows handle is null, which duplicates without error.
     #[cfg(windows)]
-    let handle = if std::os::windows::io::AsRawHandle::as_raw_handle(&stdout).is_null() {
-        Err(io::ErrorKind::NotFound.into())
-    } else {
-        std::os::windows::io::AsHandle::as_handle(&stdout)
-            .try_clone_to_owned()
-            .map(std::fs::File::from)
-    };
+    let handle = Some(&stdout)
+        .filter(|s| !std::os::windows::io::AsRawHandle::as_raw_handle(*s).is_null())
+        .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
+        .and_then(|s| std::os::windows::io::AsHandle::as_handle(s).try_clone_to_owned())
+        .map(std::fs::File::from);
     match handle {
         Ok(file) if unbuffered => Box::new(file),
-        Ok(file) => Box::new(io::BufWriter::with_capacity(128 * 1024, file)),
-        Err(_) => Box::new(io::BufWriter::with_capacity(128 * 1024, stdout)),
+        handle => {
+            let inner = handle
+                .map(|file| Box::new(file) as Box<dyn Write + Send>)
+                .unwrap_or_else(|_| Box::new(stdout));
+            Box::new(io::BufWriter::with_capacity(128 * 1024, inner))
+        }
     }
 }
 
