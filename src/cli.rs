@@ -91,6 +91,12 @@ fn opt(long: &'static str, value_name: &'static str) -> Arg {
         .allow_negative_numbers(true)
 }
 
+/// A numeric option. Any value starting with '-' is its value, as `-.5` is
+/// to argparse; the option's check refuses one that is not a number.
+fn num(long: &'static str, value_name: &'static str) -> Arg {
+    opt(long, value_name).allow_hyphen_values(true)
+}
+
 fn flag(long: &'static str) -> Arg {
     Arg::new(long).long(long).action(ArgAction::SetTrue)
 }
@@ -103,29 +109,29 @@ fn positional(id: &'static str, value_name: &'static str) -> Arg {
 }
 
 pub fn build_parser() -> Command {
-    let port_option = || opt("port", "PORT").default_value("8000").value_parser(port);
+    let port_option = || num("port", "PORT").default_value("8000").value_parser(port);
     let scrape = Command::new("scrape")
         .about("scrape Yupoo sellers into data/")
         .arg(opt("seller", "SELLER").help("scrape only this seller id"))
         .arg(flag("full").help("re-fetch unchanged albums"))
         .arg(
-            opt("refresh-details-days", "N")
+            num("refresh-details-days", "N")
                 .value_parser(positive_int)
                 .help("also refresh unchanged details last checked N days ago"),
         )
         .arg(
-            opt("refresh-limit", "N").default_value("100")
+            num("refresh-limit", "N").default_value("100")
                 .value_parser(positive_int)
                 .help("maximum extra unchanged-detail requests across this run"),
         )
         .arg(flag("retry-failed").help("retry only album IDs recorded as failed in earlier runs"))
-        .arg(opt("workers", "WORKERS").default_value("8").value_parser(positive_int))
+        .arg(num("workers", "WORKERS").default_value("8").value_parser(positive_int))
         .arg(
-            opt("rps", "RPS").default_value("8.0")
+            num("rps", "RPS").default_value("8.0")
                 .value_parser(positive_float)
                 .help("global request rate cap"),
         )
-        .arg(opt("max-age-days", "N").value_parser(whole).help(
+        .arg(num("max-age-days", "N").value_parser(whole).help(
             "skip albums posted more than N days ago (0 = no age limit); stock that old is usually gone",
         ))
         .arg(
@@ -196,7 +202,7 @@ pub fn build_parser() -> Command {
             Command::new("prepare-covers")
                 .about("resize and fingerprint cached covers locally")
                 .arg(
-                    opt("limit", "LIMIT")
+                    num("limit", "LIMIT")
                         .default_value("1000")
                         .value_parser(positive_int),
                 ),
@@ -204,7 +210,7 @@ pub fn build_parser() -> Command {
                 .about("list albums whose cover looks like an image file")
                 .arg(positional("image", "IMAGE"))
                 .arg(
-                    opt("limit", "N")
+                    num("limit", "N")
                         .default_value("8")
                         .value_parser(match_limit)
                         .help("most albums to list, 1 to 20"),

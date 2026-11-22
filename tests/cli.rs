@@ -56,7 +56,7 @@ fn no_arguments_print_the_next_steps() {
     }
     let (code, out, err) = lamp(&["bogus"], None);
     assert_eq!(code, 2);
-    assert!(out.is_empty() && err.contains("lamp: error: argument command: invalid choice"));
+    assert!(out.is_empty() && err.starts_with("error: unrecognized subcommand 'bogus'"));
 }
 
 #[test]
@@ -405,6 +405,10 @@ fn usage_errors_exit_2_and_name_the_problem() {
         (
             &["scrape", "--workers", "x"],
             "error: invalid value 'x' for '--workers <WORKERS>': must be a whole number",
+        ),
+        (
+            &["scrape", "--workers", "--full"],
+            "error: invalid value '--full' for '--workers <WORKERS>': must be a whole number",
         ),
         // `-.5` and `-5` read as numbers, not options, so they reach the checks.
         (
