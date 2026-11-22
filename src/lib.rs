@@ -18,7 +18,6 @@ pub mod isodate;
 pub mod links;
 pub mod locking;
 pub mod maintenance;
-mod mimetable;
 pub mod out;
 pub mod parse;
 pub mod pyerr;
