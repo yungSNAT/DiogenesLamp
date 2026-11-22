@@ -784,13 +784,19 @@ fn serve_opens_the_browser_at_its_url() {
     let opener = bin.join("xdg-open");
     write(&opener, "#!/bin/sh\nprintf '%s' \"$1\" > \"$0.url\"\n");
     std::fs::set_permissions(&opener, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
+        .to_string();
     let mut child = Command::new(env!("CARGO_BIN_EXE_lamp"))
         .args([
             "--data",
             &dir.path().to_string_lossy(),
             "serve",
             "--port",
-            "0",
+            &port,
         ])
         .env("PATH", &bin)
         .stdout(Stdio::piped())
