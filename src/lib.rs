@@ -4,7 +4,6 @@
 //! DiogenesLamp: browse any Yupoo catalog locally as one fast, searchable page.
 
 pub mod age;
-pub mod argparse;
 pub mod cli;
 pub mod covers;
 pub mod dedup;
