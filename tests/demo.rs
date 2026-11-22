@@ -213,9 +213,15 @@ fn demo_write_reports_a_file_it_cannot_write() {
         for path in blocked {
             std::fs::create_dir_all(dir.path().join(path)).unwrap();
         }
-        assert!(
-            lamp::demo::write(dir.path(), 1, 3, 3).is_err(),
-            "{blocked:?}"
-        );
+        let error = lamp::demo::write(dir.path(), 1, 3, 3)
+            .unwrap_err()
+            .to_string();
+        // The OS refuses to open a directory for writing.
+        let expected = if cfg!(windows) {
+            "Access is denied."
+        } else {
+            "Is a directory"
+        };
+        assert!(error.contains(expected), "{blocked:?}: {error}");
     }
 }

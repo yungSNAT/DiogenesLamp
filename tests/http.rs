@@ -1235,5 +1235,5 @@ fn the_scrape_client_trait_downloads_through_the_client() {
     let fetched =
         lamp::scrape::ScrapeClient::download(&client, "https://images.example/t.png", &dest, None);
     assert_eq!(fetched, Ok(true));
-    assert!(dest.is_file());
+    assert_eq!(std::fs::read(&dest).unwrap(), payload);
 }
