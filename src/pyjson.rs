@@ -724,6 +724,7 @@ mod tests {
         let mut number = Value::Int(1);
         assert!(number.as_array_mut().is_none());
         assert!(number.as_object_mut().is_none());
+        assert_eq!((number.as_int(), Value::Null.as_int()), (Some(1), None));
         for (value, text) in [
             (Value::Null, "None"),
             (Value::Bool(true), "True"),
