@@ -32,7 +32,10 @@ fn version_flag_prints_the_package_version() {
     let (code, out, err) = lamp(&["--version=1"], None);
     assert_eq!(code, 2);
     assert!(out.is_empty());
-    assert!(err.ends_with("lamp: error: argument --version: ignored explicit argument '1'\n"));
+    assert!(
+        err.starts_with("error: unexpected value '1' for '--version' found"),
+        "{err}"
+    );
 }
 
 /// A double-clicked `lamp.exe` runs with no arguments; it gets the next
@@ -324,22 +327,107 @@ fn nonsense_numeric_args_are_usage_errors() {
     }
 }
 
+/// The help lists every command and option with no default annotations, and
+/// `-hh` is help too.
 #[test]
-fn help_and_usage_follow_argparse() {
-    let (code, out, _) = lamp(&["-h"], None);
+fn help_lists_commands_and_options() {
+    for args in [&["-h"][..], &["--help"], &["-hh"]] {
+        let (code, out, err) = lamp(args, None);
+        assert_eq!((code, err.as_str()), (0, ""), "{args:?}");
+        assert!(out.contains("Usage: lamp [OPTIONS] <COMMAND>"), "{out}");
+        for line in [
+            "--sources <SOURCES>",
+            "--data <DATA>",
+            "--version",
+            "demo",
+            "serve the viewer over synthetic data in a temporary directory",
+            "find-photo",
+            "prepare-covers",
+        ] {
+            assert!(out.contains(line), "{line}: {out}");
+        }
+        assert!(!out.contains("[default"), "{out}");
+        assert!(!out.contains("-V,"), "{out}");
+    }
+    let (code, out, _) = lamp(&["scrape", "-h"], None);
     assert_eq!(code, 0);
-    assert!(out.starts_with("usage: lamp [-h] [--sources SOURCES] [--data DATA] [--version]\n"));
-    assert!(out.contains("  -h, --help            show this help message and exit\n"));
-    assert!(out.contains("  --version             show program's version number and exit\n"));
-    assert!(out.contains("    demo                serve the viewer over synthetic data in a"));
-    let (code, _, err) = lamp(&["bogus"], None);
-    assert_eq!(code, 2);
-    assert!(err.contains(
-        "lamp: error: argument command: invalid choice: 'bogus' (choose from 'import', 'scrape'"
-    ));
-    let (code, _, err) = lamp(&["scrape", "--re", "1"], None);
-    assert_eq!(code, 2);
-    assert!(err.ends_with("lamp scrape: error: ambiguous option: --re could match --refresh-details-days, --refresh-limit, --retry-failed\n"));
+    assert!(out.contains("Usage: lamp scrape [OPTIONS]"), "{out}");
+    for line in [
+        "--seller <SELLER>",
+        "--full",
+        "--refresh-details-days <N>",
+        "--refresh-limit <N>",
+        "--retry-failed",
+        "--workers <WORKERS>",
+        "--rps <RPS>",
+        "--max-age-days <N>",
+        "--dry-run",
+        "--notify <COMMAND>",
+        "global request rate cap",
+    ] {
+        assert!(out.contains(line), "{line}: {out}");
+    }
+}
+
+/// Every usage error exits 2 with nothing on stdout and names the problem on
+/// the first line of stderr.
+#[test]
+fn usage_errors_exit_2_and_name_the_problem() {
+    for (args, first) in [
+        (&["bogus"][..], "error: unrecognized subcommand 'bogus'"),
+        (&["help"], "error: unrecognized subcommand 'help'"),
+        (&["-V"], "error: unexpected argument '-V' found"),
+        (
+            &["--data", "d"],
+            "error: 'lamp' requires a subcommand but one was not provided",
+        ),
+        (
+            &["import"],
+            "error: the following required arguments were not provided:",
+        ),
+        (
+            &["scrape", "extra"],
+            "error: unexpected argument 'extra' found",
+        ),
+        (
+            &["scrape", "--data", "d"],
+            "error: unexpected argument '--data' found",
+        ),
+        // Ambiguous: --refresh-details-days, --refresh-limit and --retry-failed.
+        (
+            &["scrape", "--re", "1"],
+            "error: unexpected argument '--re' found",
+        ),
+        (
+            &["scrape", "--workers", "0"],
+            "error: invalid value '0' for '--workers <WORKERS>': must be 1 or greater",
+        ),
+        (
+            &["scrape", "--workers", "x"],
+            "error: invalid value 'x' for '--workers <WORKERS>': must be a whole number",
+        ),
+        // `-.5` and `-5` read as numbers, not options, so they reach the checks.
+        (
+            &["scrape", "--rps", "-.5"],
+            "error: invalid value '-.5' for '--rps <RPS>': must be a finite number greater than 0",
+        ),
+        (
+            &["scrape", "--refresh-details-days", "-5"],
+            "error: invalid value '-5' for '--refresh-details-days <N>': must be 1 or greater",
+        ),
+        (
+            &["export", "--format", "xml"],
+            "error: invalid value 'xml' for '--format <csv|json>': must be csv or json",
+        ),
+        (
+            &["find-photo", "x.png", "--limit", "21"],
+            "error: invalid value '21' for '--limit <N>': must be between 1 and 20",
+        ),
+    ] {
+        let (code, out, err) = lamp(args, None);
+        assert_eq!((code, out.as_str()), (2, ""), "{args:?}");
+        assert_eq!(err.lines().next(), Some(first), "{args:?}: {err}");
+    }
 }
 
 /// Excel's other Unicode exports: UTF-16 big-endian and UTF-8 with a BOM.
@@ -482,86 +570,23 @@ fn serve_stops_cleanly_on_ctrl_c() {
     assert!(std::net::TcpListener::bind(("127.0.0.1", port.parse::<u16>().unwrap())).is_ok());
 }
 
-/// `lamp scrape`'s usage, as CPython 3.15.0's argparse wraps it at 80 columns.
-const SCRAPE_USAGE: &str = r#"usage: lamp scrape [-h] [--seller SELLER] [--full] [--refresh-details-days N]
-                   [--refresh-limit N] [--retry-failed] [--workers WORKERS]
-                   [--rps RPS] [--max-age-days N] [--dry-run]
-                   [--notify COMMAND]
-"#;
-
-/// `lamp scrape -h` from CPython 3.15.0's argparse with the same parser.
-const SCRAPE_HELP: &str = r#"usage: lamp scrape [-h] [--seller SELLER] [--full] [--refresh-details-days N]
-                   [--refresh-limit N] [--retry-failed] [--workers WORKERS]
-                   [--rps RPS] [--max-age-days N] [--dry-run]
-                   [--notify COMMAND]
-
-options:
-  -h, --help            show this help message and exit
-  --seller SELLER       scrape only this seller id
-  --full                re-fetch unchanged albums
-  --refresh-details-days N
-                        also refresh unchanged details last checked N days ago
-  --refresh-limit N     maximum extra unchanged-detail requests across this
-                        run
-  --retry-failed        retry only album IDs recorded as failed in earlier
-                        runs
-  --workers WORKERS
-  --rps RPS             global request rate cap
-  --max-age-days N      skip albums posted more than N days ago (0 = no age
-                        limit); stock that old is usually gone
-  --dry-run             preview scrape work without fetching album pages or
-                        saving files
-  --notify COMMAND      after a run that stores or changes albums, run COMMAND
-                        in the system shell with them as JSON on its stdin
-                        (not after --dry-run or Ctrl+C)
-"#;
-
-/// The scrape usage wraps, and its help lays out long option names and help
-/// text, as argparse does.
 #[test]
-fn scrape_help_and_usage_errors_match_argparse() {
-    let (code, out, _) = lamp(&["scrape", "-h"], None);
-    assert_eq!((code, out.as_str()), (0, SCRAPE_HELP));
-    for (args, message) in [
-        (
-            ["scrape", "--workers", "0"],
-            "argument --workers: must be 1 or greater",
-        ),
-        // `-.5` reads as a number, not an option, so it reaches --rps.
-        (
-            ["scrape", "--rps", "-.5"],
-            "argument --rps: must be a finite number greater than 0",
-        ),
+fn option_forms_and_arguments_that_look_like_options() {
+    // A negative number is a value, a unique prefix names its option and
+    // `--name=value` works, so each scrape starts and finds no sources.
+    let dir = common::tmp();
+    for args in [
+        &["--sources", "none.toml", "scrape", "--max-age-days", "-5"][..],
+        &["--sour", "none.toml", "scrape", "--max-age-d", "-5"],
+        &["--sources=none.toml", "scrape", "--seller=abc", "--rps=0.5"],
     ] {
-        let (code, out, err) = lamp(&args, None);
-        assert_eq!(code, 2, "{args:?}");
-        assert!(out.is_empty());
+        let (code, _, err) = lamp(args, Some(dir.path()));
         assert_eq!(
-            err,
-            format!("{SCRAPE_USAGE}lamp scrape: error: {message}\n"),
+            (code, err.as_str()),
+            (1, "error: no sources - run 'lamp import' first\n"),
             "{args:?}"
         );
     }
-}
-
-#[test]
-fn arguments_that_look_like_options_follow_argparse() {
-    let (code, _, err) = lamp(&["scrape", "extra"], None);
-    assert_eq!(code, 2);
-    assert!(
-        err.ends_with("\nlamp: error: unrecognized arguments: extra\n"),
-        "{err}"
-    );
-    // A negative number is a value, so the scrape starts and finds no sources.
-    let dir = common::tmp();
-    let (code, _, err) = lamp(
-        &["--sources", "none.toml", "scrape", "--max-age-days", "-5"],
-        Some(dir.path()),
-    );
-    assert_eq!(
-        (code, err.as_str()),
-        (1, "error: no sources - run 'lamp import' first\n")
-    );
     // After `--`, and on its own, `-` starts a file name.
     for (args, name) in [
         (

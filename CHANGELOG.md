@@ -112,6 +112,16 @@
   a file with another extension that you put in the data folder is served
   as `application/octet-stream`. Before, it looked the type up in Python's
   table of 216 types.
+- The command line is read by clap instead of a port of Python's argparse.
+  Option names, defaults, accepted values, `--name=value`, unique prefixes
+  such as `--max-age-d`, negative numbers as values and the exit codes (0
+  for help and version, 2 for a usage error) are unchanged. Help and
+  usage errors now read as clap writes them, for example `error: invalid
+  value '0' for '--workers <WORKERS>': must be 1 or greater`. An ambiguous
+  prefix such as `--re` is reported as an unexpected argument without
+  listing the options it could match, and a value that is not a whole
+  number is reported as 'must be a whole number' instead of naming the
+  check that refused it.
 
 ## 0.1.2 (2026-11-13)
 
