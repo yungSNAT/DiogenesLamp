@@ -8,7 +8,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::argparse::{Parser, Value};
+use clap::{Arg, ArgAction, ArgMatches, Command};
+
 use crate::errors::Error;
 use crate::ingest::{load_sources, merge_sources, parse_dump, write_sources};
 use crate::out;
@@ -17,39 +18,59 @@ use crate::pyjson::{self, Style};
 use crate::pystr;
 use crate::scrape::{self, Interrupt, Options, SellerSummary};
 
-fn as_path(text: &str) -> Result<Value, Option<String>> {
-    Ok(Value::Str(pyerr::pathlib_normalise(text)))
+fn as_path(text: &str) -> Result<String, String> {
+    Ok(pyerr::pathlib_normalise(text))
 }
 
-fn positive_int(text: &str) -> Result<Value, Option<String>> {
-    let value = pystr::parse_int(text).ok_or(None)?;
+/// Whether argparse took a value starting with '-' as a value rather than an
+/// option: when '-' is followed by an ASCII digit, or by '.' and one, or when
+/// the value holds a space.
+fn number_shaped(text: &str) -> bool {
+    let mut chars = text.chars();
+    if chars.next() != Some('-') || text.contains(' ') {
+        return true;
+    }
+    match chars.next() {
+        Some('.') => chars.next().is_some_and(|c| c.is_ascii_digit()),
+        c => c.is_some_and(|c| c.is_ascii_digit()),
+    }
+}
+
+fn whole(text: &str) -> Result<i128, String> {
+    number_shaped(text)
+        .then(|| pystr::parse_int(text))
+        .flatten()
+        .ok_or_else(|| "must be a whole number".into())
+}
+
+fn positive_int(text: &str) -> Result<i128, String> {
+    let value = whole(text)?;
     if value < 1 {
-        return Err(Some("must be 1 or greater".into()));
+        return Err("must be 1 or greater".into());
     }
-    Ok(Value::Int(value))
+    Ok(value)
 }
 
-fn positive_float(text: &str) -> Result<Value, Option<String>> {
-    let value = pystr::parse_float(text).ok_or(None)?;
+fn positive_float(text: &str) -> Result<f64, String> {
+    let value = number_shaped(text)
+        .then(|| pystr::parse_float(text))
+        .flatten()
+        .ok_or("must be a number")?;
     if !value.is_finite() || value <= 0.0 {
-        return Err(Some("must be a finite number greater than 0".into()));
+        return Err("must be a finite number greater than 0".into());
     }
-    Ok(Value::Float(value))
+    Ok(value)
 }
 
-fn int(text: &str) -> Result<Value, Option<String>> {
-    pystr::parse_int(text).map(Value::Int).ok_or(None)
-}
-
-fn export_format(text: &str) -> Result<Value, Option<String>> {
+fn export_format(text: &str) -> Result<String, String> {
     match text {
-        "csv" | "json" => Ok(Value::Str(text.into())),
-        _ => Err(Some("must be csv or json".into())),
+        "csv" | "json" => Ok(text.into()),
+        _ => Err("must be csv or json".into()),
     }
 }
 
 /// A calendar date as YYYY-MM-DD.
-fn day(text: &str) -> Result<Value, Option<String>> {
+fn day(text: &str) -> Result<String, String> {
     let shape = text.len() == 10
         && text.bytes().enumerate().all(|(i, b)| {
             if i == 4 || i == 7 {
@@ -59,251 +80,197 @@ fn day(text: &str) -> Result<Value, Option<String>> {
             }
         });
     if !shape || crate::isodate::parse_date(text).is_none() {
-        return Err(Some("must be a date as YYYY-MM-DD".into()));
+        return Err("must be a date as YYYY-MM-DD".into());
     }
-    Ok(Value::Str(text.into()))
+    Ok(text.into())
 }
 
-fn match_limit(text: &str) -> Result<Value, Option<String>> {
-    let value = pystr::parse_int(text).ok_or(None)?;
+fn match_limit(text: &str) -> Result<i128, String> {
+    let value = whole(text)?;
     if !(1..=20).contains(&value) {
-        return Err(Some("must be between 1 and 20".into()));
+        return Err("must be between 1 and 20".into());
     }
-    Ok(Value::Int(value))
+    Ok(value)
 }
 
-fn port(text: &str) -> Result<Value, Option<String>> {
-    let value = pystr::parse_int(text).ok_or(None)?;
+fn port(text: &str) -> Result<i128, String> {
+    let value = whole(text)?;
     if !(1..=65535).contains(&value) {
-        return Err(Some("port must be between 1 and 65535".into()));
+        return Err("port must be between 1 and 65535".into());
     }
-    Ok(Value::Int(value))
+    Ok(value)
 }
 
-pub fn build_parser() -> Parser {
-    let mut parser = Parser::new("lamp", Some("lamp command line interface."));
-    parser.store(
-        "--sources",
-        as_path,
-        "Path",
-        Value::Str("sources.toml".into()),
-        None,
-        None,
-    );
-    parser.store(
-        "--data",
-        as_path,
-        "Path",
-        Value::Str("data".into()),
-        None,
-        None,
-    );
-    parser.version("--version", concat!("lamp ", env!("CARGO_PKG_VERSION")));
-
-    let mut import = Parser::new("lamp import", None);
-    import.positional("dump", as_path, "Path");
-
-    let mut scrape = Parser::new("lamp scrape", None);
-    scrape.store(
-        "--seller",
-        |t| Ok(Value::Str(t.into())),
-        "str",
-        Value::Str(String::new()),
-        None,
-        Some("scrape only this seller id"),
-    );
-    scrape.flag("--full", Some("re-fetch unchanged albums"));
-    scrape.store(
-        "--refresh-details-days",
-        positive_int,
-        "_positive_int",
-        Value::Int(0),
-        Some("N"),
-        Some("also refresh unchanged details last checked N days ago"),
-    );
-    scrape.store(
-        "--refresh-limit",
-        positive_int,
-        "_positive_int",
-        Value::Int(100),
-        Some("N"),
-        Some("maximum extra unchanged-detail requests across this run"),
-    );
-    scrape.flag(
-        "--retry-failed",
-        Some("retry only album IDs recorded as failed in earlier runs"),
-    );
-    scrape.store(
-        "--workers",
-        positive_int,
-        "_positive_int",
-        Value::Int(8),
-        None,
-        None,
-    );
-    scrape.store(
-        "--rps",
-        positive_float,
-        "_positive_float",
-        Value::Float(8.0),
-        None,
-        Some("global request rate cap"),
-    );
-    scrape.store(
-        "--max-age-days",
-        int,
-        "int",
-        Value::Int(0),
-        Some("N"),
-        Some("skip albums posted more than N days ago (0 = no age limit); stock that old is usually gone"),
-    );
-    scrape.flag(
-        "--dry-run",
-        Some("preview scrape work without fetching album pages or saving files"),
-    );
-    scrape.store(
-        "--notify",
-        |t| Ok(Value::Str(t.into())),
-        "str",
-        Value::Str(String::new()),
-        Some("COMMAND"),
-        Some("after a run that stores or changes albums, run COMMAND in the system shell with them as JSON on its stdin (not after --dry-run or Ctrl+C)"),
-    );
-
-    let mut serve = Parser::new("lamp serve", None);
-    serve.store("--port", port, "_port", Value::Int(8000), None, None);
-    serve.flag("--no-browser", None);
-
-    let mut demo = Parser::new("lamp demo", None);
-    demo.store("--port", port, "_port", Value::Int(8000), None, None);
-    demo.flag("--no-browser", None);
-
-    let doctor = Parser::new("lamp doctor", None);
-    let snapshot = Parser::new("lamp snapshot", None);
-    let reindex = Parser::new("lamp reindex", None);
-    let mut restore = Parser::new("lamp restore", None);
-    restore.positional("archive", as_path, "Path");
-    let mut covers = Parser::new("lamp prepare-covers", None);
-    covers.store(
-        "--limit",
-        positive_int,
-        "_positive_int",
-        Value::Int(1000),
-        None,
-        None,
-    );
-
-    let mut find_photo = Parser::new("lamp find-photo", None);
-    find_photo.positional("image", as_path, "Path");
-    find_photo.store(
-        "--limit",
-        match_limit,
-        "_match_limit",
-        Value::Int(8),
-        Some("N"),
-        Some("most albums to list, 1 to 20"),
-    );
-
-    let mut export = Parser::new("lamp export", None);
-    export.store(
-        "--format",
-        export_format,
-        "_export_format",
-        Value::Str("csv".into()),
-        Some("csv|json"),
-        Some("csv (the viewer's columns) or json"),
-    );
-    export.store(
-        "--since",
-        day,
-        "_day",
-        Value::Str(String::new()),
-        Some("YYYY-MM-DD"),
-        Some("only albums first stored on this date or later"),
-    );
-    export.store(
-        "--site",
-        as_path,
-        "Path",
-        Value::Str(String::new()),
-        Some("DIR"),
-        Some("instead, write the viewer and the whole catalogue as static files in DIR, a new or empty folder, to open from a web host"),
-    );
-
-    let choice = |name: &str, help: &str, p: Parser| (name.to_string(), Some(help.to_string()), p);
-    parser.subparsers(
-        "command",
-        vec![
-            choice("import", "import a raw link dump into sources.toml", import),
-            choice("scrape", "scrape Yupoo sellers into data/", scrape),
-            choice("serve", "serve the local viewer", serve),
-            choice(
-                "demo",
-                "serve the viewer over synthetic data in a temporary directory",
-                demo,
-            ),
-            choice(
-                "doctor",
-                "check catalogue metadata and cached cover coverage",
-                doctor,
-            ),
-            choice(
-                "snapshot",
-                "save a bounded metadata snapshot (excludes covers)",
-                snapshot,
-            ),
-            choice(
-                "reindex",
-                "index the newest duplicate listings from local captures",
-                reindex,
-            ),
-            choice("restore", "restore metadata from a local snapshot", restore),
-            choice(
-                "prepare-covers",
-                "resize and fingerprint cached covers locally",
-                covers,
-            ),
-            choice(
-                "find-photo",
-                "list albums whose cover looks like an image file",
-                find_photo,
-            ),
-            choice(
-                "export",
-                "print the indexed albums as CSV or JSON, or write them as a static site",
-                export,
-            ),
-        ],
-    );
-    parser
+/// An option taking a value, absent unless given or defaulted. Numbers that
+/// start with '-' are values, so a negative one reaches the option's check.
+fn opt(long: &'static str, value_name: &'static str) -> Arg {
+    Arg::new(long)
+        .long(long)
+        .value_name(value_name)
+        .hide_default_value(true)
+        .allow_negative_numbers(true)
 }
 
-struct Args(crate::argparse::Namespace);
+/// A numeric option. Any value starting with '-' is its value, so `-.5`
+/// reaches the option's check, which refuses what argparse read as an option.
+fn num(long: &'static str, value_name: &'static str) -> Arg {
+    opt(long, value_name).allow_hyphen_values(true)
+}
+
+fn flag(long: &'static str) -> Arg {
+    Arg::new(long).long(long).action(ArgAction::SetTrue)
+}
+
+fn positional(id: &'static str, value_name: &'static str) -> Arg {
+    Arg::new(id)
+        .value_name(value_name)
+        .required(true)
+        .value_parser(as_path)
+}
+
+pub fn build_parser() -> Command {
+    let port_option = || num("port", "PORT").default_value("8000").value_parser(port);
+    let scrape = Command::new("scrape")
+        .about("scrape Yupoo sellers into data/")
+        .arg(opt("seller", "SELLER").help("scrape only this seller id"))
+        .arg(flag("full").help("re-fetch unchanged albums"))
+        .arg(
+            num("refresh-details-days", "N")
+                .value_parser(positive_int)
+                .help("also refresh unchanged details last checked N days ago"),
+        )
+        .arg(
+            num("refresh-limit", "N").default_value("100")
+                .value_parser(positive_int)
+                .help("maximum extra unchanged-detail requests across this run"),
+        )
+        .arg(flag("retry-failed").help("retry only album IDs recorded as failed in earlier runs"))
+        .arg(num("workers", "WORKERS").default_value("8").value_parser(positive_int))
+        .arg(
+            num("rps", "RPS").default_value("8.0")
+                .value_parser(positive_float)
+                .help("global request rate cap"),
+        )
+        .arg(num("max-age-days", "N").value_parser(whole).help(
+            "skip albums posted more than N days ago (0 = no age limit); stock that old is usually gone",
+        ))
+        .arg(
+            flag("dry-run")
+                .help("preview scrape work without fetching album pages or saving files"),
+        )
+        .arg(opt("notify", "COMMAND").help(
+            "after a run that stores or changes albums, run COMMAND in the system shell with them as JSON on its stdin (not after --dry-run or Ctrl+C)",
+        ));
+    let export = Command::new("export")
+        .about("print the indexed albums as CSV or JSON, or write them as a static site")
+        .arg(
+            opt("format", "csv|json").default_value("csv")
+                .value_parser(export_format)
+                .help("csv (the viewer's columns) or json"),
+        )
+        .arg(
+            opt("since", "YYYY-MM-DD")
+                .value_parser(day)
+                .help("only albums first stored on this date or later"),
+        )
+        .arg(opt("site", "DIR").value_parser(as_path).help(
+            "instead, write the viewer and the whole catalogue as static files in DIR, a new or empty folder, to open from a web host",
+        ));
+    Command::new("lamp")
+        .about("lamp command line interface.")
+        .version(env!("CARGO_PKG_VERSION"))
+        .disable_version_flag(true)
+        .disable_help_subcommand(true)
+        .subcommand_required(true)
+        .infer_long_args(true)
+        .arg(
+            opt("sources", "SOURCES")
+                .default_value("sources.toml")
+                .value_parser(as_path),
+        )
+        .arg(
+            opt("data", "DATA")
+                .default_value("data")
+                .value_parser(as_path),
+        )
+        .arg(
+            Arg::new("version")
+                .long("version")
+                .action(ArgAction::Version)
+                .help("Print version"),
+        )
+        .subcommands([
+            Command::new("import")
+                .about("import a raw link dump into sources.toml")
+                .arg(positional("dump", "DUMP")),
+            scrape,
+            Command::new("serve")
+                .about("serve the local viewer")
+                .arg(port_option())
+                .arg(flag("no-browser")),
+            Command::new("demo")
+                .about("serve the viewer over synthetic data in a temporary directory")
+                .arg(port_option())
+                .arg(flag("no-browser")),
+            Command::new("doctor").about("check catalogue metadata and cached cover coverage"),
+            Command::new("snapshot").about("save a bounded metadata snapshot (excludes covers)"),
+            Command::new("reindex")
+                .about("index the newest duplicate listings from local captures"),
+            Command::new("restore")
+                .about("restore metadata from a local snapshot")
+                .arg(positional("archive", "ARCHIVE")),
+            Command::new("prepare-covers")
+                .about("resize and fingerprint cached covers locally")
+                .arg(
+                    num("limit", "LIMIT")
+                        .default_value("1000")
+                        .value_parser(positive_int),
+                ),
+            Command::new("find-photo")
+                .about("list albums whose cover looks like an image file")
+                .arg(positional("image", "IMAGE"))
+                .arg(
+                    num("limit", "N")
+                        .default_value("8")
+                        .value_parser(match_limit)
+                        .help("most albums to list, 1 to 20"),
+                ),
+            export,
+        ])
+}
+
+/// The parsed command line: the command's own options, then the global ones.
+struct Args(ArgMatches);
 
 impl Args {
+    fn get<T: Clone + Send + Sync + 'static>(&self, key: &str) -> Option<T> {
+        let own = self.0.subcommand().map(|(_, own)| own);
+        own.into_iter()
+            .chain([&self.0])
+            .find_map(|m| match m.try_get_one::<T>(key) {
+                Ok(value) => value.cloned(),
+                // A global option, looked for in the command's own matches.
+                Err(clap::parser::MatchesError::UnknownArgument { .. }) => None,
+                Err(e) => panic!("argument {key}: {e}"),
+            })
+    }
     fn str(&self, key: &str) -> String {
-        match self.0.get(key) {
-            Some(Value::Str(s)) => s.clone(),
-            _ => String::new(),
+        if key == "command" {
+            return self.0.subcommand_name().unwrap_or_default().into();
         }
+        self.get(key).unwrap_or_default()
     }
     fn path(&self, key: &str) -> PathBuf {
         PathBuf::from(self.str(key))
     }
     fn int(&self, key: &str) -> i128 {
-        match self.0.get(key) {
-            Some(Value::Int(i)) => *i,
-            _ => 0,
-        }
+        self.get(key).unwrap_or_default()
     }
     fn float(&self, key: &str) -> f64 {
-        match self.0.get(key) {
-            Some(Value::Float(f)) => *f,
-            _ => 0.0,
-        }
+        self.get(key).unwrap_or_default()
     }
     fn flag(&self, key: &str) -> bool {
-        matches!(self.0.get(key), Some(Value::Bool(true)))
+        self.get(key).unwrap_or_default()
     }
 }
 
@@ -495,14 +462,14 @@ fn cmd_scrape(args: &Args) -> i32 {
             .filter(|s| s.kind == "yupoo" && !s.skip)
             .count(),
     };
-    let dry_run = args.flag("dry_run");
+    let dry_run = args.flag("dry-run");
     let options = Options {
         full: args.flag("full"),
-        max_age_days: args.int("max_age_days"),
+        max_age_days: args.int("max-age-days"),
         dry_run,
-        refresh_days: args.int("refresh_details_days"),
-        refresh_limit: args.int("refresh_limit"),
-        retry_failed: args.flag("retry_failed"),
+        refresh_days: args.int("refresh-details-days"),
+        refresh_limit: args.int("refresh-limit"),
+        retry_failed: args.flag("retry-failed"),
         run_rows: !args.str("notify").is_empty(),
     };
     let interrupt = Arc::new(Interrupt::default());
@@ -735,7 +702,7 @@ fn cmd_serve(args: &Args) -> i32 {
     };
     crate::serve::serve(
         &server,
-        !args.flag("no_browser"),
+        !args.flag("no-browser"),
         interrupt_flag().unwrap_or_default(),
     );
     0
@@ -793,7 +760,7 @@ fn cmd_demo(args: &Args) -> i32 {
                 out::uncaught(&e);
             }
             if !stop.load(Ordering::SeqCst) {
-                crate::serve::serve(&server, !args.flag("no_browser"), stop);
+                crate::serve::serve(&server, !args.flag("no-browser"), stop);
             }
             0
         }
@@ -817,7 +784,7 @@ fn remove_demo(dir: &std::path::Path) {
 }
 
 /// `lamp` alone, which is what a double-click on `lamp.exe` runs: the next
-/// steps instead of argparse's missing-command error.
+/// steps instead of a missing-command error.
 fn next_steps() -> i32 {
     out::out_raw(concat!(
         "lamp ",
@@ -853,16 +820,20 @@ pub fn main(argv: &[String]) -> i32 {
     if argv.is_empty() {
         return next_steps();
     }
-    let parser = build_parser();
-    let namespace = match parser.parse_args(argv) {
-        Ok(namespace) => namespace,
-        Err(exit) => {
-            out::out_raw(&exit.stdout);
-            out::err_raw(&exit.stderr);
-            return exit.code;
+    let parsed = build_parser()
+        .try_get_matches_from(std::iter::once("lamp").chain(argv.iter().map(String::as_str)));
+    let args = match parsed {
+        Ok(matches) => Args(matches),
+        Err(error) => {
+            let text = error.render().to_string();
+            if error.use_stderr() {
+                out::err_raw(&text);
+            } else {
+                out::out_raw(&text);
+            }
+            return error.exit_code();
         }
     };
-    let args = Args(namespace);
     let command = args.str("command");
     match command.as_str() {
         "import" => cmd_import(&args),

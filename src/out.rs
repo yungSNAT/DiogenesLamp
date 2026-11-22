@@ -136,7 +136,8 @@ pub fn out_flush(text: &str) -> io::Result<()> {
     stdout.flush()
 }
 
-/// Raw stdout text with no newline added (argparse, which ignores write errors).
+/// Raw stdout text with no newline added (the parser's help, which ignores
+/// write errors).
 pub fn out_raw(text: &str) {
     let _ = stdout().write_all(translate(text).as_bytes());
 }
@@ -161,7 +162,8 @@ pub fn err_from_worker(text: &str) {
     let _ = write_stderr(&format!("{text}\n"));
 }
 
-/// Raw stderr text with no newline added (argparse, which ignores write errors).
+/// Raw stderr text with no newline added (the parser's errors, which ignore
+/// write errors).
 pub fn err_raw(text: &str) {
     let _ = write_stderr(text);
 }
