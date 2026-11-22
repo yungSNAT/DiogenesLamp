@@ -267,17 +267,17 @@ fn is_global_route(ip: Ip) -> bool {
     match ip {
         Ip::V4(v) => ipaddr::v4_is_global(v),
         Ip::V6(v) => {
-            if !ipaddr::v6_is_global(v) {
+            // 6to4, Teredo and local-use NAT64 are refused whatever they
+            // embed; `ipaddress` already counts all 3 as non-global.
+            if !ipaddr::v6_is_global(v)
+                || ipaddr::sixtofour(v).is_some()
+                || ipaddr::is_teredo(v)
+                || (v >> 80) == 0x0064_ff9b_0001
+            {
                 return false;
             }
             if let Some(mapped) = ipaddr::ipv4_mapped(v) {
                 return ipaddr::v4_is_global(mapped);
-            }
-            if let Some(embedded) = ipaddr::sixtofour(v) {
-                return ipaddr::v4_is_global(embedded);
-            }
-            if ipaddr::is_teredo(v) || (v >> 80) == 0x0064_ff9b_0001 {
-                return false;
             }
             if (v >> 32) == 0x0064_ff9b_0000_0000_0000_0000 {
                 return ipaddr::v4_is_global(v as u32);

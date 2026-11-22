@@ -228,14 +228,12 @@ pub fn data_path(root: &Path, relative: &str, cover: bool) -> Result<PathBuf> {
     if !pyerr::is_relative_to(&path, &root) {
         return value("catalogue path escapes data directory");
     }
-    let mut existing = path.clone();
-    while existing != root && std::fs::symlink_metadata(&existing).is_err() {
-        match existing.parent() {
-            Some(parent) => existing = parent.to_path_buf(),
-            None => break,
-        }
-    }
-    if !pyerr::is_relative_to(&pyerr::resolve(&existing), &root) {
+    // The nearest ancestor that exists; the filesystem root always does.
+    let existing = path
+        .ancestors()
+        .find(|a| *a == root || std::fs::symlink_metadata(a).is_ok())
+        .expect("the filesystem root exists");
+    if !pyerr::is_relative_to(&pyerr::resolve(existing), &root) {
         return value("catalogue path escapes data directory");
     }
     Ok(path)

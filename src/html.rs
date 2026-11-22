@@ -35,6 +35,15 @@ enum Kind {
     },
 }
 
+impl Kind {
+    fn element(&self) -> Option<(&str, &[(String, String)])> {
+        match self {
+            Kind::Element { name, attrs } => Some((name, attrs)),
+            Kind::Text { .. } => None,
+        }
+    }
+}
+
 #[derive(Debug)]
 struct Node {
     kind: Kind,
@@ -85,10 +94,10 @@ struct Builder {
 
 impl Builder {
     fn name(&self, id: usize) -> &str {
-        match &self.nodes[id].kind {
-            Kind::Element { name, .. } => name,
-            Kind::Text { .. } => "",
-        }
+        let element = self.nodes[id].kind.element();
+        element
+            .expect("the open-element stacks hold only elements")
+            .0
     }
 
     fn current(&self) -> usize {
@@ -235,26 +244,19 @@ impl Builder {
                 .chars()
                 .all(|c| c.is_ascii() && (c as u8 as char).is_digit(radix));
         let (number, extra) = if whole {
-            (Some(big_number(digits, radix)), String::new())
+            (big_number(digits, radix), String::new())
         } else {
-            // _DECIMAL/_HEX_REFERENCE_WITH_FOLLOWING_DATA: "^([0-9]+)(.*)",
-            // where "." stops at a newline and hex digits are lowercase only.
-            let lead = digits
-                .bytes()
-                .take_while(|b| b.is_ascii_digit() || (hex && (b'a'..=b'f').contains(b)))
-                .count();
-            if lead == 0 {
-                (None, digits.to_string())
-            } else {
-                let rest = &digits[lead..];
-                let line = rest.split('\n').next().unwrap_or("");
-                (Some(big_number(&digits[..lead], radix)), line.to_string())
-            }
+            // _DECIMAL_REFERENCE_WITH_FOLLOWING_DATA: "^([0-9]+)(.*)", where
+            // "." stops at a newline. Only a decimal reference cut off by the
+            // end of input gets here (a hex one is all hex digits), and the
+            // tokenizer passes it only after a leading digit, so the pattern
+            // always matches and bs4's no-match case cannot occur.
+            let lead = digits.bytes().take_while(u8::is_ascii_digit).count();
+            let rest = &digits[lead..];
+            let line = rest.split('\n').next().unwrap_or("");
+            (big_number(&digits[..lead], radix), line.to_string())
         };
-        let text = match number {
-            None => String::new(),
-            Some(n) => numeric_character_reference(n),
-        };
+        let text = numeric_character_reference(number);
         self.data(&text);
         self.data(&extra);
     }
@@ -1042,10 +1044,7 @@ impl Document {
     }
 
     fn element(&self, id: NodeId) -> Option<(&str, &[(String, String)])> {
-        match &self.nodes[id].kind {
-            Kind::Element { name, attrs } => Some((name, attrs)),
-            Kind::Text { .. } => None,
-        }
+        self.nodes[id].kind.element()
     }
 
     /// `tag.get(key)` when it is a plain string (class-like attributes are lists).

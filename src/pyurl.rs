@@ -304,19 +304,18 @@ pub fn urljoin(base: &str, url: &str) -> Result<String, String> {
     {
         return Ok(url.to_string());
     }
-    let mut netloc = u.netloc.clone();
-    if scheme_str.is_empty() || USES_NETLOC.contains(&scheme_str.as_str()) {
-        if u.netloc.as_deref().is_some_and(|n| !n.is_empty()) {
-            return Ok(unsplit_parts(
-                scheme.as_deref(),
-                u.netloc.as_deref(),
-                &u.path,
-                u.query.as_deref(),
-                u.fragment.as_deref(),
-            ));
-        }
-        netloc = b.netloc.clone();
+    // CPython tests `scheme in uses_netloc` here; every scheme in
+    // USES_RELATIVE is also in USES_NETLOC, so that test always holds.
+    if u.netloc.as_deref().is_some_and(|n| !n.is_empty()) {
+        return Ok(unsplit_parts(
+            scheme.as_deref(),
+            u.netloc.as_deref(),
+            &u.path,
+            u.query.as_deref(),
+            u.fragment.as_deref(),
+        ));
     }
+    let netloc = b.netloc.clone();
     if u.path.is_empty() {
         let mut query = u.query.clone();
         let mut fragment = u.fragment.clone();
@@ -476,6 +475,15 @@ pub fn parse_qsl(qs: &str) -> Vec<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn relative_schemes_all_use_a_netloc() {
+        let missing: Vec<_> = USES_RELATIVE
+            .iter()
+            .filter(|s| !USES_NETLOC.contains(s))
+            .collect();
+        assert!(missing.is_empty(), "{missing:?}");
+    }
 
     #[test]
     fn split_and_accessors() {
