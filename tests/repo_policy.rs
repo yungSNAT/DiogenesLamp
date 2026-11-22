@@ -67,22 +67,30 @@ jobs:
       # from sleeping, which tests/http.rs asserts.
       - run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - run: cargo test --locked
-        if: matrix.os != 'ubuntu-latest'
-      # Coverage feeds the Codecov badge only and has no floor. It needs
-      # llvm-tools and a prebuilt cargo-llvm-cov, with no fallback to compiling it.
+        if: matrix.os != 'ubuntu-latest' && matrix.os != 'windows-latest'
+      # Coverage runs on Linux and Windows, as some code runs on only one of them;
+      # Codecov merges the 2 reports. It needs llvm-tools and a prebuilt
+      # cargo-llvm-cov, with no fallback to compiling it. Paths are made relative
+      # (and forward-slashed on Windows) so the 2 reports name files alike.
       - run: rustup component add llvm-tools
-        if: matrix.os == 'ubuntu-latest'
+        if: (matrix.os == 'ubuntu-latest' || matrix.os == 'windows-latest')
       - uses: taiki-e/install-action@<pin>
-        if: matrix.os == 'ubuntu-latest'
+        if: (matrix.os == 'ubuntu-latest' || matrix.os == 'windows-latest')
         with:
           tool: cargo-llvm-cov@0.9.1
           fallback: none
-      - run: cargo llvm-cov --locked --lcov --output-path coverage-rust.lcov
-        if: matrix.os == 'ubuntu-latest'
+      - name: Test with line coverage
+        if: (matrix.os == 'ubuntu-latest' || matrix.os == 'windows-latest')
+        shell: bash
+        run: |
+          cargo llvm-cov --locked --remap-path-prefix --lcov --output-path coverage-rust.lcov
+          if [ "$RUNNER_OS" = Windows ]; then
+            sed -i '/^SF:/s|\\|/|g' coverage-rust.lcov
+          fi
       - uses: actions/upload-artifact@<pin>
-        if: matrix.os == 'ubuntu-latest'
+        if: (matrix.os == 'ubuntu-latest' || matrix.os == 'windows-latest')
         with:
-          name: coverage-rust
+          name: ${{ matrix.os == 'ubuntu-latest' && 'coverage-rust' || 'coverage-rust-windows' }}
           path: coverage-rust.lcov
           retention-days: 1
       - run: cargo build --locked --release
@@ -121,11 +129,12 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@<pin>
         with:
-          name: coverage-rust
+          pattern: coverage-rust*
+          path: reports
       - uses: codecov/codecov-action@<pin>
         with:
           use_oidc: true
-          files: coverage-rust.lcov
+          files: reports/coverage-rust/coverage-rust.lcov,reports/coverage-rust-windows/coverage-rust.lcov
           disable_search: true
           fail_ci_if_error: true
 "#;
