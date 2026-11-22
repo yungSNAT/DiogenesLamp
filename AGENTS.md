@@ -7,8 +7,8 @@ viewer edit takes effect at the next `cargo build` or `cargo run`.
 
 - For `viewer/` changes, read [DESIGN.md](DESIGN.md) and [PRODUCT.md](PRODUCT.md).
   Preserve the CSS geometry used by JavaScript and the keyboard interaction rules.
-- Keep verification fixture-based. The README documents synthetic demo data and
-  separate manual parser canaries; a missing saved sample is not a passing canary.
+- Keep verification fixture-based. CONTRIBUTING.md documents synthetic demo data
+  and separate manual parser canaries; a missing saved sample is not a passing canary.
 - Keep private source lists, fetched catalogues and debug captures outside tracked
   files. Preserve request limits, backoff and public-page-only access.
 
