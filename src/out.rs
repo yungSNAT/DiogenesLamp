@@ -59,10 +59,9 @@ fn python_stdout(unbuffered: bool) -> Box<dyn Write + Send> {
     match handle {
         Ok(file) if unbuffered => Box::new(file),
         handle => {
-            let inner = handle.map_or_else(
-                |_| Box::new(stdout) as Box<dyn Write + Send>,
-                |file| Box::new(file),
-            );
+            let inner = handle
+                .map(|file| Box::new(file) as Box<dyn Write + Send>)
+                .unwrap_or_else(|_| Box::new(stdout));
             Box::new(io::BufWriter::with_capacity(128 * 1024, inner))
         }
     }

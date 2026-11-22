@@ -581,10 +581,9 @@ pub fn notify(command: &str, rows: Vec<pyjson::Map>) -> Result<(), String> {
     }
     let failed = written
         .err()
-        .filter(|e| e.kind() != std::io::ErrorKind::BrokenPipe);
-    failed.map_or(Ok(()), |e| {
-        Err(format!("could not write to the command: {e}"))
-    })
+        .filter(|e| e.kind() != std::io::ErrorKind::BrokenPipe)
+        .map(|e| format!("could not write to the command: {e}"));
+    failed.map_or(Ok(()), Err)
 }
 
 /// `command` run by the system shell: `/bin/sh -c` or `%ComSpec% /d /s /c`.
