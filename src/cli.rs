@@ -22,16 +22,17 @@ fn as_path(text: &str) -> Result<String, String> {
     Ok(pyerr::pathlib_normalise(text))
 }
 
-/// Whether a value that starts with '-' may be a number: argparse took one as
-/// a value only in the shape -123, -1.5 or -.5, in ASCII digits.
+/// Whether argparse took a value starting with '-' as a value rather than an
+/// option: when '-' is followed by an ASCII digit, or by '.' and one, or when
+/// the value holds a space.
 fn number_shaped(text: &str) -> bool {
-    let Some(rest) = text.strip_prefix('-') else {
+    let mut chars = text.chars();
+    if chars.next() != Some('-') || text.contains(' ') {
         return true;
-    };
-    let digits = |s: &str| s.bytes().all(|b| b.is_ascii_digit());
-    match rest.split_once('.') {
-        Some((int, frac)) => digits(int) && !frac.is_empty() && digits(frac),
-        None => !rest.is_empty() && digits(rest),
+    }
+    match chars.next() {
+        Some('.') => chars.next().is_some_and(|c| c.is_ascii_digit()),
+        c => c.is_some_and(|c| c.is_ascii_digit()),
     }
 }
 
@@ -111,7 +112,7 @@ fn opt(long: &'static str, value_name: &'static str) -> Arg {
 }
 
 /// A numeric option. Any value starting with '-' is its value, so `-.5`
-/// reaches the option's check, which refuses one not shaped as a number.
+/// reaches the option's check, which refuses what argparse read as an option.
 fn num(long: &'static str, value_name: &'static str) -> Arg {
     opt(long, value_name).allow_hyphen_values(true)
 }

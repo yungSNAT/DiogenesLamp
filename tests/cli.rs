@@ -410,19 +410,15 @@ fn usage_errors_exit_2_and_name_the_problem() {
             &["scrape", "--workers", "--full"],
             "error: invalid value '--full' for '--workers <WORKERS>': must be a whole number",
         ),
-        // A value starting with '-' is a number only in argparse's shape:
-        // ASCII digits, with no exponent or underscores.
-        (
-            &["scrape", "--max-age-days", "-5_0"],
-            "error: invalid value '-5_0' for '--max-age-days <N>': must be a whole number",
-        ),
+        // argparse read '-' and a non-ASCII digit as an option.
         (
             &["scrape", "--max-age-days", "-\u{661}"],
             "error: invalid value '-\u{661}' for '--max-age-days <N>': must be a whole number",
         ),
+        // '-' and a digit is a value, so an exponent reaches the check.
         (
             &["scrape", "--rps", "-1e3"],
-            "error: invalid value '-1e3' for '--rps <RPS>': must be a number",
+            "error: invalid value '-1e3' for '--rps <RPS>': must be a finite number greater than 0",
         ),
         // `-.5` and `-5` read as numbers, not options, so they reach the checks.
         (
@@ -597,6 +593,8 @@ fn option_forms_and_arguments_that_look_like_options() {
         &["--sources", "none.toml", "scrape", "--max-age-days", "-5"][..],
         &["--sour", "none.toml", "scrape", "--max-age-d", "-5"],
         &["--sources=none.toml", "scrape", "--seller=abc", "--rps=0.5"],
+        // '-' and a digit is a value, which Python's int() reads as -50.
+        &["--sources", "none.toml", "scrape", "--max-age-days", "-5_0"],
     ] {
         let (code, _, err) = lamp(args, Some(dir.path()));
         assert_eq!(
