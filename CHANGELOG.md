@@ -107,6 +107,11 @@
   Modified when the file is no newer; before, it ignored such dates and sent
   the whole file. A date with a time out of range, such as an hour of 25, is
   now ignored instead of compared.
+- `lamp serve` names a Content-Type only for the files lamp writes or
+  embeds (HTML, CSS, JavaScript, JSON, JPEG, PNG, WebP and snapshot ZIPs);
+  a file with another extension that you put in the data folder is served
+  as `application/octet-stream`. Before, it looked the type up in Python's
+  table of 216 types.
 
 ## 0.1.2 (2026-11-13)
 

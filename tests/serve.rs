@@ -311,6 +311,48 @@ fn the_viewer_declares_and_serves_the_pwa_manifest() {
     );
 }
 
+/// Every kind of file lamp writes under its data directory or embeds as
+/// the viewer is served with the Content-Type a browser needs for it.
+#[test]
+fn every_file_lamp_writes_is_served_with_its_content_type() {
+    let dir = common::tmp();
+    let data = dir.path().join("data");
+    let files = [
+        ("index.json", "application/json"),
+        ("aliases.json", "application/json"),
+        ("notify-pending.json", "application/json"),
+        ("catalog/s.json", "application/json"),
+        ("runs/s.json", "application/json"),
+        ("thumbs/s/1.jpg", "image/jpeg"),
+        ("thumbs/s/2.png", "image/png"),
+        ("thumbs/s/3.webp", "image/webp"),
+        ("debug/s-page1.html", "text/html"),
+        ("snapshots/20261122T000000-0123abcd.zip", "application/zip"),
+        (".lamp.lock", "application/octet-stream"),
+    ];
+    for (name, _) in files {
+        write(&data.join(name), "x");
+    }
+    let server = start(Viewer::Embedded, &data);
+    for (name, expected) in files {
+        let reply = get(server.port, &format!("/data/{name}"));
+        assert_eq!(reply.status, 200, "{name}");
+        assert_eq!(reply.header("Content-Type"), Some(expected), "{name}");
+    }
+    for (name, _) in lamp::viewer::FILES {
+        let expected = match name.rsplit_once('.').map(|(_, ext)| ext) {
+            Some("html") => "text/html",
+            Some("css") => "text/css",
+            Some("js") => "text/javascript",
+            Some("json") => "application/json",
+            other => panic!("{name}: no expected type for {other:?}"),
+        };
+        let reply = get(server.port, &format!("/{name}"));
+        assert_eq!(reply.status, 200, "{name}");
+        assert_eq!(reply.header("Content-Type"), Some(expected), "{name}");
+    }
+}
+
 #[test]
 fn the_refusal_sentinel_is_a_name_nothing_ever_writes() {
     for module in ["scrape.rs", "storage.rs"] {
