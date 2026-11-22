@@ -62,6 +62,20 @@ An album that has disappeared from a seller's listing is kept, marked
 gone, and available under Favourites, a collection or Changed since review. It comes back
 if the seller lists it again.
 
+Yupoo serves 2 different list-page templates and the parser handles both.
+Every listing page is checked for at least 3 distinct album links the parser
+did not read. Such a page fails the seller as a possible layout change before
+it can end the listing and mark cached albums gone, and is saved to
+`data/debug/<seller>-pageN.html` (dry runs save nothing). An empty first page
+without such links reports an empty or closed seller. The threshold can miss
+fewer unread links; synthetic tests do not establish real-site coverage.
+A listing that ends with 5 or more known albums missing, such as an empty
+later page from a soft block, marks none of them gone or resolved and reports
+an error. The next run marks an album gone only if it is missing again and
+that run is not aborted by blocking; the same truncation twice in a row still
+marks the albums it misses gone. A truncated listing that misses fewer
+albums still marks them gone until they are listed again.
+
 Each seller's result line counts its new, returned and recounted albums and
 names the first 5 of each, so a scheduled run's log says what arrived. An album is
 new when this run stores it and the seller's data held no record of it:
@@ -69,9 +83,8 @@ its `first_seen` is this run. A seller's first run therefore reports every
 album it stores as new. An album whose fetch failed, or that an interrupted
 run never reached, is new on the run that first stores it. An album marked
 gone and then listed again is returned, not new; its history records the
-change. A short or blocked listing marks nothing gone (see the README's
-Development section), so the next run reports none of the albums it held
-back as new or returned.
+change. A short or blocked listing marks nothing gone (see above), so the
+next run reports none of the albums it held back as new or returned.
 An album is recounted when its card in the listing shows a different photo
 count from the one the last run saw, as a restock or refresh often looks
 from outside. The listing page carries the count, so this needs no album

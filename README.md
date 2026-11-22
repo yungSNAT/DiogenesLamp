@@ -457,80 +457,9 @@ needs:
 
 ## Development
 
-    cargo fmt --check
-    cargo clippy --all-targets -- -D warnings
-    cargo test                    # fixture-based, no network
-    cargo test -- --ignored       # canary against a saved live sample
-
-The ignored test checks the parsers against a real page saved by hand to
-`data/debug/sample-list.html`: fetch a seller's `albums?page=1` there and the
-canary says whether the selectors still match live Yupoo markup (the test's
-comment has the command). Nothing writes that file for you: a scrape only
-dumps pages it *failed* to parse, which is the opposite of a canary. So on a
-fresh clone it fails by design rather than passes vacuously.
-
-The tests need node: they run the viewer suite and check the scraper's
-duplicate, URL and age rules against the viewer's own code, and they fail
-rather than skip when node is missing.
-
-The viewer is dependency-free vanilla JS with no build step: edit
-`viewer/*.js` and reload. Its visual system is recorded in `DESIGN.md`
-(tokens, named rules, component behaviour) and the product record it serves is
-in `PRODUCT.md`; read `DESIGN.md` before changing anything in `viewer/`,
-because the card geometry there is a contract `app.js` reads back out of the
-stylesheet at runtime. Its logic modules have their own tests, run by
-`cargo test` and directly with:
-
-    node --test tests/viewer/*.test.cjs
-
-For strict type checking of the viewer's logic modules, controllers and compile-only
-contract tests, run `npm ci` then `npm run typecheck`. TypeScript and the Node
-type declarations are development tools only; the check emits no files and
-the browser still loads the same JavaScript. `viewer/controller-types.d.ts`
-describes catalogue state and the elements owned by `index.html`; a test in
-`tests/viewer.rs` checks the declared element IDs and tags. `viewer/browser-globals.d.ts` gives the
-script loading path the same helper signatures as the Node test imports.
-Compiler checks cover saved-value reads, DOM access and controller calls;
-browser verification still checks focus, layout and keyboard behaviour.
-
-To work on the viewer without scraping anything, use `lamp demo`, or write
-the same synthetic data to a folder you keep:
-
-    cargo run --example make_demo_data -- demo-data
-    lamp --data demo-data serve
-
-That writes 5 sellers × 2,000 albums, with generated gradient covers for 2
-albums in every 3, spread across each seller. The rest are left cover-less
-on purpose, so the viewer's titled colour-block fallback is on screen too.
-Fixtures include known and unknown prices, changed prices and gone listings.
-For a larger metadata fixture with fewer generated images:
-
-    cargo run --example make_demo_data -- demo-data-100k 10 10000 100
-
-The final argument limits generated covers per seller. Use synthetic data to
-check previews, cross-tab saves, backup/import, Back navigation and keyboard
-focus at narrow and desktop widths. To verify packaging:
-
-    cargo build --locked --release
-
-Run the resulting binary from a directory outside the clone and check that the
-page, scripts and styles return successfully; `cargo test` checks that every
-asset `index.html` loads is built into the binary.
-
-Yupoo serves 2 different list-page templates and the parser handles both.
-Every listing page is checked for at least 3 distinct album links the parser
-did not read. Such a page fails the seller as a possible layout change before
-it can end the listing and mark cached albums gone, and is saved to
-`data/debug/<seller>-pageN.html` (dry runs save nothing). An empty first page
-without such links reports an empty or closed seller. The threshold can miss
-fewer unread links; synthetic tests do not establish real-site coverage.
-A listing that ends with 5 or more known albums missing, such as an empty
-later page from a soft block, marks none of them gone or resolved and reports
-an error. The next run marks an album gone only if it is missing again and
-that run is not aborted by blocking; the same truncation twice in a row still
-marks the albums it misses gone. A
-truncated listing that misses fewer albums still marks them gone until they
-are listed again.
+[CONTRIBUTING.md](CONTRIBUTING.md#development) covers the checks, the
+parser canary, the viewer's tests and type check, synthetic demo data and
+packaging.
 
 ## Credits
 
