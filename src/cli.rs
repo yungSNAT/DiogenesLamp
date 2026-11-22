@@ -157,7 +157,6 @@ pub fn build_parser() -> Command {
         .disable_help_subcommand(true)
         .subcommand_required(true)
         .infer_long_args(true)
-        .color(clap::ColorChoice::Never)
         .arg(
             opt("sources", "SOURCES")
                 .default_value("sources.toml")
