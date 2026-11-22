@@ -109,8 +109,8 @@
   now ignored instead of compared.
 - `lamp serve` names a Content-Type only for the files lamp writes or
   embeds (HTML, CSS, JavaScript, JSON, JPEG, PNG, WebP and snapshot ZIPs);
-  any other file you put in the data folder is served as
-  `application/octet-stream`. Before, it looked the type up in Python's
+  a file with another extension that you put in the data folder is served
+  as `application/octet-stream`. Before, it looked the type up in Python's
   table of 216 types.
 
 ## 0.1.2 (2026-11-13)

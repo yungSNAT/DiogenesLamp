@@ -155,9 +155,15 @@ fn parse_http_date(text: &str) -> Option<i64> {
     Some((date.ordinal - 719_163) * 86_400 + h * 3600 + mi * 60 + s)
 }
 
-/// The Content-Type of a file lamp writes or embeds, by its extension.
+/// The Content-Type of a file lamp writes or embeds, by its extension. As in
+/// Python's `splitext`, either slash ends a directory and leading dots are
+/// part of the name, so `..json` has no extension.
 fn guess_type(path: &str) -> &'static str {
-    let ext = Path::new(path).extension().and_then(|e| e.to_str());
+    let name = path.rsplit(['/', '\\']).next().unwrap_or_default();
+    let ext = name
+        .trim_start_matches('.')
+        .rsplit_once('.')
+        .map(|(_, e)| e);
     match ext.map(str::to_ascii_lowercase).as_deref() {
         Some("html" | "htm") => "text/html",
         Some("css") => "text/css",
@@ -782,6 +788,8 @@ mod tests {
             "x/.json",
             "x/a.",
             "x.d/noext",
+            "x/..json",
+            "x/y\\.html",
         ] {
             assert_eq!(guess_type(path), "application/octet-stream", "{path}");
         }
