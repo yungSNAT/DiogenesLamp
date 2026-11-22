@@ -5,7 +5,7 @@
 //! release, measured against it on a closed pipe: stdout still pending at exit
 //! is exit status 120, a maintenance command's handler reports a failed print,
 //! an uncaught one exits 1, a diagnostic that cannot be written loses the
-//! original code, and argparse ignores its own write errors.
+//! original code, and help ignores its own write errors.
 mod common;
 
 use std::path::Path;
