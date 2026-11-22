@@ -603,3 +603,91 @@ fn option_forms_and_arguments_that_look_like_options() {
         );
     }
 }
+
+/// A seller at 127.0.0.1: the fetcher refuses a non-global address before
+/// sending anything, so a scrape runs without the network.
+fn offline_sources(dir: &std::path::Path, skip: bool) -> String {
+    let path = dir.join("offline.toml");
+    write(
+        &path,
+        format!(
+            "[yupoo.sellerx]\nurl = \"https://127.0.0.1\"\nname = \"sellerx\"\nskip = {skip}\n"
+        ),
+    );
+    path.to_string_lossy().into_owned()
+}
+
+#[test]
+fn scrape_of_one_seller_reports_its_error_or_a_held_catalogue() {
+    let dir = common::tmp();
+    let data = dir.path().join("d");
+    let data_text = data.to_string_lossy().into_owned();
+    let sources = offline_sources(dir.path(), false);
+    let args = [
+        "--sources",
+        sources.as_str(),
+        "--data",
+        data_text.as_str(),
+        "scrape",
+        "--seller",
+        "sellerx",
+        "--rps",
+        "2",
+    ];
+    std::fs::create_dir_all(&data).unwrap();
+    let lock = lamp::locking::CatalogueLock::acquire(&data).unwrap();
+    let (code, out, err) = lamp(&args, None);
+    assert_eq!(code, 1);
+    assert!(out.is_empty(), "{out}");
+    assert!(
+        err.starts_with("error: catalogue is already in use"),
+        "{err}"
+    );
+    drop(lock);
+    let (code, out, err) = lamp(&args, None);
+    assert_eq!(code, 1, "{err}");
+    assert!(out.contains("non-global address"), "{out}");
+    assert!(out.contains("1 sellers, 1 with errors"), "{out}");
+    assert!(!out.contains("skipped ("), "{out}");
+}
+
+#[test]
+fn a_dry_run_with_every_seller_skipped_fetches_nothing() {
+    let dir = common::tmp();
+    let data = dir.path().join("d").to_string_lossy().into_owned();
+    let sources = offline_sources(dir.path(), true);
+    let (code, out, err) = lamp(
+        &[
+            "--sources",
+            &sources,
+            "--data",
+            &data,
+            "scrape",
+            "--dry-run",
+        ],
+        None,
+    );
+    assert_eq!(code, 0, "{err}");
+    assert!(
+        out.contains("0 sellers, 0 with errors, 1 skipped (sellerx) [DRY RUN - no files written]"),
+        "{out}"
+    );
+    assert!(!dir.path().join("d").exists());
+}
+
+#[test]
+fn serve_on_a_busy_port_fails() {
+    let dir = common::tmp();
+    let busy = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = busy.local_addr().unwrap().port().to_string();
+    let data = dir.path().to_string_lossy().into_owned();
+    let (code, _, err) = lamp(
+        &["--data", &data, "serve", "--no-browser", "--port", &port],
+        None,
+    );
+    assert_eq!(code, 1);
+    assert!(
+        err.contains(&format!("error: could not listen on 127.0.0.1:{port}")),
+        "{err}"
+    );
+}

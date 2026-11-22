@@ -348,6 +348,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_zero_prefix_network_holds_every_address() {
+        assert!(in_v4(0xffff_ffff, v4(10, 0, 0, 0), 0));
+        assert!(in_v6(u128::MAX, 0x2001 << 112, 0));
+        assert!(!in_v4(v4(11, 0, 0, 0), v4(10, 0, 0, 0), 8));
+    }
+
+    #[test]
     fn strict_parsing_and_formatting() {
         assert!(parse_v4("01.2.3.4").is_err());
         assert!(parse_v4("1.2.3.256").is_err());

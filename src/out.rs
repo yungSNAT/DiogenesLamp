@@ -218,3 +218,35 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod errno_tests {
+    use super::*;
+
+    // The OSError subclass and text CPython gives each errno on Linux.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn stream_errors_name_python_exception_classes() {
+        for (errno, class, text) in [
+            (1, "PermissionError", "Operation not permitted"),
+            (13, "PermissionError", "Permission denied"),
+            (2, "FileNotFoundError", "No such file or directory"),
+            (17, "FileExistsError", "File exists"),
+            (32, "BrokenPipeError", "Broken pipe"),
+            (5, "OSError", "Input/output error"),
+        ] {
+            assert_eq!(
+                stream_error(&io::Error::from_raw_os_error(errno)),
+                (class, format!("[Errno {errno}] {text}"))
+            );
+        }
+    }
+
+    #[test]
+    fn a_stream_error_without_a_code_keeps_its_text() {
+        assert_eq!(
+            stream_error(&io::Error::other("write zero")),
+            ("OSError", "write zero".to_string())
+        );
+    }
+}

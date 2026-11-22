@@ -28,6 +28,9 @@
 {"html": "<a title='un\nterminated>t</a>", "text": "", "stripped": "", "tags": []},
 {"html": "<a/title=x>t</a>", "text": "t", "stripped": "t", "tags": [{"name": "a", "text": "t", "attrs": {"title": "x"}}]},
 {"html": "<a //title=x>t</a>", "text": "t", "stripped": "t", "tags": [{"name": "a", "text": "t", "attrs": {"title": "x"}}]},
+{"html": "<a title='>t</a>", "text": "", "stripped": "", "tags": []},
+{"html": "<a title=\">t</a>", "text": "", "stripped": "", "tags": []},
+{"html": "<a title= ' x=\"\">t</a>", "text": "t", "stripped": "t", "tags": [{"name": "a", "text": "t", "attrs": {"title": "", "'": "", "x": ""}}]},
 {"html": "a<!---->b<!-- x -->c", "text": "abc", "stripped": "a|b|c", "tags": []},
 {"html": "a<!-->b", "text": "ab", "stripped": "a|b", "tags": []},
 {"html": "a<!--->b", "text": "ab", "stripped": "a|b", "tags": []},
@@ -78,5 +81,16 @@
 {"html": "<ruby>a<rp>(</rp><rt>b</rt><rp>)</rp></ruby>", "text": "a", "stripped": "a", "tags": [{"name": "rt", "text": "b", "attrs": {}}, {"name": "rp", "text": "(", "attrs": {}}]},
 {"html": "<template><p>x</p></template>y", "text": "y", "stripped": "y", "tags": [{"name": "p", "text": "", "attrs": {}}, {"name": "template", "text": "x", "attrs": {}}]},
 {"html": "<svg><foreignObject>x</foreignObject></svg>", "text": "x", "stripped": "x", "tags": []},
-{"html": "<P CLASS=a>x</P>", "text": "x", "stripped": "x", "tags": [{"name": "p", "text": "x", "attrs": {}}]}
+{"html": "<P CLASS=a>x</P>", "text": "x", "stripped": "x", "tags": [{"name": "p", "text": "x", "attrs": {}}]},
+{"html": "", "text": "", "stripped": "", "tags": []},
+{"html": "<a title= \"unterminated>t</a>", "text": "t", "stripped": "t", "tags": [{"name": "a", "text": "t", "attrs": {"title": "", "\"unterminated": ""}}]},
+{"html": "a</b x='>'c", "text": "a", "stripped": "a", "tags": []},
+{"html": "a</ x", "text": "a", "stripped": "a", "tags": []},
+{"html": "a&#", "text": "a&#", "stripped": "a&#", "tags": []},
+{"html": "a&#q", "text": "a&#q", "stripped": "a&#q", "tags": []},
+{"html": "a&", "text": "a&", "stripped": "a&", "tags": []},
+{"html": "x&amp", "text": "x&", "stripped": "x&", "tags": []},
+{"html": "x&am", "text": "x&am", "stripped": "x&am", "tags": []},
+{"html": "x&a-b", "text": "x&a-b", "stripped": "x&a-b", "tags": []},
+{"html": "x&a.b-c", "text": "x&a.b-c", "stripped": "x&a.b-c", "tags": []}
 ]}

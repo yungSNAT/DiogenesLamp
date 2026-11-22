@@ -63,7 +63,8 @@ pub fn atomic_write_json(path: &Path, obj: &Value) -> Result<()> {
         file.write_all(body.as_bytes())
             .map_err(|e| Error::Os(pyerr::os_error(&e, Call::Open, &tmp)))?;
         drop(file);
-        for attempt in 0..5 {
+        let mut attempt = 0;
+        loop {
             match std::fs::rename(&tmp, path) {
                 Ok(()) => return Ok(()),
                 Err(e) if attempt == 4 => {
@@ -71,8 +72,8 @@ pub fn atomic_write_json(path: &Path, obj: &Value) -> Result<()> {
                 }
                 Err(_) => std::thread::sleep(Duration::from_secs_f64(0.1 * 2f64.powi(attempt))),
             }
+            attempt += 1;
         }
-        Ok(())
     })();
     if result.is_err() {
         let _ = std::fs::remove_file(&tmp);
@@ -98,17 +99,17 @@ pub fn load_shard(data_dir: &Path, seller: &str) -> Result<Shard> {
     validate_metadata(&payload, &format!("catalog/{seller}.json"))
         .map_err(|e| corrupt(e.to_string()))?;
     let mut shard = Shard::new();
-    if let Some(Value::Array(albums)) = payload.as_object().and_then(|p| p.get("albums")) {
-        for album in albums {
-            if let Some(map) = album.as_object() {
-                let id = map
-                    .get("id")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .to_string();
-                shard.insert(id, map.clone());
-            }
-        }
+    let albums = payload
+        .as_object()
+        .and_then(|p| p.get("albums"))
+        .and_then(Value::as_array);
+    for map in albums.into_iter().flatten().filter_map(Value::as_object) {
+        let id = map
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        shard.insert(id, map.clone());
     }
     Ok(shard)
 }
@@ -257,12 +258,9 @@ pub fn write_index(
                 captures.extend(shard.into_values());
                 readable.push(id);
             }
-            Err(Error::Value(message)) => {
-                if strict {
-                    return Err(Error::Value(message));
-                }
-            }
-            Err(other) => return Err(other),
+            // A refused shard is skipped unless strict; anything else stops.
+            Err(error) if strict || !matches!(error, Error::Value(_)) => return Err(error),
+            Err(_) => {}
         }
     }
     let mut ids: Vec<String> = captures

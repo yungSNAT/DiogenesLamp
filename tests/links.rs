@@ -33,6 +33,8 @@ fn check(cases: &[(&str, Vec<Link>)]) {
 #[test]
 fn extract_links_cases() {
     check(&[
+        // Only the listed short-link hosts themselves, not names below them.
+        ("see https://evil.m.tb.cn/abc", vec![]),
         (
             "buy here https://item.taobao.com/item.htm?id=123&spm=track.me",
             vec![l("taobao", "https://item.taobao.com/item.htm?id=123")],
@@ -237,6 +239,7 @@ fn platform_uses_a_label_boundary() {
         ("evil-tmall.com", "other"),
         ("not-taobao.com", "other"),
         ("prefix-weidian.com", "other"),
+        ("", "other"),
     ] {
         assert_eq!(platform(host), expected, "{host}");
     }

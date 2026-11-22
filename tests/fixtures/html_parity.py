@@ -43,6 +43,10 @@ CASES = [
     "<a title='un\nterminated>t</a>",
     "<a/title=x>t</a>",
     "<a //title=x>t</a>",
+    # A value that is only a quote character.
+    "<a title='>t</a>",
+    "<a title=\">t</a>",
+    "<a title= ' x=\"\">t</a>",
     # Comments, declarations and processing instructions.
     "a<!---->b<!-- x -->c",
     "a<!-->b",
@@ -98,6 +102,18 @@ CASES = [
     "<template><p>x</p></template>y",
     "<svg><foreignObject>x</foreignObject></svg>",
     "<P CLASS=a>x</P>",
+    # Cut off at the end of the input, and backtracking.
+    "",
+    "<a title= \"unterminated>t</a>",
+    "a</b x='>'c",
+    "a</ x",
+    "a&#",
+    "a&#q",
+    "a&",
+    "x&amp",
+    "x&am",
+    "x&a-b",
+    "x&a.b-c",
 ]
 
 TAGS = ["p", "a", "b", "i", "script", "style", "textarea", "title", "rt", "rp",
