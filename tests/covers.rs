@@ -94,6 +94,16 @@ fn an_exact_nine_by_eight_image_hashes_its_own_comparisons() {
         ),
         expected
     );
+    // Only the height: Pillow's LANCZOS gives the same comparisons.
+    let tall = DynamicImage::ImageLuma8(upright(1, 2));
+    assert_eq!(
+        hash_of(
+            dir.path(),
+            "c.png",
+            &common::encode(&tall, ImageFormat::Png)
+        ),
+        expected
+    );
 }
 
 #[test]
@@ -198,6 +208,31 @@ fn files_that_cannot_be_fingerprinted_say_why() {
     assert_eq!(facts["cover_hash"].py_str(), "");
     assert!(cover_facts(&dir.path().join("missing.jpg")).is_empty());
     assert!(cover_facts(dir.path()).is_empty());
+
+    // A header that opens but pixel data that does not decode.
+    let whole = common::encode(&DynamicImage::ImageLuma8(upright(4, 4)), ImageFormat::Png);
+    let cut = save(&dir.path().join("cut.png"), &whole[..whole.len() * 3 / 5]);
+    assert!(open(&cut).is_ok());
+    let facts = cover_facts(&cut);
+    assert_eq!(facts["thumb_version"].py_str().len(), 24);
+    assert_eq!(facts["cover_hash"].py_str(), "");
+}
+
+// A file that cannot be read has no facts at all.
+#[cfg(unix)]
+#[test]
+fn unreadable_covers_have_no_facts() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = common::tmp();
+    let path = save(
+        &dir.path().join("locked.png"),
+        &common::png(9, 8, [1, 2, 3]),
+    );
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read(&path).is_ok() {
+        return; // root reads it regardless
+    }
+    assert!(cover_facts(&path).is_empty());
 }
 
 #[test]

@@ -46,6 +46,7 @@ struct Inner {
     pages: Mutex<Vec<(String, String)>>,
     blocked: Mutex<Vec<String>>,
     fetch_errors: Mutex<Vec<String>>,
+    download_errors: Mutex<Vec<String>>,
     calls: Mutex<Vec<String>>,
     downloads: Mutex<Vec<String>>,
     block_pattern: Mutex<Vec<bool>>,
@@ -165,6 +166,16 @@ impl ScrapeClient for FakeClient {
             .unwrap_or(false)
         {
             return Err(FetchError::Blocked(403));
+        }
+        if self
+            .0
+            .download_errors
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|m| url.contains(m.as_str()))
+        {
+            return Err(FetchError::Fetch(format!("fake download error for {url}")));
         }
         write(dest, b"jpg");
         Ok(true)
@@ -2477,4 +2488,101 @@ fn album_links_without_an_id_are_not_a_layout_change() {
     let summary = run(&client, dir.path(), T2, opts());
     assert_eq!(summary.error, "");
     assert_eq!(shard(dir.path()).len(), 2);
+}
+
+#[test]
+fn a_failed_cover_download_is_not_a_block() {
+    let dir = common::tmp();
+    let client = make_client();
+    *client.0.download_errors.lock().unwrap() = vec!["/s/101/".into()];
+    let result = run(&client, dir.path(), T1, opts());
+    assert_eq!(result.scraped, 2);
+    assert!(!result.thumbs_blocked);
+    let thumbs = dir.path().join("thumbs").join("sellerx");
+    assert!(!thumbs.join("101.jpg").exists());
+    assert!(thumbs.join("102.jpg").exists());
+}
+
+#[test]
+fn a_long_listing_saves_the_shard_every_hundred_albums() {
+    let dir = common::tmp();
+    let listing: String = (1000..1101)
+        .map(|aid| list_item(&aid.to_string(), "T"))
+        .collect();
+    let saved_at_100 = Arc::new(Mutex::new(None));
+    let client = FakeClient::new(&[
+        ("albums?page=1", listing),
+        ("albums?page=2", EMPTY_PAGE.into()),
+        ("/albums/", album_page("T", "d")),
+    ]);
+    let (seen, root) = (saved_at_100.clone(), dir.path().to_path_buf());
+    *client.0.hook.lock().unwrap() = Some(Arc::new(move |url: &str| {
+        if url.contains("/albums/1100") {
+            *seen.lock().unwrap() = Some(load_shard(&root, "sellerx").unwrap().len());
+        }
+    }));
+    let result = run(&client, dir.path(), T1, opts());
+    assert_eq!(result.scraped, 101);
+    assert_eq!(*saved_at_100.lock().unwrap(), Some(100));
+    assert_eq!(shard(dir.path()).len(), 101);
+}
+
+// Python sorted by `album.get("updated_at", "")`: an album without one is
+// the most overdue.
+#[test]
+fn an_album_without_updated_at_is_refreshed_first() {
+    let dir = common::tmp();
+    run(
+        &make_client(),
+        dir.path(),
+        "2026-08-01T00:00:00+00:00",
+        opts(),
+    );
+    let mut saved = shard(dir.path());
+    for album in saved.values_mut() {
+        album.insert("price".into(), Value::Int(180));
+    }
+    saved.get_mut("102").unwrap().shift_remove("updated_at");
+    write_shard(dir.path(), "sellerx", &saved).unwrap();
+    let result = run(
+        &make_client(),
+        dir.path(),
+        "2026-09-26T00:00:00+00:00",
+        Options {
+            refresh_days: 14,
+            refresh_limit: 1,
+            ..opts()
+        },
+    );
+    assert_eq!((result.refreshed, result.deferred), (1, 1));
+    let saved = shard(dir.path());
+    assert_eq!(
+        get(&saved, "102", "updated_at").py_str(),
+        "2026-09-26T00:00:00+00:00"
+    );
+    assert_eq!(
+        get(&saved, "101", "updated_at").py_str(),
+        "2026-08-01T00:00:00+00:00"
+    );
+}
+
+// A seller whose shard cannot be saved fails with the OS error; the run
+// still writes the index.
+#[test]
+fn a_shard_that_cannot_be_saved_fails_its_seller() {
+    let dir = common::tmp();
+    let client = make_client();
+    let blocker = dir.path().join("catalog").join("sellerx.json");
+    *client.0.hook.lock().unwrap() = Some(Arc::new(move |url: &str| {
+        if url.contains("/albums/101") {
+            std::fs::create_dir_all(&blocker).unwrap();
+        }
+    }));
+    let summaries = all(&[seller()], dir.path(), T1, &client, opts(), 1, None);
+    assert!(
+        summaries[0].error.starts_with("unexpected error: "),
+        "{}",
+        summaries[0].error
+    );
+    assert!(dir.path().join("index.json").exists());
 }

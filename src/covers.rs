@@ -123,9 +123,6 @@ fn to_luma(image: &DynamicImage) -> (u32, u32, Vec<u8>) {
         DynamicImage::ImageLumaA8(img) => img.pixels().map(|p| p.0[0]).collect(),
         DynamicImage::ImageLumaA16(img) => img.pixels().map(|p| (p.0[0] >> 8) as u8).collect(),
         DynamicImage::ImageRgb8(img) => img.pixels().map(|p| l24(p.0[0], p.0[1], p.0[2])).collect(),
-        DynamicImage::ImageRgba8(img) => {
-            img.pixels().map(|p| l24(p.0[0], p.0[1], p.0[2])).collect()
-        }
         DynamicImage::ImageRgb16(img) => img
             .pixels()
             .map(|p| {
@@ -146,6 +143,8 @@ fn to_luma(image: &DynamicImage) -> (u32, u32, Vec<u8>) {
                 )
             })
             .collect(),
+        // RGBA with 8-bit channels, and any type the decoders do not produce:
+        // the colour channels as they are, alpha dropped.
         other => {
             let rgb = other.to_rgb8();
             rgb.pixels().map(|p| l24(p.0[0], p.0[1], p.0[2])).collect()
@@ -475,5 +474,13 @@ mod tests {
         assert_eq!(thumbnail_size(800, 1600, 640), Some((320, 640)));
         assert_eq!(thumbnail_size(1000, 800, 640), Some((640, 512)));
         assert_eq!(thumbnail_size(640, 100, 640), None);
+    }
+
+    #[test]
+    fn rgba_luma_ignores_alpha_as_pillow_does() {
+        // Image.new("RGBA", (1, 1), (200, 100, 50, 7)).convert("L") in Pillow.
+        let pixel = image::Rgba([200, 100, 50, 7]);
+        let image = DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(1, 1, pixel));
+        assert_eq!(to_luma(&image), (1, 1, vec![124]));
     }
 }

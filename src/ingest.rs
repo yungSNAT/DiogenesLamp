@@ -112,12 +112,9 @@ const USES_PARAMS: [&str; 16] = [
 fn urlparse_path(split: &pyurl::Split) -> String {
     let path = &split.path;
     if USES_PARAMS.contains(&split.scheme.as_str()) && path.contains(';') {
-        let cut = if let Some(slash) = path.rfind('/') {
-            path[slash..].find(';').map(|i| i + slash)
-        } else {
-            path.find(';')
-        };
-        if let Some(cut) = cut {
+        // Only the last segment carries params.
+        let slash = path.rfind('/').unwrap_or(0);
+        if let Some(cut) = path[slash..].find(';').map(|i| i + slash) {
             return path[..cut].to_string();
         }
     }

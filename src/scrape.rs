@@ -956,40 +956,33 @@ pub fn scrape_all(
         drop(lock);
     };
     let abandoned = interrupt.presses() >= 2 || drain_error.is_some();
-    let mut release = Some(release);
-    let mut finish = || {
-        if let Some(release) = release.take() {
-            if abandoned {
-                std::thread::spawn(release);
-            } else {
-                release();
-            }
+    let outcome = (|| {
+        if let Some(error) = drain_error {
+            return Err(error);
         }
-    };
-    if let Some(error) = drain_error {
-        finish();
-        return Err(error);
+        summaries.sort_by(|a, b| a.seller.cmp(&b.seller));
+        if !options.dry_run {
+            write_scrape_index(data_dir, &sellers, &shops, run_ts)?;
+        }
+        let rows = match pending {
+            Some(runs) if !interrupted => pending_rows(data_dir, &runs),
+            _ => Ok(Vec::new()),
+        };
+        Ok(RunOutcome {
+            summaries,
+            interrupted,
+            rows,
+        })
+    })();
+    if abandoned {
+        std::thread::spawn(release);
+    } else {
+        release();
     }
-    summaries.sort_by(|a, b| a.seller.cmp(&b.seller));
-    if !options.dry_run
-        && let Err(error) = write_scrape_index(data_dir, &sellers, &shops, run_ts)
-    {
-        finish();
-        return Err(error);
-    }
-    let rows = match pending {
-        Some(runs) if !interrupted => pending_rows(data_dir, &runs),
-        _ => Ok(Vec::new()),
-    };
-    finish();
-    Ok(RunOutcome {
-        summaries,
-        interrupted,
-        rows,
-    })
+    outcome
 }
 
-/// Add `item`'s new albums to this run's entry in `pending`, when it has one.
+/// Add `item`'s new albums to this run's entry in `pending`, when there is one.
 fn record_new(
     data_dir: &Path,
     pending: Option<&mut Map>,
@@ -999,14 +992,16 @@ fn record_new(
     let Some(runs) = pending.filter(|_| !item.new_ids.is_empty()) else {
         return Ok(());
     };
-    if let Some(Value::Object(sellers)) = runs.get_mut(run_ts) {
-        let ids = item
-            .new_ids
-            .iter()
-            .map(|id| Value::Str(id.clone()))
-            .collect();
-        sellers.insert(item.seller.clone(), Value::Array(ids));
-    }
+    // The run creates its entry before any seller starts, and read_pending
+    // admits a file only when every entry is an object.
+    let sellers = runs.get_mut(run_ts).and_then(Value::as_object_mut);
+    let sellers = sellers.expect("this run's pending entry is an object");
+    let ids = item
+        .new_ids
+        .iter()
+        .map(|id| Value::Str(id.clone()))
+        .collect();
+    sellers.insert(item.seller.clone(), Value::Array(ids));
     write_pending(data_dir, runs)
 }
 
@@ -1113,4 +1108,16 @@ pub fn write_scrape_index(
         run_ts,
         false,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn panic_text_reads_each_payload_kind() {
+        assert_eq!(panic_text(&"parser bug"), "parser bug");
+        assert_eq!(panic_text(&String::from("index 3")), "index 3");
+        assert_eq!(panic_text(&7u8), "panic");
+    }
 }

@@ -402,6 +402,11 @@ mod tests {
         // CPython 3.15's repr for doubles chosen to exercise ties between two
         // equally short spellings: bits in hex, then the repr.
         assert_eq!(repr_float(1.0 + 2f64.powi(-17)), "1.0000076293945312");
+        // 2**-1017: the nearest 16-digit spelling reads back as another double.
+        assert_eq!(
+            repr_float(f64::from_bits(0x0060_0000_0000_0000)),
+            "7.120236347223045e-307"
+        );
         let wrong: Vec<String> = include_str!("../tests/fixtures/float_repr.txt")
             .lines()
             .filter_map(|line| {
@@ -410,11 +415,7 @@ mod tests {
                 (actual != expected).then(|| format!("{bits}: python {expected}, rust {actual}"))
             })
             .collect();
-        assert!(
-            wrong.is_empty(),
-            "{} wrong: {:?}",
-            wrong.len(),
-            &wrong[..wrong.len().min(10)]
-        );
+        let shown = &wrong[..wrong.len().min(10)];
+        assert!(wrong.is_empty(), "{} wrong: {shown:?}", wrong.len());
     }
 }

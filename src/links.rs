@@ -90,7 +90,6 @@ fn ignorecase_literal(host: &str) -> String {
             'k' => r"[kK\x{212a}]".to_string(),
             l if l.is_ascii_alphabetic() => format!("[{l}{}]", l.to_ascii_uppercase()),
             '.' => r"\.".to_string(),
-            '-' => r"\-".to_string(),
             d => d.to_string(),
         })
         .collect()
@@ -416,10 +415,8 @@ fn scan_word(word: &str, seen: &mut HashSet<String>, links: &mut Vec<Link>) -> b
         let Ok(caps) = caps else {
             return false;
         };
-        let Some(host_match) = caps.name("host") else {
-            continue;
-        };
-        let host = host_match.as_str().to_lowercase();
+        // The pattern always captures a host.
+        let host = caps["host"].to_lowercase();
         let rest = clean_rest(caps.name("rest").map(|m| m.as_str()));
         let platform = platform(&host);
         let url = if platform == "other" {

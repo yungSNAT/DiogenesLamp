@@ -198,22 +198,16 @@ pub fn canonical_album(album: &Map) -> bool {
             &Value::Object(shard),
             &format!("catalog/{seller_text}.json"),
         )?;
-        let mut urls = vec![album.get("album_url").cloned().unwrap_or(Value::Null)];
-        if let Some(Value::Array(links)) = album.get("links") {
-            for link in links {
-                urls.push(
-                    link.as_object()
-                        .and_then(|l| l.get("url"))
-                        .cloned()
-                        .unwrap_or(Value::Null),
-                );
-            }
-        }
-        for url in urls {
-            let Value::Str(url) = url else {
-                return value("TypeError");
-            };
-            public_https_host(&url)?;
+        // validate_metadata has checked that every one of these is text;
+        // were one not, "" has no host and is refused all the same.
+        let links = album
+            .get("links")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten();
+        let link_urls = links.map(|link| link.as_object().and_then(|l| l.get("url")));
+        for url in std::iter::once(album.get("album_url")).chain(link_urls) {
+            public_https_host(url.and_then(Value::as_str).unwrap_or_default())?;
         }
         Ok(())
     };
@@ -235,14 +229,12 @@ pub fn data_path(root: &Path, relative: &str, cover: bool) -> Result<PathBuf> {
     if !pyerr::is_relative_to(&path, &root) {
         return value("catalogue path escapes data directory");
     }
-    let mut existing = path.clone();
-    while existing != root && std::fs::symlink_metadata(&existing).is_err() {
-        match existing.parent() {
-            Some(parent) => existing = parent.to_path_buf(),
-            None => break,
-        }
-    }
-    if !pyerr::is_relative_to(&pyerr::resolve(&existing), &root) {
+    // The nearest ancestor that exists; the filesystem root always does.
+    let existing = path
+        .ancestors()
+        .find(|a| *a == root || std::fs::symlink_metadata(a).is_ok())
+        .expect("the filesystem root exists");
+    if !pyerr::is_relative_to(&pyerr::resolve(existing), &root) {
         return value("catalogue path escapes data directory");
     }
     Ok(path)
