@@ -248,10 +248,12 @@ impl Args {
         own.into_iter()
             .chain([&self.0])
             .find_map(|m| match m.try_get_one::<T>(key) {
-                Ok(value) => value.cloned(),
                 // A global option, looked for in the command's own matches.
                 Err(clap::parser::MatchesError::UnknownArgument { .. }) => None,
-                Err(e) => panic!("argument {key}: {e}"),
+                // Any other error is a key read as the wrong type: a bug.
+                found => found
+                    .unwrap_or_else(|e| panic!("argument {key}: {e}"))
+                    .cloned(),
             })
     }
     fn str(&self, key: &str) -> String {
@@ -577,12 +579,11 @@ pub fn notify(command: &str, rows: Vec<pyjson::Map>) -> Result<(), String> {
     if !status.success() {
         return Err(format!("the command failed ({status})"));
     }
-    match written {
-        Err(e) if e.kind() != std::io::ErrorKind::BrokenPipe => {
-            Err(format!("could not write to the command: {e}"))
-        }
-        _ => Ok(()),
-    }
+    let failed = written
+        .err()
+        .filter(|e| e.kind() != std::io::ErrorKind::BrokenPipe)
+        .map(|e| format!("could not write to the command: {e}"));
+    failed.map_or(Ok(()), Err)
 }
 
 /// `command` run by the system shell: `/bin/sh -c` or `%ComSpec% /d /s /c`.
@@ -738,18 +739,21 @@ fn cmd_demo(args: &Args) -> i32 {
     };
     // Ctrl+C whilst writing stops before serving and still removes the data.
     // Without the handler it would end the process first, so that is an error.
-    let stop = match interrupt_flag() {
+    // A directory this could not create is not ours to remove.
+    let prepared = interrupt_flag()
+        .map_err(|e| format!("could not handle Ctrl+C: {e}"))
+        .and_then(|stop| {
+            std::fs::create_dir(&dir)
+                .map(|()| stop)
+                .map_err(|e| format!("could not write demo data: {e}"))
+        });
+    let stop = match prepared {
         Ok(stop) => stop,
         Err(e) => {
-            out::err(&format!("error: could not handle Ctrl+C: {e}"));
+            out::err(&format!("error: {e}"));
             return 1;
         }
     };
-    // A directory this could not create is not ours to remove.
-    if let Err(e) = std::fs::create_dir(&dir) {
-        out::err(&format!("error: could not write demo data: {e}"));
-        return 1;
-    }
     let code = match crate::demo::write(&dir, DEMO_SELLERS, DEMO_ALBUMS, DEMO_ALBUMS) {
         Ok(covers) => {
             if let Err(e) = out::out(&format!(
@@ -805,14 +809,23 @@ fn next_steps() -> i32 {
     // this crate's forbid(unsafe_code) rules out calling directly.
     #[cfg(windows)]
     {
-        use std::io::{IsTerminal, Write};
-        if std::io::stdin().is_terminal() {
-            out::out_raw("\nPress Enter to close.\n");
-            let _ = std::io::stdout().flush();
-            let _ = std::io::stdin().read_line(&mut String::new());
-        }
+        use std::io::IsTerminal;
+        let stdin = std::io::stdin();
+        wait_for_enter(stdin.is_terminal(), &mut stdin.lock());
     }
     0
+}
+
+/// When `console` is set, prints the closing prompt and waits for a line on `input`.
+#[cfg(any(windows, test))]
+fn wait_for_enter(console: bool, input: &mut impl std::io::BufRead) {
+    use std::io::Write;
+    if !console {
+        return;
+    }
+    out::out_raw("\nPress Enter to close.\n");
+    let _ = std::io::stdout().flush();
+    let _ = input.read_line(&mut String::new());
 }
 
 /// Run the CLI with arguments after the program name; returns the exit code.
@@ -853,6 +866,15 @@ pub fn main(argv: &[String]) -> i32 {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn wait_for_enter_waits_only_on_a_console() {
+        let mut input = std::io::Cursor::new(b"\nnext\n".to_vec());
+        super::wait_for_enter(false, &mut input);
+        assert_eq!(input.position(), 0);
+        super::wait_for_enter(true, &mut input);
+        assert_eq!(input.position(), 1);
+    }
 
     /// Runs the named unit test again in a child process whose local time is
     /// UTC+05:30, a zone with no daylight saving, and reports which side this is.

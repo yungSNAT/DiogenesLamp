@@ -225,3 +225,98 @@ fn demo_write_reports_a_file_it_cannot_write() {
         assert!(error.contains(expected), "{blocked:?}: {error}");
     }
 }
+
+/// Without a temporary directory to write in, nothing is served.
+#[test]
+fn demo_without_a_temporary_directory_fails() {
+    let dirs = dirs();
+    let missing = dirs.temp.join("missing");
+    let output = demo(&dirs, &free_port())
+        .env("TMPDIR", &missing)
+        .env("TMP", &missing)
+        .env("TEMP", &missing)
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(
+        stderr.starts_with("error: could not write demo data: "),
+        "{stderr}"
+    );
+    assert!(!missing.exists());
+}
+
+/// Whether this process may write where the file mode says it may not.
+#[cfg(unix)]
+fn is_root() -> bool {
+    rustix::process::geteuid().is_root()
+}
+
+/// A demo folder made read-only by the umask fails the write and is removed.
+#[cfg(unix)]
+#[test]
+fn demo_reports_data_it_cannot_write_and_removes_the_folder() {
+    if is_root() {
+        return;
+    }
+    let dirs = dirs();
+    let lamp = demo(&dirs, &free_port());
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg("umask 222 && exec \"$0\" \"$@\"")
+        .arg(lamp.get_program())
+        .args(lamp.get_args())
+        .current_dir(&dirs.work)
+        .env("TMPDIR", &dirs.temp)
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(
+        stderr.starts_with("error: could not write demo data: "),
+        "{stderr}"
+    );
+    assert!(stderr.contains("Permission denied"), "{stderr}");
+    assert!(entries(&dirs.temp).is_empty(), "demo data left behind");
+}
+
+/// Data the demo cannot remove when stopped is named, not left silently.
+#[cfg(unix)]
+#[test]
+fn demo_names_data_it_could_not_remove() {
+    use std::os::unix::fs::PermissionsExt;
+    if is_root() {
+        return;
+    }
+    let dirs = dirs();
+    let port = free_port();
+    let mut child = demo(&dirs, &port).spawn().unwrap();
+    let index = get(&mut child, &port, "/data/index.json");
+    assert!(index.starts_with("HTTP/1.0 200"), "{index}");
+    let catalog = dirs.temp.join(&entries(&dirs.temp)[0]).join("catalog");
+    std::fs::set_permissions(&catalog, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let signalled = Command::new("kill")
+        .args(["-INT", &child.id().to_string()])
+        .status()
+        .unwrap();
+    assert!(signalled.success());
+    let output = child.wait_with_output().unwrap();
+    std::fs::set_permissions(&catalog, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(0), "{stderr}");
+    assert!(stderr.contains("warning: could not remove "), "{stderr}");
+    assert!(catalog.is_dir());
+}
+
+/// A stdout that cannot take the demo's first line ends it, data removed.
+#[cfg(target_os = "linux")]
+#[test]
+fn demo_stops_and_removes_its_data_when_stdout_fails() {
+    let dirs = dirs();
+    let full = std::fs::File::create("/dev/full").unwrap();
+    let output = demo(&dirs, &free_port()).stdout(full).output().unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert_eq!(stderr, "OSError: [Errno 28] No space left on device\n");
+    assert!(entries(&dirs.temp).is_empty(), "demo data left behind");
+}

@@ -176,3 +176,23 @@ fn a_closed_stdout_discards_output() {
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(String::from_utf8(output.stderr).unwrap(), "");
 }
+
+/// On a terminal stdout is line-buffered, so the next steps arrive whole.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_terminal_stdout_gets_the_next_steps() {
+    // util-linux script(1) runs lamp on a pseudo-terminal.
+    let output = Command::new("script")
+        .args(["-q", "-e", "-c", "exec \"$LAMP\"", "/dev/null"])
+        .env("LAMP", env!("CARGO_BIN_EXE_lamp"))
+        .env_remove("PYTHONUNBUFFERED")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        text.contains("lamp --help lists every command."),
+        "{text:?}"
+    );
+}

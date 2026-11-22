@@ -1216,3 +1216,20 @@ fn prepare_covers_command_exits_1_only_when_a_cover_failed() {
     assert!(matches!(report["processed"], Value::Int(4)), "{out}");
     assert_eq!(report["errors"].as_array().unwrap().len(), 1);
 }
+
+/// A metadata name that is a folder fails the snapshot a restore takes of
+/// the current files first; nothing is restored and no partial zip is left.
+#[test]
+fn restore_stops_when_the_current_files_cannot_be_saved() {
+    let dir = common::tmp();
+    catalogue(dir.path());
+    let archive = snapshot(dir.path()).unwrap();
+    let shard = dir.path().join("catalog/example.json");
+    write(&shard, "corrupt");
+    std::fs::create_dir_all(dir.path().join("runs/folder.json")).unwrap();
+    let error = restore(dir.path(), &archive).unwrap_err();
+    assert!(matches!(error, lamp::errors::Error::Os(_)), "{error}");
+    assert_eq!(std::fs::read(&shard).unwrap(), b"corrupt");
+    let saved = std::fs::read_dir(dir.path().join("snapshots")).unwrap();
+    assert_eq!(saved.count(), 1);
+}
