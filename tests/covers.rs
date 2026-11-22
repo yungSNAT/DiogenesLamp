@@ -274,3 +274,34 @@ fn preparation_refuses_unsupported_formats_and_shrinks_extreme_shapes() {
     assert_eq!(opened.format_name(), "WEBP");
     assert_eq!((opened.width, opened.height), (COVER_EDGE, COVER_EDGE / 2));
 }
+
+/// A cover another program holds open keeps its bytes, and the shrunk copy
+/// that could not replace it is removed.
+#[cfg(windows)]
+#[test]
+fn a_cover_held_open_is_left_as_it_was() {
+    use std::os::windows::fs::OpenOptionsExt;
+    let dir = common::tmp();
+    let photo = DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
+        2 * COVER_EDGE,
+        COVER_EDGE,
+        image::Rgb([20, 120, 200]),
+    ));
+    let path = save(
+        &dir.path().join("big.png"),
+        &common::encode(&photo, ImageFormat::Png),
+    );
+    let before = std::fs::read(&path).unwrap();
+    // Shared for reading only (FILE_SHARE_READ), so a rename over it fails.
+    let _held = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(1)
+        .open(&path)
+        .unwrap();
+    assert!(matches!(
+        resize_cover(&path),
+        Err(lamp::errors::Error::Os(_))
+    ));
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+}

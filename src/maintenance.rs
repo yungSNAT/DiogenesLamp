@@ -784,13 +784,12 @@ pub fn export_site(root: &Path, dir: &Path) -> Result<Site> {
         return value("the site folder must be outside the data directory");
     }
     match std::fs::read_dir(dir) {
-        Ok(mut entries) => match entries.next() {
-            None => {}
-            Some(Ok(_)) => {
+        Ok(mut entries) => {
+            if let Some(entry) = entries.next() {
+                entry.map_err(|e| os(e, dir))?;
                 return value(format!("{}: folder is not empty", pyerr::path_str(dir)));
             }
-            Some(Err(e)) => return Err(os(e, dir)),
-        },
+        }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => return Err(os(e, dir)),
     }
@@ -818,16 +817,18 @@ pub fn export_site(root: &Path, dir: &Path) -> Result<Site> {
     // Not followed through a link: the site may carry only the data
     // directory's own file.
     let aliases = root.join("aliases.json");
-    match std::fs::symlink_metadata(&aliases) {
-        Ok(meta) if meta.is_file() => {
-            if meta.len() > MAX_METADATA_BYTES {
-                return value("aliases.json exceeds 256 MB");
-            }
-            copies.push((aliases, "aliases.json".into()));
+    let found = match std::fs::symlink_metadata(&aliases) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        other => Some(other.map_err(|e| os(e, &aliases))?),
+    };
+    if let Some(meta) = found {
+        if !meta.is_file() {
+            return value("aliases.json is not a regular file");
         }
-        Ok(_) => return value("aliases.json is not a regular file"),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => return Err(os(e, &aliases)),
+        if meta.len() > MAX_METADATA_BYTES {
+            return value("aliases.json exceeds 256 MB");
+        }
+        copies.push((aliases, "aliases.json".into()));
     }
     for cover in &covers {
         copies.push((data_path(root, cover, true)?, cover.clone()));

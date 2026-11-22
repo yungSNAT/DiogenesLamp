@@ -91,11 +91,10 @@ pub(crate) fn crt_errno(code: i32) -> i32 {
 
 #[cfg(windows)]
 fn windows_message(code: i32) -> String {
-    let text = io::Error::from_raw_os_error(code).to_string();
-    let text = match text.rfind(" (os error ") {
-        Some(index) => text[..index].to_string(),
-        None => text,
-    };
+    let full = io::Error::from_raw_os_error(code).to_string();
+    let text = full
+        .rsplit_once(" (os error ")
+        .map_or(full.as_str(), |(head, _)| head);
     text.trim_end_matches(|c: char| c == '.' || c.is_whitespace())
         .to_string()
 }
@@ -429,14 +428,28 @@ pub fn pathlib_normalise(text: &str) -> String {
 fn windows_pathlib(text: &str) -> String {
     let text = text.replace('/', "\\");
     let (drive, rest) = split_windows_drive(&text);
-    let rooted = rest.starts_with('\\');
+    // pathlib gives a whole UNC drive a root: \\server\share is \\server\share\.
+    let drive_parts: Vec<&str> = drive.split('\\').collect();
+    let unc_root = !drive.ends_with('\\')
+        && match drive_parts.len() {
+            4 => !["", "?", ".", "?."].contains(&drive_parts[2]),
+            n => n == 6,
+        };
     let parts: Vec<&str> = rest
         .split('\\')
         .filter(|part| !part.is_empty() && *part != ".")
         .collect();
     let mut out = drive.to_string();
-    if rooted {
+    if unc_root || rest.starts_with('\\') {
         out.push('\\');
+    }
+    // A relative path whose first part reads as a drive keeps a `.` before it.
+    if out.is_empty()
+        && parts
+            .first()
+            .is_some_and(|p| !split_windows_drive(p).0.is_empty())
+    {
+        out.push_str(".\\");
     }
     out.push_str(&parts.join("\\"));
     if out.is_empty() { ".".into() } else { out }
@@ -459,22 +472,28 @@ fn posix_pathlib(text: &str) -> String {
     if out.is_empty() { ".".into() } else { out }
 }
 
+/// The drive `ntpath.splitroot` finds in text with `\` separators, and the rest.
 fn split_windows_drive(text: &str) -> (&str, &str) {
-    let bytes = text.as_bytes();
-    if bytes.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
-        return text.split_at(2);
+    if text.starts_with("\\\\") {
+        // UNC and device drives (\\server\share, \\?\UNC\server\share,
+        // \\.\device) run to the separator after the next one, or to the end.
+        let unc = text
+            .get(..8)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("\\\\?\\UNC\\"));
+        let start = if unc { 8 } else { 2 };
+        let end = text[start..]
+            .find('\\')
+            .map(|at| start + at + 1)
+            .and_then(|share| text[share..].find('\\').map(|at| share + at))
+            .unwrap_or(text.len());
+        return text.split_at(end);
     }
-    if let Some(rest) = text.strip_prefix("\\\\") {
-        // UNC: \\server\share
-        let mut parts = rest.splitn(3, '\\');
-        let server = parts.next().unwrap_or("");
-        let share = parts.next().unwrap_or("");
-        if !server.is_empty() && !share.is_empty() {
-            let len = 2 + server.len() + 1 + share.len();
-            return text.split_at(len);
-        }
+    // Any first character before a colon, as in X:\ or 1:.
+    let mut chars = text.char_indices();
+    match (chars.next(), chars.next()) {
+        (Some((_, first)), Some((colon, ':'))) if first != '\\' => text.split_at(colon + 1),
+        _ => ("", text),
     }
-    ("", text)
 }
 
 /// `base / "a/b"`: each part joined with the platform separator.
@@ -649,6 +668,71 @@ mod tests {
         }
     }
 
+    // A Windows error code as errno: open()'s own table, then UCRT's _dosmaperr.
+    #[cfg(windows)]
+    #[test]
+    fn windows_codes_map_to_c_runtime_errnos() {
+        for (code, open) in [
+            (2, 2),
+            (5, 13),
+            (4, 24),
+            (6, 9),
+            (183, 17),
+            (112, 28),
+            (145, 41),
+            (1, 22),
+        ] {
+            assert_eq!(windows_errno(code), open, "{code}");
+        }
+        for (code, crt) in [
+            (206, 2),
+            (4, 24),
+            (36, 13),
+            (130, 9),
+            (1816, 12),
+            (10, 7),
+            (200, 8),
+            (17, 18),
+            (80, 17),
+            (215, 11),
+            (109, 32),
+            (112, 28),
+            (129, 10),
+            (145, 41),
+            (1113, 42),
+            (1, 22),
+        ] {
+            assert_eq!(crt_errno(code), crt, "{code}");
+        }
+    }
+
+    // Verbatim prefixes go only where the plain form names the same path.
+    #[cfg(windows)]
+    #[test]
+    fn verbatim_paths_lose_only_the_prefixes_a_plain_path_can_spell() {
+        for (path, plain) in [
+            (r"\\?\UNC\server\share\x", r"\\server\share\x"),
+            (r"\\?\C:\x", r"C:\x"),
+            (r"\\?\Volume{0}\x", r"\\?\Volume{0}\x"),
+            (r"C:\x", r"C:\x"),
+        ] {
+            assert_eq!(strip_verbatim(PathBuf::from(path)), PathBuf::from(plain));
+        }
+    }
+
+    // Nothing on a missing drive resolves, so the path comes back as it was.
+    #[cfg(windows)]
+    #[test]
+    fn resolve_keeps_a_path_on_a_missing_drive() {
+        let drive = ('D'..='Z')
+            .rev()
+            .map(|letter| format!("{letter}:\\"))
+            .find(|root| !Path::new(root).exists())
+            .expect("a free drive letter");
+        let path = PathBuf::from(format!("{drive}lamp\\x"));
+        assert_eq!(resolve(&path), path);
+    }
+
     // Python's OSError text on Linux is glibc's strerror, as Rust's is.
     #[cfg(target_os = "linux")]
     #[test]
@@ -726,6 +810,31 @@ mod tests {
         ] {
             assert_eq!(windows_pathlib(text), windows, "{text:?}");
             assert_eq!(posix_pathlib(text), posix, "{text:?}");
+        }
+        // Drives as ntpath.splitroot finds them, including incomplete UNC ones.
+        for (text, windows) in [
+            (r"\\server", r"\\server"),
+            (r"\\server\", r"\\server\"),
+            (r"\\\a", r"\\\a"),
+            (r"\\a\\b", r"\\a\\b"),
+            (r"\\server\share", r"\\server\share\"),
+            ("//x//y/", r"\\x\\y"),
+            (r"\\?\C:\x", r"\\?\C:\x"),
+            (r"\\?\UNC\server", r"\\?\UNC\server"),
+            (r"\\?\unc\s\h", r"\\?\unc\s\h\"),
+            (r"\\?\UNC\server\share\x", r"\\?\UNC\server\share\x"),
+            (r"\\.\device\x", r"\\.\device\x"),
+            (r"\\?.\x\y", r"\\?.\x\y"),
+            (r"\\x\.\y", r"\\x\.\y"),
+            (r"\\", r"\\"),
+            ("1:/x/", r"1:\x"),
+            ("\u{e9}:x", "\u{e9}:x"),
+            ("./1:x", r".\1:x"),
+            ("./:x", ":x"),
+            ("ab:c", "ab:c"),
+            (r"\:x", r"\:x"),
+        ] {
+            assert_eq!(windows_pathlib(text), windows, "{text:?}");
         }
         assert_eq!(posix_pathlib("//x//y/"), "//x/y");
         assert_eq!(posix_pathlib("///a"), "/a");

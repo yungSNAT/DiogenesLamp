@@ -657,10 +657,10 @@ impl<'a> Tokenizer<'a> {
             k = j;
         }
         let end = pystr::strip(&self.raw[k..endpos]);
-        if end != ">" && end != "/>" {
-            out.data(&self.raw[i..endpos]);
-            return Some(endpos);
-        }
+        // The attribute loop walks as locatetagend did, so it stops only at
+        // the closing `>` or `/>`. CPython checks anyway (and would emit the
+        // tag as text); the fuzz test below finds no input that reaches it.
+        debug_assert!(end == ">" || end == "/>", "start tag ends {end:?}");
         if end.ends_with("/>") {
             out.start_tag(&tag, attrs, false);
             out.end_tag(&tag, false);
@@ -1168,6 +1168,25 @@ fn is_multi_valued(tag: &str, key: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    // Every start tag of up to 6 characters after `<a` from the characters
+    // the attribute grammar turns on, checked by parse_starttag's assertion.
+    #[test]
+    fn start_tags_end_at_their_closing_bracket() {
+        const ALPHABET: &[u8] = b"a =/>'\"\t";
+        let mut tail = Vec::new();
+        for len in 0..=6u32 {
+            for mut n in 0..ALPHABET.len().pow(len) {
+                tail.clear();
+                for _ in 0..len {
+                    tail.push(ALPHABET[n % ALPHABET.len()]);
+                    n /= ALPHABET.len();
+                }
+                let text = format!("<a{}", String::from_utf8_lossy(&tail));
+                super::parse(&text);
+            }
+        }
+    }
+
     use super::*;
 
     fn text(html: &str) -> String {

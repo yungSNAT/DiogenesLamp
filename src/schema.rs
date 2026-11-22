@@ -226,15 +226,16 @@ pub fn data_path(root: &Path, relative: &str, cover: bool) -> Result<PathBuf> {
     }
     let root = pyerr::resolve(root);
     let path = pyerr::normpath(&pyerr::join_rel(&root, relative));
-    if !pyerr::is_relative_to(&path, &root) {
-        return value("catalogue path escapes data directory");
-    }
     // The nearest ancestor that exists; the filesystem root always does.
-    let existing = path
-        .ancestors()
-        .find(|a| *a == root || std::fs::symlink_metadata(a).is_ok())
-        .expect("the filesystem root exists");
-    if !pyerr::is_relative_to(&pyerr::resolve(existing), &root) {
+    let existing = || {
+        path.ancestors()
+            .find(|a| *a == root || std::fs::symlink_metadata(a).is_ok())
+            .expect("the filesystem root exists")
+    };
+    // The path as written, then through any link on the way.
+    if !pyerr::is_relative_to(&path, &root)
+        || !pyerr::is_relative_to(&pyerr::resolve(existing()), &root)
+    {
         return value("catalogue path escapes data directory");
     }
     Ok(path)
