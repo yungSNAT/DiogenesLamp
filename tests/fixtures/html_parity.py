@@ -43,6 +43,10 @@ CASES = [
     "<a title='un\nterminated>t</a>",
     "<a/title=x>t</a>",
     "<a //title=x>t</a>",
+    # A value that is only a quote character.
+    "<a title='>t</a>",
+    "<a title=\">t</a>",
+    "<a title= ' x=\"\">t</a>",
     # Comments, declarations and processing instructions.
     "a<!---->b<!-- x -->c",
     "a<!-->b",

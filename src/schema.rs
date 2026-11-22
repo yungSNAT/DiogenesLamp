@@ -198,7 +198,8 @@ pub fn canonical_album(album: &Map) -> bool {
             &Value::Object(shard),
             &format!("catalog/{seller_text}.json"),
         )?;
-        // validate_metadata has checked that every one of these is text.
+        // validate_metadata has checked that every one of these is text;
+        // were one not, "" has no host and is refused all the same.
         let links = album
             .get("links")
             .and_then(Value::as_array)

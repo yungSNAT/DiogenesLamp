@@ -1258,7 +1258,10 @@ mod tests {
         assert_eq!(texts("a[href=\"/2\"]"), ["2"]);
         assert_eq!(texts("a[href=/3]"), Vec::<String>::new());
         assert_eq!(texts("A.y, td"), ["1", "3"]);
-        // What follows an attribute test other than another test is ignored.
+        // Not bs4 parity: SoupSieve rejects this selector and the one with
+        // an unquoted "/3" above. The subset only ever gets parse.rs's fixed
+        // selectors, and this pins that it ignores trailing text rather than
+        // looping or panicking.
         assert_eq!(texts("a[href=\"/1\"]junk"), ["1"]);
         let first = doc.select_one(doc.root(), "a").unwrap();
         assert_eq!(doc.attr(first, "title"), Some("t"));

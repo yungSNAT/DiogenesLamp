@@ -982,7 +982,7 @@ pub fn scrape_all(
     outcome
 }
 
-/// Add `item`'s new albums to this run's entry in `pending`, when it has one.
+/// Add `item`'s new albums to this run's entry in `pending`, when there is one.
 fn record_new(
     data_dir: &Path,
     pending: Option<&mut Map>,
@@ -992,14 +992,16 @@ fn record_new(
     let Some(runs) = pending.filter(|_| !item.new_ids.is_empty()) else {
         return Ok(());
     };
-    if let Some(Value::Object(sellers)) = runs.get_mut(run_ts) {
-        let ids = item
-            .new_ids
-            .iter()
-            .map(|id| Value::Str(id.clone()))
-            .collect();
-        sellers.insert(item.seller.clone(), Value::Array(ids));
-    }
+    // The run creates its entry before any seller starts, and read_pending
+    // admits a file only when every entry is an object.
+    let sellers = runs.get_mut(run_ts).and_then(Value::as_object_mut);
+    let sellers = sellers.expect("this run's pending entry is an object");
+    let ids = item
+        .new_ids
+        .iter()
+        .map(|id| Value::Str(id.clone()))
+        .collect();
+    sellers.insert(item.seller.clone(), Value::Array(ids));
     write_pending(data_dir, runs)
 }
 
