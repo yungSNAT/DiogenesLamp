@@ -11,14 +11,14 @@ executables (README, Install); on other systems, install from a clone with
 
 ## Start
 
-- [README](https://github.com/yungSNAT/DiogenesLamp#readme): install, use, data layout, diagnostics, politeness limits and development checks.
+- [README](https://github.com/yungSNAT/DiogenesLamp#readme): install, use, data layout, diagnostics and politeness limits.
 - [sources.example.toml](https://github.com/yungSNAT/DiogenesLamp/blob/main/sources.example.toml): an example of the seller source file that `lamp import` writes.
 - [CHANGELOG](https://github.com/yungSNAT/DiogenesLamp/blob/main/CHANGELOG.md): the Rust port and its documented divergences from the Python version.
 
 ## Docs
 
 - [Reference](https://github.com/yungSNAT/DiogenesLamp/blob/main/docs/reference.md): scrape and serve flags, scrape behaviour and the viewer's features.
-- [Contributing](https://github.com/yungSNAT/DiogenesLamp/blob/main/CONTRIBUTING.md): issues, pull requests and the checks a change must pass.
+- [Contributing](https://github.com/yungSNAT/DiogenesLamp/blob/main/CONTRIBUTING.md): issues, pull requests, the checks a change must pass, demo data and the parser canary.
 - [Security policy](https://github.com/yungSNAT/DiogenesLamp/blob/main/SECURITY.md): reporting and what the tool does and does not access.
 - [Product record](https://github.com/yungSNAT/DiogenesLamp/blob/main/PRODUCT.md): users, purpose, positioning and operating context.
 - [Design system](https://github.com/yungSNAT/DiogenesLamp/blob/main/DESIGN.md): viewer tokens, rules and component behaviour.
