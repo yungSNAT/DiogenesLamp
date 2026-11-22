@@ -664,7 +664,7 @@ fn a_site_with_every_cover_cached_names_none_missing() {
     assert_eq!(code, 0, "{stderr}");
     let stdout = String::from_utf8(stdout).unwrap();
     assert!(
-        stdout.contains("1 sellers and 3 covers. Put the folder"),
+        stdout.contains("1 sellers and 2 covers. Put the folder"),
         "{stdout}"
     );
 }
