@@ -111,7 +111,7 @@
   embeds (HTML, CSS, JavaScript, JSON, JPEG, PNG, WebP and snapshot ZIPs);
   any other file you put in the data folder is served as
   `application/octet-stream`. Before, it looked the type up in Python's
-  table of about 230 types.
+  table of 216 types.
 
 ## 0.1.2 (2026-11-13)
 
