@@ -166,8 +166,9 @@ fn an_unwritable_diagnostic_loses_the_original_code() {
 fn a_closed_stdout_discards_output() {
     let dir = workspace();
     let output = Command::new("sh")
-        .args(["-c", "exec \"$0\" --help >&-", env!("CARGO_BIN_EXE_lamp")])
+        .args(["-c", "exec \"$0\" >&-", env!("CARGO_BIN_EXE_lamp")])
         .current_dir(dir.path())
+        .stdin(Stdio::null())
         .env_remove("PYTHONUNBUFFERED")
         .stderr(Stdio::piped())
         .output()

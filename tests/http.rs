@@ -1052,6 +1052,8 @@ fn page_text_follows_the_declared_or_default_charset() {
         text(Some("text/html; charset=\"latin_1\""), b"caf\xe9"),
         "café"
     );
+    // Other parameters are passed over, so text/* falls back to ISO-8859-1.
+    assert_eq!(text(Some("text/html; q=1; boundary"), utf8), "cafÃ©");
 }
 
 #[test]
