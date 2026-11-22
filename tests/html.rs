@@ -13,15 +13,26 @@ use lamp::pyjson::Value;
 
 /// Attributes the fixture may hold; any the reference parser did not give
 /// as a string must be absent here too.
-const KEYS: [&str; 11] = [
-    "title", "b", "c", "d", "e", "f", "y", "=", "==x", "/", "class",
+const KEYS: [&str; 12] = [
+    "title",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "y",
+    "=",
+    "==x",
+    "/",
+    "class",
+    "\"unterminated",
 ];
 
 #[test]
 fn text_and_attributes_match_the_reference_parser() {
     let fixture = &common::json(&common::fixture("html_parity.json"));
     let cases = get(fixture, "cases").as_array().unwrap();
-    assert_eq!(cases.len(), 79);
+    assert_eq!(cases.len(), 90);
     let mut failures = Vec::new();
     for case in cases {
         let html = get(case, "html").as_str().unwrap();

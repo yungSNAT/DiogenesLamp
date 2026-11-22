@@ -159,3 +159,19 @@ fn an_unwritable_diagnostic_loses_the_original_code() {
         (2, String::new())
     );
 }
+
+/// With stdout closed, Python's sys.stdout was None and print wrote nothing.
+#[cfg(unix)]
+#[test]
+fn a_closed_stdout_discards_output() {
+    let dir = workspace();
+    let output = Command::new("sh")
+        .args(["-c", "exec \"$0\" --help >&-", env!("CARGO_BIN_EXE_lamp")])
+        .current_dir(dir.path())
+        .env_remove("PYTHONUNBUFFERED")
+        .stderr(Stdio::piped())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8(output.stderr).unwrap(), "");
+}

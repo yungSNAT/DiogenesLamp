@@ -151,10 +151,8 @@ impl Builder {
         id
     }
 
+    /// Its one caller keeps the root on the stack.
     fn pop_tag(&mut self) {
-        if self.stack.len() <= 1 {
-            return;
-        }
         let Some(id) = self.stack.pop() else { return };
         if let Kind::Element { name, .. } = &self.nodes[id].kind
             && let Some(count) = self.open_counts.get_mut(name)
@@ -243,13 +241,7 @@ impl Builder {
             // where "." stops at a newline and hex digits are lowercase only.
             let lead = digits
                 .bytes()
-                .take_while(|b| {
-                    if hex {
-                        b.is_ascii_digit() || (b'a'..=b'f').contains(b)
-                    } else {
-                        b.is_ascii_digit()
-                    }
-                })
+                .take_while(|b| b.is_ascii_digit() || (hex && (b'a'..=b'f').contains(b)))
                 .count();
             if lead == 0 {
                 (None, digits.to_string())
@@ -482,9 +474,7 @@ struct Tokenizer<'a> {
 
 /// `[a-zA-Z][^\t\n\r\f />]*` followed by `(?:[\t\n\r\f ]|/(?!>))*`.
 fn tagfind(b: &[u8], p: usize) -> Option<(usize, usize, usize)> {
-    if !b.get(p).is_some_and(u8::is_ascii_alphabetic) {
-        return None;
-    }
+    b.get(p).filter(|c| c.is_ascii_alphabetic())?;
     let mut j = p + 1;
     while j < b.len() && !is_tag_ws(b[j]) && b[j] != b'/' && b[j] != b'>' {
         j += 1;
@@ -582,10 +572,7 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn find(&self, needle: &str, from: usize) -> Option<usize> {
-        if from > self.b.len() {
-            return None;
-        }
-        self.raw[from..].find(needle).map(|p| p + from)
+        self.raw.get(from..)?.find(needle).map(|p| p + from)
     }
 
     fn interesting(&self, i: usize) -> Option<usize> {
@@ -651,8 +638,6 @@ impl<'a> Tokenizer<'a> {
                         || (v.starts_with('"') && v.ends_with('"')))
                 {
                     v = &v[1..v.len() - 1];
-                } else if v == "'" || v == "\"" {
-                    v = "";
                 }
                 value = Some(if v.is_empty() {
                     String::new()
@@ -736,9 +721,7 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn parse_html_declaration(&self, i: usize, out: &mut Builder) -> Option<usize> {
-        if self.starts(i, "<!--") {
-            return self.parse_comment(i, out);
-        }
+        // goahead has taken `<!--` already.
         if self.starts(i, "<![CDATA[") {
             let j = self.find("]]>", i + 9)?;
             out.special(&self.raw[i + 9..j], StrKind::CData);
@@ -860,7 +843,8 @@ impl<'a> Tokenizer<'a> {
                 } else {
                     break;
                 }
-            } else if self.starts(i, "&") {
+            } else {
+                // `interesting` stops only at `<` or `&`.
                 if let Some((name_end, term)) = self.match_entityref(i) {
                     out.entityref(&self.raw[i + 1..name_end]);
                     i = if term == Some(b';') {
@@ -1236,5 +1220,54 @@ mod tests {
             .map(|id| doc.get_text(id, "", false))
             .collect();
         assert_eq!(found, ["1", "2", "3"]);
+    }
+
+    // What CPython 3.15's html.unescape returns for each input.
+    #[test]
+    fn unescape_matches_html_unescape() {
+        for (input, expected) in [
+            ("plain", "plain"),
+            ("a&amp;b&lt", "a&b<"),
+            ("&#1;x", "x"),
+            ("&#128;&#x41;", "\u{20ac}A"),
+            ("&notit;", "\u{ac}it;"),
+            ("&zzzz;", "&zzzz;"),
+            ("&#;", "&#;"),
+            ("&#x;", "&#x;"),
+            ("&;", "&;"),
+            ("&", "&"),
+            ("&amp", "&"),
+        ] {
+            assert_eq!(unescape(input), expected, "{input:?}");
+        }
+    }
+
+    #[test]
+    fn selectors_match_tags_classes_and_attributes() {
+        let doc = parse(
+            "<a class='x y' href='/1' rel='next' title='t'>1</a>\
+             <a class='x' href='/2'>2</a><td headers='h'>3</td>",
+        );
+        let texts = |selector: &str| -> Vec<String> {
+            doc.select(doc.root(), selector)
+                .into_iter()
+                .map(|id| doc.get_text(id, "", false))
+                .collect()
+        };
+        assert_eq!(texts("a.x"), ["1", "2"]);
+        assert_eq!(texts("a.x.y"), ["1"]);
+        assert_eq!(texts("a[href=\"/2\"]"), ["2"]);
+        assert_eq!(texts("a[href=/3]"), Vec::<String>::new());
+        assert_eq!(texts("A.y, td"), ["1", "3"]);
+        // What follows an attribute test other than another test is ignored.
+        assert_eq!(texts("a[href=\"/1\"]junk"), ["1"]);
+        let first = doc.select_one(doc.root(), "a").unwrap();
+        assert_eq!(doc.attr(first, "title"), Some("t"));
+        assert_eq!(doc.attr(first, "missing"), None);
+        // bs4 keeps multi-valued attributes as lists, so they are not strings.
+        assert_eq!(doc.attr(first, "rel"), None);
+        assert_eq!(doc.attr(first, "class"), None);
+        let td = doc.select_one(doc.root(), "td").unwrap();
+        assert_eq!(doc.attr(td, "headers"), None);
     }
 }

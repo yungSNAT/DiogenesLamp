@@ -654,3 +654,17 @@ fn a_failed_copy_leaves_no_partial_site() {
     assert_eq!(code, 0, "{stderr}");
     assert!(site.join("data/thumbs/two/21.jpg").is_file());
 }
+
+#[test]
+fn a_site_with_every_cover_cached_names_none_missing() {
+    let dir = common::tmp();
+    lamp::demo::write(&dir.path().join("data"), 1, 3, 3).unwrap();
+    let site = dir.path().join("site");
+    let (code, stdout, stderr) = export(dir.path(), &["--site", site.to_str().unwrap()]);
+    assert_eq!(code, 0, "{stderr}");
+    let stdout = String::from_utf8(stdout).unwrap();
+    assert!(
+        stdout.contains("1 sellers and ") && stdout.contains(" covers. Put the folder"),
+        "{stdout}"
+    );
+}

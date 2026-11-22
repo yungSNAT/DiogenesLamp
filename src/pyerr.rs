@@ -100,17 +100,16 @@ fn windows_message(code: i32) -> String {
         .to_string()
 }
 
-fn prefix(err: &io::Error, call: Call) -> String {
-    let Some(code) = err.raw_os_error() else {
-        return err.to_string();
-    };
+/// The `[Errno n] text` part, or None for an error without an OS code.
+fn prefix(err: &io::Error, call: Call) -> Option<String> {
+    let code = err.raw_os_error()?;
     #[cfg(windows)]
     {
         if call == Call::Open {
             let errno = windows_errno(code);
-            return format!("[Errno {errno}] {}", errno_text(errno));
+            return Some(format!("[Errno {errno}] {}", errno_text(errno)));
         }
-        format!("[WinError {code}] {}", windows_message(code))
+        Some(format!("[WinError {code}] {}", windows_message(code)))
     }
     #[cfg(not(windows))]
     {
@@ -118,36 +117,33 @@ fn prefix(err: &io::Error, call: Call) -> String {
         let text = errno_text(code);
         let text = if text == "Unknown error" {
             let full = err.to_string();
-            match full.rfind(" (os error ") {
-                Some(index) => full[..index].to_string(),
-                None => full,
-            }
+            full.rsplit_once(" (os error ")
+                .map_or(full.clone(), |(head, _)| head.to_string())
         } else {
             text.to_string()
         };
-        format!("[Errno {code}] {text}")
+        Some(format!("[Errno {code}] {text}"))
     }
 }
 
 /// `str(OSError)` with one filename.
 pub fn os_error(err: &io::Error, call: Call, path: &Path) -> String {
-    if err.raw_os_error().is_none() {
-        return err.to_string();
+    match prefix(err, call) {
+        Some(prefix) => format!("{prefix}: {}", repr(&path_str(path))),
+        None => err.to_string(),
     }
-    format!("{}: {}", prefix(err, call), repr(&path_str(path)))
 }
 
 /// `str(OSError)` with two filenames, as `os.replace` raises.
 pub fn os_error2(err: &io::Error, call: Call, src: &Path, dst: &Path) -> String {
-    if err.raw_os_error().is_none() {
-        return err.to_string();
+    match prefix(err, call) {
+        Some(prefix) => format!(
+            "{prefix}: {} -> {}",
+            repr(&path_str(src)),
+            repr(&path_str(dst))
+        ),
+        None => err.to_string(),
     }
-    format!(
-        "{}: {} -> {}",
-        prefix(err, call),
-        repr(&path_str(src)),
-        repr(&path_str(dst))
-    )
 }
 
 /// The error Python's `open()` gives for a directory.
@@ -342,11 +338,7 @@ pub fn universal_newlines(text: &str) -> String {
 
 /// Text-mode write translation: `\n` becomes the platform line separator.
 pub fn native_newlines(text: &str) -> String {
-    if cfg!(windows) {
-        text.replace('\n', "\r\n")
-    } else {
-        text.to_string()
-    }
+    text.replace('\n', if cfg!(windows) { "\r\n" } else { "\n" })
 }
 
 /// A failed read: Python's error text, and whether it was FileNotFoundError.
@@ -427,34 +419,44 @@ pub fn pathlib_normalise(text: &str) -> String {
         return ".".into();
     }
     if cfg!(windows) {
-        let text = text.replace('/', "\\");
-        let (drive, rest) = split_windows_drive(&text);
-        let rooted = rest.starts_with('\\');
-        let parts: Vec<&str> = rest
-            .split('\\')
-            .filter(|part| !part.is_empty() && *part != ".")
-            .collect();
-        let mut out = drive.to_string();
-        if rooted {
-            out.push('\\');
-        }
-        out.push_str(&parts.join("\\"));
-        if out.is_empty() { ".".into() } else { out }
+        windows_pathlib(text)
     } else {
-        let leading = if text.starts_with("//") && !text.starts_with("///") {
-            "//"
-        } else if text.starts_with('/') {
-            "/"
-        } else {
-            ""
-        };
-        let parts: Vec<&str> = text
-            .split('/')
-            .filter(|part| !part.is_empty() && *part != ".")
-            .collect();
-        let out = format!("{leading}{}", parts.join("/"));
-        if out.is_empty() { ".".into() } else { out }
+        posix_pathlib(text)
     }
+}
+
+/// `str(PureWindowsPath(text))` for non-empty text.
+fn windows_pathlib(text: &str) -> String {
+    let text = text.replace('/', "\\");
+    let (drive, rest) = split_windows_drive(&text);
+    let rooted = rest.starts_with('\\');
+    let parts: Vec<&str> = rest
+        .split('\\')
+        .filter(|part| !part.is_empty() && *part != ".")
+        .collect();
+    let mut out = drive.to_string();
+    if rooted {
+        out.push('\\');
+    }
+    out.push_str(&parts.join("\\"));
+    if out.is_empty() { ".".into() } else { out }
+}
+
+/// `str(PurePosixPath(text))` for non-empty text.
+fn posix_pathlib(text: &str) -> String {
+    let leading = if text.starts_with("//") && !text.starts_with("///") {
+        "//"
+    } else if text.starts_with('/') {
+        "/"
+    } else {
+        ""
+    };
+    let parts: Vec<&str> = text
+        .split('/')
+        .filter(|part| !part.is_empty() && *part != ".")
+        .collect();
+    let out = format!("{leading}{}", parts.join("/"));
+    if out.is_empty() { ".".into() } else { out }
 }
 
 fn split_windows_drive(text: &str) -> (&str, &str) {
@@ -580,11 +582,13 @@ fn posix_realpath(path: &Path) -> PathBuf {
                     let candidate = resolved.join(name);
                     match std::fs::symlink_metadata(&candidate) {
                         Ok(meta) if meta.file_type().is_symlink() && depth < 40 => {
-                            if seen.contains(&candidate) {
-                                *resolved = candidate;
-                                continue;
-                            }
-                            let Ok(target) = std::fs::read_link(&candidate) else {
+                            // A loop, or a link gone since the lstat, stays as it is.
+                            let target = if seen.contains(&candidate) {
+                                None
+                            } else {
+                                std::fs::read_link(&candidate).ok()
+                            };
+                            let Some(target) = target else {
                                 *resolved = candidate;
                                 continue;
                             };
@@ -703,16 +707,157 @@ mod tests {
         );
     }
 
+    // str(PureWindowsPath(text)) and str(PurePosixPath(text)) in CPython 3.15.
     #[test]
     fn pathlib_strings() {
-        if cfg!(windows) {
-            assert_eq!(pathlib_normalise("./data/"), "data");
-            assert_eq!(pathlib_normalise("C:/x//y/./z/"), "C:\\x\\y\\z");
-            assert_eq!(pathlib_normalise("a/../b"), "a\\..\\b");
-        } else {
-            assert_eq!(pathlib_normalise("./data/"), "data");
-            assert_eq!(pathlib_normalise("//x//y/"), "//x/y");
+        for (text, windows, posix) in [
+            ("./data/", "data", "data"),
+            ("C:/x//y/./z/", "C:\\x\\y\\z", "C:/x/y/z"),
+            ("a/../b", "a\\..\\b", "a/../b"),
+            (
+                "\\\\server\\share\\a",
+                "\\\\server\\share\\a",
+                "\\\\server\\share\\a",
+            ),
+            ("C:", "C:", "C:"),
+            ("c:x/y", "c:x\\y", "c:x/y"),
+            ("/", "\\", "/"),
+            (".", ".", "."),
+        ] {
+            assert_eq!(windows_pathlib(text), windows, "{text:?}");
+            assert_eq!(posix_pathlib(text), posix, "{text:?}");
         }
+        assert_eq!(posix_pathlib("//x//y/"), "//x/y");
+        assert_eq!(posix_pathlib("///a"), "/a");
         assert_eq!(pathlib_normalise(""), ".");
+        assert_eq!(pathlib_normalise("./data/"), "data");
+    }
+
+    // os.path.normpath; `.` is dropped and `..` stops at the root.
+    #[test]
+    fn normpath_drops_dots_and_stops_at_the_root() {
+        let root = if cfg!(windows) { "C:\\" } else { "/" };
+        let path = |text: &str| PathBuf::from(format!("{root}{text}"));
+        assert_eq!(normpath(&path("a/b/../c")), path("a/c"));
+        assert_eq!(normpath(&path("../../x")), path("x"));
+        assert_eq!(normpath(Path::new("./a")), PathBuf::from("a"));
+    }
+
+    // Python's OSError text on Linux is glibc's strerror, including the
+    // codes the Windows C runtime names differently.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn os_errors_without_an_own_text_use_the_system_one() {
+        for (errno, text) in [
+            (7, "Argument list too long"),
+            (8, "Exec format error"),
+            (10, "No child processes"),
+            (11, "Resource temporarily unavailable"),
+            (12, "Cannot allocate memory"),
+            (18, "Invalid cross-device link"),
+            (41, "Unknown error 41"),
+            (42, "No message of desired type"),
+        ] {
+            assert_eq!(errno_text(errno), "Unknown error");
+            assert_eq!(
+                os_error(
+                    &io::Error::from_raw_os_error(errno),
+                    Call::Open,
+                    Path::new("p")
+                ),
+                format!("[Errno {errno}] {text}: 'p'")
+            );
+        }
+        assert_eq!(
+            os_error2(
+                &io::Error::from_raw_os_error(18),
+                Call::Os,
+                Path::new("a"),
+                Path::new("b")
+            ),
+            "[Errno 18] Invalid cross-device link: 'a' -> 'b'"
+        );
+    }
+
+    // An error without an OS code is printed as it is, as str(exc) does.
+    #[test]
+    fn errors_without_a_code_keep_their_text() {
+        let err = io::Error::other("boom");
+        assert_eq!(os_error(&err, Call::Open, Path::new("p")), "boom");
+        assert_eq!(
+            os_error2(&err, Call::Os, Path::new("a"), Path::new("b")),
+            "boom"
+        );
+    }
+
+    #[test]
+    fn newlines_follow_text_mode() {
+        assert_eq!(universal_newlines("a\r\nb\rc\nd"), "a\nb\nc\nd");
+        assert_eq!(universal_newlines("a\nb"), "a\nb");
+        let sep = if cfg!(windows) { "\r\n" } else { "\n" };
+        assert_eq!(native_newlines("a\nb"), format!("a{sep}b"));
+    }
+
+    #[test]
+    fn read_failures_carry_python_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("missing");
+        let fail = read_text(&missing).unwrap_err();
+        assert!(fail.not_found);
+        assert_eq!(
+            String::from(fail),
+            os_error(&io::Error::from_raw_os_error(2), Call::Open, &missing)
+        );
+        let bad = dir.path().join("bad");
+        std::fs::write(&bad, b"ok\xff").unwrap();
+        let fail = read_text(&bad).unwrap_err();
+        assert!(!fail.not_found);
+        assert_eq!(
+            fail.message,
+            "'utf-8' codec can't decode byte 0xff in position 2: invalid start byte"
+        );
+        std::fs::write(&bad, b"a\r\nb").unwrap();
+        assert_eq!(read_text(&bad).unwrap(), "a\nb");
+    }
+
+    // Path.mkdir(parents=True, exist_ok=True) through a `..` part: the
+    // parent is made, then the path names a directory or a file.
+    #[cfg(unix)]
+    #[test]
+    fn mkdir_parents_through_a_parent_reference() {
+        let dir = tempfile::tempdir().unwrap();
+        let back = dir.path().join("new").join("..");
+        assert_eq!(mkdir_parents(&back), Ok(()));
+        assert!(dir.path().join("new").is_dir());
+        std::fs::write(dir.path().join("file"), "x").unwrap();
+        let onto_file = dir.path().join("other").join("..").join("file");
+        assert_eq!(
+            mkdir_parents(&onto_file),
+            Err(format!(
+                "[Errno 17] File exists: {}",
+                repr(&path_str(&onto_file))
+            ))
+        );
+        assert!(dir.path().join("other").is_dir());
+        assert_eq!(
+            mkdir_parents(Path::new("")),
+            Err("[Errno 2] No such file or directory: ''".into())
+        );
+    }
+
+    // os.path.realpath: a link whose target starts with `.`, and a loop,
+    // which stays unresolved.
+    #[cfg(unix)]
+    #[test]
+    fn resolve_follows_relative_links_and_stops_at_loops() {
+        use std::os::unix::fs::symlink;
+        let dir = tempfile::tempdir().unwrap();
+        let root = resolve(dir.path());
+        std::fs::create_dir(root.join("sub")).unwrap();
+        symlink("./sub", root.join("dot")).unwrap();
+        assert_eq!(resolve(&root.join("dot/f")), root.join("sub/f"));
+        symlink("loop2", root.join("loop1")).unwrap();
+        symlink("loop1", root.join("loop2")).unwrap();
+        assert_eq!(resolve(&root.join("loop1/x")), root.join("loop1/x"));
     }
 }

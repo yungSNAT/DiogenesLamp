@@ -956,37 +956,30 @@ pub fn scrape_all(
         drop(lock);
     };
     let abandoned = interrupt.presses() >= 2 || drain_error.is_some();
-    let mut release = Some(release);
-    let mut finish = || {
-        if let Some(release) = release.take() {
-            if abandoned {
-                std::thread::spawn(release);
-            } else {
-                release();
-            }
+    let outcome = (|| {
+        if let Some(error) = drain_error {
+            return Err(error);
         }
-    };
-    if let Some(error) = drain_error {
-        finish();
-        return Err(error);
+        summaries.sort_by(|a, b| a.seller.cmp(&b.seller));
+        if !options.dry_run {
+            write_scrape_index(data_dir, &sellers, &shops, run_ts)?;
+        }
+        let rows = match pending {
+            Some(runs) if !interrupted => pending_rows(data_dir, &runs),
+            _ => Ok(Vec::new()),
+        };
+        Ok(RunOutcome {
+            summaries,
+            interrupted,
+            rows,
+        })
+    })();
+    if abandoned {
+        std::thread::spawn(release);
+    } else {
+        release();
     }
-    summaries.sort_by(|a, b| a.seller.cmp(&b.seller));
-    if !options.dry_run
-        && let Err(error) = write_scrape_index(data_dir, &sellers, &shops, run_ts)
-    {
-        finish();
-        return Err(error);
-    }
-    let rows = match pending {
-        Some(runs) if !interrupted => pending_rows(data_dir, &runs),
-        _ => Ok(Vec::new()),
-    };
-    finish();
-    Ok(RunOutcome {
-        summaries,
-        interrupted,
-        rows,
-    })
+    outcome
 }
 
 /// Add `item`'s new albums to this run's entry in `pending`, when it has one.
@@ -1113,4 +1106,16 @@ pub fn write_scrape_index(
         run_ts,
         false,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn panic_text_reads_each_payload_kind() {
+        assert_eq!(panic_text(&"parser bug"), "parser bug");
+        assert_eq!(panic_text(&String::from("index 3")), "index 3");
+        assert_eq!(panic_text(&7u8), "panic");
+    }
 }

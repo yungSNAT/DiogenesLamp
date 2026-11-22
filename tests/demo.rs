@@ -196,3 +196,26 @@ fn demo_removes_its_data_when_interrupted() {
     assert_eq!(output.status.code(), Some(0));
     assert!(entries(&dirs.temp).is_empty(), "demo data left behind");
 }
+
+// A path already taken by a folder fails the write that needs it.
+#[test]
+fn demo_write_reports_a_file_it_cannot_write() {
+    for blocked in [
+        &["index.json"][..],
+        &["catalog/demoseller0.json"],
+        &[
+            "thumbs/demoseller0/10000000.png",
+            "thumbs/demoseller0/10000001.png",
+            "thumbs/demoseller0/10000002.png",
+        ],
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        for path in blocked {
+            std::fs::create_dir_all(dir.path().join(path)).unwrap();
+        }
+        assert!(
+            lamp::demo::write(dir.path(), 1, 3, 3).is_err(),
+            "{blocked:?}"
+        );
+    }
+}

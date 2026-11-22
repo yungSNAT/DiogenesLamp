@@ -251,11 +251,16 @@ pub fn default_resolver(hostname: &str, port: u16) -> Result<Vec<String>, String
     use std::net::ToSocketAddrs;
     let addrs = (hostname, port)
         .to_socket_addrs()
-        .map_err(|e| match e.raw_os_error() {
-            Some(code) if cfg!(windows) => format!("[Errno {code}] getaddrinfo failed"),
-            _ => e.to_string(),
-        })?;
+        .map_err(|e| getaddrinfo_error(&e, cfg!(windows)))?;
     Ok(addrs.map(|a| a.ip().to_string()).collect())
+}
+
+/// `str(socket.gaierror)`: Windows reports only the code.
+fn getaddrinfo_error(e: &std::io::Error, windows: bool) -> String {
+    match e.raw_os_error() {
+        Some(code) if windows => format!("[Errno {code}] getaddrinfo failed"),
+        _ => e.to_string(),
+    }
 }
 
 fn is_global_route(ip: Ip) -> bool {
@@ -462,7 +467,8 @@ impl Client {
     ) -> Result<Box<dyn Response>, Failure> {
         let mut current = url.to_string();
         let mut waited_on_429 = false;
-        for hop in 0..=MAX_REDIRECTS {
+        let mut hop = 0;
+        loop {
             let target = validated_target(&current, &*self.resolver)
                 .map_err(|e| Failure::Final(FetchError::Fetch(e)))?;
             let mut headers: Headers = vec![
@@ -513,6 +519,7 @@ impl Client {
                         "refusing malformed URL: {location}"
                     )))
                 })?;
+                hop += 1;
                 continue;
             }
             if status == 429 || status == 403 {
@@ -537,9 +544,6 @@ impl Client {
             }
             return Ok(response);
         }
-        Err(Failure::Final(FetchError::Fetch(
-            "redirect loop exhausted without returning".into(),
-        )))
     }
 
     fn fetch_response(
@@ -895,13 +899,14 @@ fn open_pinned_to(
         .header("Accept-Encoding", "gzip, deflate")
         .header("Accept", "*/*")
         .header("Connection", "keep-alive");
-    let response = match request.call() {
-        Ok(response) => response,
-        Err(e) => {
-            drop_agent(target, ip);
-            return Err(TransportError::Request(e.to_string()));
-        }
-    };
+    request.call().map(ureq_response).map_err(|e| {
+        drop_agent(target, ip);
+        TransportError::Request(e.to_string())
+    })
+}
+
+/// The status, headers (as Latin-1) and decoded body of a ureq response.
+fn ureq_response(response: ureq::http::Response<ureq::Body>) -> Box<dyn Response> {
     let status = response.status().as_u16();
     let headers: Vec<(String, String)> = response
         .headers()
@@ -933,11 +938,11 @@ fn open_pinned_to(
         "deflate" => Box::new(flate2::read::ZlibDecoder::new(raw)),
         _ => raw,
     };
-    Ok(Box::new(UreqResponse {
+    Box::new(UreqResponse {
         status,
         headers,
         reader,
-    }))
+    })
 }
 
 /// Try each validated address; a proxy refusal stops at once.
@@ -1080,5 +1085,79 @@ mod tests {
                 443
             )
         );
+    }
+
+    #[test]
+    fn resolver_errors_read_as_python_prints_them() {
+        let coded = std::io::Error::from_raw_os_error(11001);
+        assert_eq!(
+            getaddrinfo_error(&coded, true),
+            "[Errno 11001] getaddrinfo failed"
+        );
+        assert_eq!(getaddrinfo_error(&coded, false), coded.to_string());
+        let plain = std::io::Error::other("no such host");
+        assert_eq!(getaddrinfo_error(&plain, true), "no such host");
+        // A NUL cannot reach the system resolver, so this needs no network.
+        assert!(default_resolver("bad\0host", 443).is_err());
+    }
+
+    fn compressed(encoding: &str, data: &[u8]) -> Vec<u8> {
+        use std::io::Write;
+        match encoding {
+            "gzip" => {
+                let mut e = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+                e.write_all(data).unwrap();
+                e.finish().unwrap()
+            }
+            "deflate" => {
+                let mut e =
+                    flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+                e.write_all(data).unwrap();
+                e.finish().unwrap()
+            }
+            _ => data.to_vec(),
+        }
+    }
+
+    fn read_all(response: &mut dyn Response) -> Result<Vec<u8>, String> {
+        let mut body = Vec::new();
+        while let Some(chunk) = response.next_chunk()? {
+            body.extend_from_slice(&chunk);
+        }
+        Ok(body)
+    }
+
+    #[test]
+    fn ureq_responses_decode_their_body_and_headers() {
+        for encoding in ["gzip", "x-gzip", "deflate", "identity"] {
+            let wire = compressed(encoding.trim_start_matches("x-"), b"<p>caf\xc3\xa9</p>");
+            let response = ureq::http::Response::builder()
+                .status(203)
+                .header("Content-Encoding", format!(" {} ", encoding.to_uppercase()))
+                .header("X-Name", &b"caf\xe9"[..])
+                .body(ureq::Body::builder().data(wire))
+                .unwrap();
+            let mut response = ureq_response(response);
+            assert_eq!(response.status(), 203);
+            assert_eq!(response.header("x-name").as_deref(), Some("caf\u{e9}"));
+            assert_eq!(response.header("Missing"), None);
+            assert_eq!(read_all(&mut *response).unwrap(), b"<p>caf\xc3\xa9</p>");
+        }
+    }
+
+    #[test]
+    fn ureq_body_read_errors_are_reported() {
+        struct Broken;
+        impl std::io::Read for Broken {
+            fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("connection reset"))
+            }
+        }
+        let response = ureq::http::Response::builder()
+            .body(ureq::Body::builder().reader(Broken))
+            .unwrap();
+        let mut response = ureq_response(response);
+        let error = read_all(&mut *response).unwrap_err();
+        assert!(error.contains("connection reset"), "{error}");
     }
 }
