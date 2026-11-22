@@ -410,6 +410,20 @@ fn usage_errors_exit_2_and_name_the_problem() {
             &["scrape", "--workers", "--full"],
             "error: invalid value '--full' for '--workers <WORKERS>': must be a whole number",
         ),
+        // A value starting with '-' is a number only in argparse's shape:
+        // ASCII digits, with no exponent or underscores.
+        (
+            &["scrape", "--max-age-days", "-5_0"],
+            "error: invalid value '-5_0' for '--max-age-days <N>': must be a whole number",
+        ),
+        (
+            &["scrape", "--max-age-days", "-\u{661}"],
+            "error: invalid value '-\u{661}' for '--max-age-days <N>': must be a whole number",
+        ),
+        (
+            &["scrape", "--rps", "-1e3"],
+            "error: invalid value '-1e3' for '--rps <RPS>': must be a number",
+        ),
         // `-.5` and `-5` read as numbers, not options, so they reach the checks.
         (
             &["scrape", "--rps", "-.5"],

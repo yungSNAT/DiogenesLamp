@@ -22,8 +22,24 @@ fn as_path(text: &str) -> Result<String, String> {
     Ok(pyerr::pathlib_normalise(text))
 }
 
+/// Whether a value that starts with '-' may be a number: argparse took one as
+/// a value only in the shape -123, -1.5 or -.5, in ASCII digits.
+fn number_shaped(text: &str) -> bool {
+    let Some(rest) = text.strip_prefix('-') else {
+        return true;
+    };
+    let digits = |s: &str| s.bytes().all(|b| b.is_ascii_digit());
+    match rest.split_once('.') {
+        Some((int, frac)) => digits(int) && !frac.is_empty() && digits(frac),
+        None => !rest.is_empty() && digits(rest),
+    }
+}
+
 fn whole(text: &str) -> Result<i128, String> {
-    pystr::parse_int(text).ok_or_else(|| "must be a whole number".into())
+    number_shaped(text)
+        .then(|| pystr::parse_int(text))
+        .flatten()
+        .ok_or_else(|| "must be a whole number".into())
 }
 
 fn positive_int(text: &str) -> Result<i128, String> {
@@ -35,7 +51,10 @@ fn positive_int(text: &str) -> Result<i128, String> {
 }
 
 fn positive_float(text: &str) -> Result<f64, String> {
-    let value = pystr::parse_float(text).ok_or("must be a number")?;
+    let value = number_shaped(text)
+        .then(|| pystr::parse_float(text))
+        .flatten()
+        .ok_or("must be a number")?;
     if !value.is_finite() || value <= 0.0 {
         return Err("must be a finite number greater than 0".into());
     }
@@ -91,8 +110,8 @@ fn opt(long: &'static str, value_name: &'static str) -> Arg {
         .allow_negative_numbers(true)
 }
 
-/// A numeric option. Any value starting with '-' is its value, as `-.5` is
-/// to argparse; the option's check refuses one that is not a number.
+/// A numeric option. Any value starting with '-' is its value, so `-.5`
+/// reaches the option's check, which refuses one not shaped as a number.
 fn num(long: &'static str, value_name: &'static str) -> Arg {
     opt(long, value_name).allow_hyphen_values(true)
 }
@@ -227,7 +246,12 @@ impl Args {
         let own = self.0.subcommand().map(|(_, own)| own);
         own.into_iter()
             .chain([&self.0])
-            .find_map(|m| m.try_get_one::<T>(key).ok().flatten().cloned())
+            .find_map(|m| match m.try_get_one::<T>(key) {
+                Ok(value) => value.cloned(),
+                // A global option, looked for in the command's own matches.
+                Err(clap::parser::MatchesError::UnknownArgument { .. }) => None,
+                Err(e) => panic!("argument {key}: {e}"),
+            })
     }
     fn str(&self, key: &str) -> String {
         if key == "command" {
