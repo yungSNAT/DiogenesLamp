@@ -5,7 +5,7 @@
 
 /**
  * @typedef {{search: string, seller: string, category: string, age: string,
- *   sort: string, newOnly: boolean, favsOnly: boolean, hideDups: boolean, priceMin: string,
+ *   sort: string, newOnly: boolean, favsOnly: boolean, shortlistOnly: boolean, hideDups: boolean, priceMin: string,
  * priceMax: string, includeUnknown: boolean, collection: string, tag: string,
  * unreviewed: boolean, changed: boolean, kind: string, colour: string, fit: string,
  * material: string}} Filters
@@ -33,6 +33,7 @@ const FILTER_DEFAULTS = {
   sort: "default",
   newOnly: false,
   favsOnly: false,
+  shortlistOnly: false,
   hideDups: false,
   priceMin: "",
   priceMax: "",

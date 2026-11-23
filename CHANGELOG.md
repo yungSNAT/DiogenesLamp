@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The local viewer adds a browser-stored shortlist with optional size, colour and note fields, a Shortlist grid filter, JSON and Markdown export or clipboard copy, and keyboard shortcuts (`s` to toggle shortlist, `o` to open the Yupoo album, `a` to open the shopping-agent link, `/` to focus search and `?` to toggle the shortcut reference).
 - `lamp completions <shell>` generates shell completion scripts for `bash`, `elvish`, `fish`, `powershell` and `zsh`.
 - Release builds strip symbols (`strip = true`), use `mimalloc` (`no_thp`) on Linux musl targets and carry `[package.metadata.binstall]` metadata for `cargo-binstall`.
 
