@@ -1,1 +1,3 @@
 * text=auto eol=lf
+# Recorded hook cases are exact bytes, CRLF included.
+tools/commit-msg/tests/cases/** -text

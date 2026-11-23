@@ -1,0 +1,17 @@
+commit-msg: AI attribution found:
+
+  line 3: Co-authored-by: Claude <a@b.c> (co-author trailer)
+  line 4: Generated-by: Codex (agent by-line trailer)
+
+Commit refused: this repository does not carry AI authorship credit.
+
+Remove the reported trailer or footer from the message. If the report names an
+author or committer identity, set a human identity for this repository:
+
+    git config user.name  "Your Name"
+    git config user.email "you@example.com"
+
+For a commit that already exists, retry with:
+
+    git commit --amend --reset-author
+

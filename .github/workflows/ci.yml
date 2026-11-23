@@ -62,6 +62,11 @@ jobs:
       - run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - run: cargo test --locked
         if: matrix.os != 'ubuntu-latest' && matrix.os != 'windows-latest'
+      # The local commit-msg guard is its own crate; its tests drive the hook
+      # through git commit, so they run on every system.
+      - run: cargo fmt --check --manifest-path tools/commit-msg/Cargo.toml
+      - run: cargo clippy --locked --all-targets --manifest-path tools/commit-msg/Cargo.toml -- -D warnings
+      - run: cargo test --locked --manifest-path tools/commit-msg/Cargo.toml
       # Coverage runs on Linux and Windows, as some code runs on only one of them;
       # Codecov merges the 2 reports. It needs llvm-tools and a prebuilt
       # cargo-llvm-cov, with no fallback to compiling it. Paths are made relative

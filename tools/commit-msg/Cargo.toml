@@ -1,0 +1,25 @@
+[package]
+name = "commit-msg-guard"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "Apache-2.0"
+repository = "https://github.com/yungSNAT/DiogenesLamp"
+description = "Local commit-msg check that refuses AI authorship credit"
+publish = false
+
+# Standalone: not a member of the lamp package, so building or installing the
+# guard never builds lamp, and lamp's builds never build this.
+[workspace]
+
+[dependencies]
+fancy-regex = "0.20.0"
+unicode-normalization = "0.1.26"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+# Compiling the patterns runs in the regex crates; unoptimised, every test
+# invocation spends about 2 seconds there.
+[profile.dev.package."*"]
+opt-level = 3
