@@ -236,6 +236,14 @@ pub fn build_parser() -> Command {
                         .help("most albums to list, 1 to 20"),
                 ),
             export,
+            Command::new("completions")
+                .about("generate shell completions for bash, elvish, fish, powershell or zsh")
+                .arg(
+                    Arg::new("shell")
+                        .value_name("SHELL")
+                        .required(true)
+                        .value_parser(clap::value_parser!(clap_complete::Shell)),
+                ),
         ])
 }
 
@@ -828,6 +836,16 @@ fn wait_for_enter(console: bool, input: &mut impl std::io::BufRead) {
     let _ = input.read_line(&mut String::new());
 }
 
+fn cmd_completions(args: &Args) -> i32 {
+    let shell = args
+        .get::<clap_complete::Shell>("shell")
+        .expect("required by parser");
+    let mut script = Vec::new();
+    clap_complete::generate(shell, &mut build_parser(), "lamp", &mut script);
+    out::out_raw(&String::from_utf8_lossy(&script));
+    0
+}
+
 /// Run the CLI with arguments after the program name; returns the exit code.
 pub fn main(argv: &[String]) -> i32 {
     if argv.is_empty() {
@@ -853,6 +871,7 @@ pub fn main(argv: &[String]) -> i32 {
         "scrape" => cmd_scrape(&args),
         "serve" => cmd_serve(&args),
         "demo" => cmd_demo(&args),
+        "completions" => cmd_completions(&args),
         other => match maintenance(other, &args) {
             Ok(code) => code,
             Err(e) => {

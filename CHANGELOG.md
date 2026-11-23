@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `lamp completions <shell>` generates shell completion scripts for `bash`, `elvish`, `fish`, `powershell` and `zsh`.
 - Release builds strip symbols (`strip = true`), use `mimalloc` (`no_thp`) on Linux musl targets and carry `[package.metadata.binstall]` metadata for `cargo-binstall`.
 
 ## 0.1.3 (2026-11-19)
