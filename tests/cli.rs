@@ -343,6 +343,7 @@ fn help_lists_commands_and_options() {
             "serve the viewer over synthetic data in a temporary directory",
             "find-photo",
             "prepare-covers",
+            "completions",
         ] {
             assert!(out.contains(line), "{line}: {out}");
         }
@@ -828,4 +829,23 @@ fn serve_opens_the_browser_at_its_url() {
 #[cfg(target_os = "linux")]
 fn read_url(path: &std::path::Path) -> String {
     std::fs::read_to_string(path).unwrap_or_default()
+}
+
+#[test]
+fn completions_print_a_script_for_each_supported_shell() {
+    for shell in ["bash", "elvish", "fish", "powershell", "zsh"] {
+        let (code, out, err) = lamp(&["completions", shell], None);
+        assert_eq!((code, err.as_str()), (0, ""), "{shell}: {err}");
+        assert!(out.contains("lamp"), "{shell}: {out}");
+        assert!(out.contains("scrape"), "{shell}: {out}");
+        assert!(out.contains("completions"), "{shell}: {out}");
+    }
+    let (code, out, err) = lamp(&["completions", "bogus"], None);
+    assert_eq!(code, 2);
+    assert!(out.is_empty());
+    assert!(err.contains("invalid value 'bogus'"), "{err}");
+    let (code, out, err) = lamp(&["completions"], None);
+    assert_eq!(code, 2);
+    assert!(out.is_empty());
+    assert!(err.contains("<SHELL>"), "{err}");
 }
