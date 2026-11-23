@@ -409,3 +409,58 @@ test("shortlist controller renders safely with textContent, exports JSON/Markdow
   assert.equal(context.state.shortlist.get("100").size, "M");
   assert.equal(context.state.shortlist.get("100").colour, "Tan");
 });
+
+test("toggleShortlistItem reports full at capacity without mutating or mimicking removal", () => {
+  const fullMap = new Map();
+  for (let i = 1; i <= SHORTLIST_LIMITS.maxItems; i += 1) {
+    fullMap.set(String(i), { id: String(i), size: "", colour: "", note: "", added_at: "" });
+  }
+  const blocked = toggleShortlistItem(fullMap, "99999");
+  assert.equal(blocked.added, false);
+  assert.equal(blocked.full, true);
+  assert.equal(blocked.shortlist.size, SHORTLIST_LIMITS.maxItems);
+  assert.equal(blocked.shortlist.has("99999"), false);
+
+  // Removing an existing entry when at capacity still succeeds cleanly.
+  const removed = toggleShortlistItem(fullMap, "1");
+  assert.equal(removed.added, false);
+  assert.equal(removed.full, false);
+  assert.equal(removed.shortlist.size, SHORTLIST_LIMITS.maxItems - 1);
+  assert.equal(removed.shortlist.has("1"), false);
+});
+
+test("app.js toggleShortlist reports capacity limit without writing storage or announcing removal", () => {
+  const appSource = readFileSync(join(__dirname, "../../viewer/app.js"), "utf8");
+  const match = appSource.match(/\nfunction toggleShortlist\([\s\S]*?\n\}/);
+  assert.ok(match, "app.js no longer declares toggleShortlist");
+
+  const fullMap = new Map();
+  for (let i = 1; i <= SHORTLIST_LIMITS.maxItems; i += 1) {
+    fullMap.set(String(i), { id: String(i), size: "", colour: "", note: "", added_at: "" });
+  }
+  let writes = 0;
+  const statuses = [];
+  const context = {
+    SHORTLIST_LIMITS,
+    toggleShortlistItem,
+    window: {},
+    state: { shortlist: fullMap, albums: [], view: { filters: { shortlistOnly: false } } },
+    writeShortlist() { writes += 1; return true; },
+    savedDataError() { throw new Error("unexpected savedDataError"); },
+    updateShortlistCount() {},
+    syncAllShortlistCards() {},
+    applyFilters() {},
+    syncShortlistUI() {},
+    shortlistLabel: v => v ? "Remove from shortlist" : "Add to shortlist",
+    actionStatus(msg) { statuses.push(msg); },
+  };
+  vm.createContext(context);
+  vm.runInContext(match[0], context);
+
+  assert.equal(context.toggleShortlist("99999"), false);
+  assert.equal(writes, 0);
+  assert.equal(context.state.shortlist.size, SHORTLIST_LIMITS.maxItems);
+  assert.equal(statuses.length, 1);
+  assert.match(statuses[0], /Shortlist is full/);
+  assert.doesNotMatch(statuses[0], /Removed from shortlist/);
+});

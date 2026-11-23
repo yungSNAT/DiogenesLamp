@@ -204,18 +204,18 @@ function writeShortlist(host, shortlist) {
  * @param {string} albumId
  * @param {ShortlistFields} [fields]
  * @param {string} [nowIso]
- * @returns {{shortlist: ShortlistMap, added: boolean}}
+ * @returns {{shortlist: ShortlistMap, added: boolean, full: boolean}}
  */
 function toggleShortlistItem(shortlist, albumId, fields = EMPTY_FIELDS, nowIso = new Date().toISOString()) {
   const id = cleanShortlistText(albumId, SHORTLIST_LIMITS.maxId);
   const next = new Map(shortlist);
-  if (!id) return { shortlist: next, added: false };
+  if (!id) return { shortlist: next, added: false, full: false };
   if (next.has(id)) {
     next.delete(id);
-    return { shortlist: next, added: false };
+    return { shortlist: next, added: false, full: false };
   }
   if (next.size >= SHORTLIST_LIMITS.maxItems) {
-    return { shortlist: next, added: false };
+    return { shortlist: next, added: false, full: true };
   }
   next.set(id, {
     id,
@@ -224,7 +224,7 @@ function toggleShortlistItem(shortlist, albumId, fields = EMPTY_FIELDS, nowIso =
     note: cleanShortlistText(fields.note, SHORTLIST_LIMITS.maxNote, true),
     added_at: cleanShortlistText(nowIso, SHORTLIST_LIMITS.maxDate),
   });
-  return { shortlist: next, added: true };
+  return { shortlist: next, added: true, full: false };
 }
 
 /**

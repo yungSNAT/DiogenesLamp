@@ -835,7 +835,13 @@ function syncAllShortlistCards() {
 
 /** @param {string} albumId @param {Element | null} [button] */
 function toggleShortlist(albumId, button = null) {
-  const { shortlist, added } = toggleShortlistItem(state.shortlist, albumId);
+  const { shortlist, added, full } = toggleShortlistItem(state.shortlist, albumId);
+  if (full) {
+    if (typeof actionStatus === "function") {
+      actionStatus(`Shortlist is full (${SHORTLIST_LIMITS.maxItems.toLocaleString()} items). Remove an item before adding another.`);
+    }
+    return false;
+  }
   if (!writeShortlist(window, shortlist)) {
     savedDataError("Shortlist could not be saved. Browser storage may be full or blocked.");
     return false;
