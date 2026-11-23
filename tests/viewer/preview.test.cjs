@@ -35,11 +35,18 @@ function harness() {
     Option: class {constructor(text, value) {this.text = text; this.value = value;}},
     applyFilters() {}, renderGrid() {}, thumbVersion: () => "1", favLabel: v => v ? "Remove favourite" : "Add favourite",
     toggleFavorite(id) {context.userStore.set("favorite", id, !context.userStore.get("favorite", id));},
+    toggleShortlist(id) {
+      const next = context.toggleShortlistItem(context.state.shortlist, id);
+      context.state.shortlist = next.shortlist;
+      context.syncShortlistUI();
+    },
+    updateShortlistCount() {},
+    syncAllShortlistCards() {},
     moveCursor(at) {context.cursor = at;}, savedDataError() {}};
-  for (const name of ["user-store", "discovery", "dedup", "filters", "prefs", "agents", "catalogue", "kinds", "view-state"])
+  for (const name of ["user-store", "discovery", "dedup", "filters", "prefs", "agents", "catalogue", "kinds", "view-state", "shortlist", "shortcuts"])
     Object.assign(context, require(`../../viewer/${name}.js`));
   context.userStore = context.createUserStore(window);
-  context.state = {albums: [], filtered: [], albumAliases: {}, listingAliases: {}, favorites: new Set(),
+  context.state = {albums: [], filtered: [], albumAliases: {}, listingAliases: {}, favorites: new Set(), shortlist: new Map(),
     view: {filters: context.defaultFilters(), storedFilters: context.defaultFilters()},
     prefs: context.normalizePrefs({}), index: {sellers: []}, loadedSellers: 0, failedShards: [],
     listingCopies: new Map()};

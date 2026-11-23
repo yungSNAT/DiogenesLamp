@@ -3,6 +3,7 @@
 
 import type { CatalogueAlbum, ViewState } from './view-state.js';
 import type { Prefs } from './prefs.js';
+import type { ShortlistMap } from './shortlist.js';
 
 export type ViewerAlbum = Omit<CatalogueAlbum, 'links'> & {
   title: string;
@@ -37,6 +38,7 @@ export type ViewerState = {
   albumAliases: Record<string, string>;
   filtered: ViewerAlbum[];
   favorites: Set<string>;
+  shortlist: ShortlistMap;
   collections: Map<string, string>;
   tags: Map<string, string[]>;
   reviews: Map<string, number>;
@@ -67,7 +69,7 @@ export interface ViewerElements {
   'kind-filter': HTMLSelectElement; 'colour-filter': HTMLSelectElement; 'fit-filter': HTMLSelectElement;
   'material-filter': HTMLSelectElement; 'description-coverage': HTMLElement;
   search: HTMLInputElement; 'seller-filter': HTMLSelectElement; 'category-filter': HTMLSelectElement;
-  'new-only': HTMLInputElement; 'favs-only': HTMLInputElement; 'hide-dups': HTMLInputElement;
+  'new-only': HTMLInputElement; 'favs-only': HTMLInputElement; 'shortlist-only': HTMLInputElement; 'hide-dups': HTMLInputElement;
   'age-filter': HTMLSelectElement; 'sort-filter': HTMLSelectElement;
   'export-favs': HTMLButtonElement; 'group-clear': HTMLButtonElement; 'filters-clear': HTMLButtonElement;
   status: HTMLElement; grid: HTMLDivElement; 'grid-spacer': HTMLDivElement;
@@ -93,6 +95,20 @@ export interface ViewerElements {
   'similar-results': HTMLUListElement; 'preview-close': HTMLButtonElement; 'preview-form': HTMLFormElement;
   'pref-agent': HTMLSelectElement; 'pref-lookups': HTMLInputElement;
   'pref-currency': HTMLInputElement; 'pref-rate': HTMLInputElement; topbar: HTMLElement;
+  'shortlist-toggle': HTMLButtonElement; 'shortlist-count': HTMLElement;
+  'shortcuts-toggle': HTMLButtonElement; 'shortlist-dialog': HTMLDialogElement;
+  'shortlist-title': HTMLElement; 'shortlist-summary': HTMLElement;
+  'shortlist-close': HTMLButtonElement; 'shortlist-filter-btn': HTMLButtonElement;
+  'shortlist-export-json': HTMLButtonElement; 'shortlist-export-md': HTMLButtonElement;
+  'shortlist-copy-md': HTMLButtonElement; 'shortlist-copy-json': HTMLButtonElement;
+  'shortlist-clear': HTMLButtonElement; 'shortlist-status': HTMLElement;
+  'shortlist-empty': HTMLElement; 'shortlist-list': HTMLUListElement;
+  'shortcuts-dialog': HTMLDialogElement; 'shortcuts-title': HTMLElement;
+  'shortcuts-close': HTMLButtonElement; 'shortcuts-list': HTMLElement;
+  'preview-shortlist': HTMLButtonElement; 'preview-shortlist-fields': HTMLDivElement;
+  'preview-shortlist-size': HTMLInputElement; 'preview-shortlist-colour': HTMLInputElement;
+  'preview-shortlist-note': HTMLInputElement; 'preview-shortlist-save': HTMLButtonElement;
+  'preview-shortlist-status': HTMLElement;
 }
 
 declare global {

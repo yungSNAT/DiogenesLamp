@@ -18,6 +18,7 @@ const state = {
   albumAliases: {},
   filtered: [],
   favorites: userStore.favorites(),
+  shortlist: readShortlist(window),
   collections: userStore.section("collection"),
   tags: userStore.section("tags"),
   reviews: userStore.section("review"),
@@ -58,6 +59,7 @@ const els = {
   category: document.getElementById("category-filter"),
   newOnly: document.getElementById("new-only"),
   favsOnly: document.getElementById("favs-only"),
+  shortlistOnly: document.getElementById("shortlist-only"),
   hideDups: document.getElementById("hide-dups"),
   age: document.getElementById("age-filter"),
   sort: document.getElementById("sort-filter"),
@@ -77,6 +79,9 @@ const els = {
   shopsToggle: document.getElementById("shops-toggle"),
   themeToggle: document.getElementById("theme-toggle"),
   themeIcon: document.getElementById("theme-icon"),
+  shortlistToggle: document.getElementById("shortlist-toggle"),
+  shortlistCount: document.getElementById("shortlist-count"),
+  shortcutsToggle: document.getElementById("shortcuts-toggle"),
 };
 
 // Current control values in the shape filters.js persists.
@@ -90,6 +95,7 @@ function currentFilters() {
     sort: els.sort.value,
     newOnly: els.newOnly.checked,
     favsOnly: els.favsOnly.checked,
+    shortlistOnly: els.shortlistOnly.checked,
     hideDups: els.hideDups.checked,
     priceMin: els.priceMin.value,
     priceMax: els.priceMax.value,
@@ -126,6 +132,7 @@ function applyStoredFilters() {
   els.sort.value = storedFilters.sort;
   els.newOnly.checked = storedFilters.newOnly;
   els.favsOnly.checked = storedFilters.favsOnly;
+  els.shortlistOnly.checked = storedFilters.shortlistOnly;
   els.hideDups.checked = storedFilters.hideDups;
   els.priceMin.value = storedFilters.priceMin;
   els.priceMax.value = storedFilters.priceMax;
@@ -668,6 +675,7 @@ function makeCard(album) {
   const isNew = album.is_new;
   if (isNew) card.classList.add("is-new");
   const isFav = state.favorites.has(album.id);
+  const isShortlisted = state.shortlist.has(album.id);
   // Everything interpolated below reaches us from scraped remote HTML. The
   // scraper constrains platform to a known set and builds URLs itself, so
   // nothing hostile is expected - but escaping is a line of code and the
@@ -733,6 +741,8 @@ function makeCard(album) {
     `<div class="card-meta">` +
     `<span class="seller-tag">${escapeHtml(album.seller)}</span>` +
     `<span class="card-links">${links}</span>` +
+    `<button class="shortlist-btn" type="button" aria-pressed="${isShortlisted}" ` +
+    `aria-label="${shortlistLabel(isShortlisted)}" title="${shortlistLabel(isShortlisted)}"></button>` +
     // On the strip page the copies differ by seller and date and nothing
     // else, so the date earns its place there and only there.
     (state.view.groupKey ? `<span class="posted">${escapeHtml(postedOn(album))}</span>` : "") +
@@ -744,6 +754,7 @@ function makeCard(album) {
   // is unaffected.
   /** @type {HTMLElement} */ (card.firstElementChild).style.setProperty("--cover-hue", String(coverHue(album.id)));
   /** @type {HTMLButtonElement} */ (card.querySelector(".fav-btn")).appendChild(drawnMark("mark-mount"));
+  /** @type {HTMLButtonElement} */ (card.querySelector(".shortlist-btn")).appendChild(drawnMark("mark-shortlist"));
   refreshCardTitle(card, album, markQuery);
   // An inline onerror attribute did this before. Binding it here keeps the
   // markup free of executable attributes, which is what lets a strict
@@ -756,6 +767,9 @@ function makeCard(album) {
   }
   /** @type {HTMLButtonElement} */ (card.querySelector(".fav-btn")).addEventListener("click", (event) => {
     toggleFavorite(album.id, /** @type {Element} */ (event.currentTarget));
+  });
+  /** @type {HTMLButtonElement} */ (card.querySelector(".shortlist-btn")).addEventListener("click", (event) => {
+    toggleShortlist(album.id, /** @type {Element} */ (event.currentTarget));
   });
   /** @type {HTMLButtonElement} */ (card.querySelector(".preview-btn")).addEventListener("click", () => openPreview(album.id));
   const dupBtn = card.querySelector(".badge-dup");
@@ -789,6 +803,59 @@ function toggleFavorite(albumId, button) {
     button.setAttribute("aria-pressed", String(wanted));
     button.setAttribute("aria-label", favLabel(wanted));
   }
+}
+
+/** @param {boolean} inShortlist */
+function shortlistLabel(inShortlist) {
+  return inShortlist ? "Remove from shortlist" : "Add to shortlist";
+}
+
+/** @param {HTMLDivElement} card @param {string} albumId */
+function syncCardShortlist(card, albumId) {
+  const btn = card.querySelector(".shortlist-btn");
+  if (!btn) return;
+  const active = state.shortlist.has(albumId);
+  setIfChanged(btn, "aria-pressed", String(active));
+  setIfChanged(btn, "aria-label", shortlistLabel(active));
+  setIfChanged(btn, "title", shortlistLabel(active));
+}
+
+function updateShortlistCount() {
+  const count = state.shortlist.size;
+  els.shortlistCount.textContent = count.toLocaleString();
+  els.shortlistToggle.setAttribute("aria-label", `Open shortlist (${count})`);
+}
+
+function syncAllShortlistCards() {
+  for (const [entryKey, card] of cardCache) {
+    const split = entryKey.indexOf("\u0000");
+    if (split >= 0) syncCardShortlist(card, entryKey.slice(split + 1));
+  }
+}
+
+/** @param {string} albumId @param {Element | null} [button] */
+function toggleShortlist(albumId, button = null) {
+  const { shortlist, added } = toggleShortlistItem(state.shortlist, albumId);
+  if (!writeShortlist(window, shortlist)) {
+    savedDataError("Shortlist could not be saved. Browser storage may be full or blocked.");
+    return false;
+  }
+  state.shortlist = shortlist;
+  updateShortlistCount();
+  if (button?.isConnected) {
+    button.setAttribute("aria-pressed", String(added));
+    button.setAttribute("aria-label", shortlistLabel(added));
+    button.setAttribute("title", shortlistLabel(added));
+  }
+  syncAllShortlistCards();
+  if (state.view.filters.shortlistOnly) applyFilters();
+  if (typeof syncShortlistUI === "function") syncShortlistUI();
+  const album = state.albums.find((candidate) => candidate.id === albumId);
+  const label = album?.title?.trim() || `Album ${albumId}`;
+  if (typeof actionStatus === "function") {
+    actionStatus(added ? `Added to shortlist: ${label}` : `Removed from shortlist: ${label}`);
+  }
+  return true;
 }
 
 // Card geometry lives in style.css and is read from there. Duplicating the
@@ -910,6 +977,7 @@ function renderGrid(force = false) {
     const fav = /** @type {HTMLButtonElement} */ (card.querySelector(".fav-btn"));
     setIfChanged(fav, "aria-pressed", String(state.favorites.has(album.id)));
     setIfChanged(fav, "aria-label", favLabel(state.favorites.has(album.id)));
+    syncCardShortlist(card, album.id);
     const transform = placeCard(i, cols);
     if (card.style.transform !== transform) card.style.transform = transform;
     // Only a window of rows exists in the DOM, so role=list would otherwise
@@ -968,7 +1036,7 @@ function setIfChanged(el, name, value) {
 // that is several hundred stops to tab past the grid, which is the outcome
 // the roving tabindex exists to prevent. A card added to makeCard with a
 // new focusable element has to be added here too.
-const CARD_STOPS = ".cover-link, .fav-btn, .badge-dup, .card-links a, .preview-btn";
+const CARD_STOPS = ".cover-link, .fav-btn, .badge-dup, .card-links a, .shortlist-btn, .preview-btn";
 
 // The card under the cursor is the stop, and its own controls follow it, so
 // they stay reachable by Tab without every other card offering them too.
@@ -1010,8 +1078,9 @@ function rescueFocus(departed, survivors) {
   const active = document.activeElement;
   if (!active || !departed.some((node) => node.contains(active))) return;
   const selector = active.classList.contains("fav-btn") ? ".fav-btn"
-    : active.classList.contains("badge-dup") ? ".badge-dup"
-      : active.classList.contains("cover-link") ? ".cover-link" : null;
+    : active.classList.contains("shortlist-btn") ? ".shortlist-btn"
+      : active.classList.contains("badge-dup") ? ".badge-dup"
+        : active.classList.contains("cover-link") ? ".cover-link" : null;
   if (selector) {
     for (const card of survivors.values()) {
       const target = /** @type {HTMLElement | null} */ (card.querySelector(selector));
@@ -1184,7 +1253,7 @@ function clearFilters() {
   state.view = nextViewState(state.view, { type: "clear-filters" });
   const filters = state.view.filters;
   for (const key of /** @type {const} */ (["search", "seller", "category", "age", "sort", "priceMin", "priceMax", "collection", "tag", "kind", "colour", "fit", "material"])) els[key].value = filters[key];
-  for (const key of /** @type {const} */ (["newOnly", "favsOnly", "hideDups", "includeUnknown", "unreviewed", "changed"])) els[key].checked = filters[key];
+  for (const key of /** @type {const} */ (["newOnly", "favsOnly", "shortlistOnly", "hideDups", "includeUnknown", "unreviewed", "changed"])) els[key].checked = filters[key];
   writeFilters(window, filters);
   saveFilterURL();
   setCursor(state.view.cursor);
@@ -1200,7 +1269,7 @@ els.search.addEventListener("input", () => {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(userFilterChange, 150);
 });
-for (const el of [els.seller, els.category, els.newOnly, els.favsOnly,
+for (const el of [els.seller, els.category, els.newOnly, els.favsOnly, els.shortlistOnly,
                   els.hideDups, els.age, els.sort, els.priceMin, els.priceMax, els.includeUnknown,
                   els.collection, els.tag, els.unreviewed, els.changed, els.kind, els.colour, els.fit,
                   els.material]) {
@@ -1240,15 +1309,68 @@ function setShopsOpen(open) {
 }
 els.shopsToggle.addEventListener("click", () => setShopsOpen(els.shopsPanel.hidden));
 
-window.addEventListener("keydown", (event) => {
-  if (document.getElementById("album-preview").open) return;
-  if (isSearchShortcut(event.key, document.activeElement && document.activeElement.tagName)) {
-    event.preventDefault();
+/** @returns {import("./controller-types.js").ViewerAlbum | null} */
+function activeShortcutAlbum() {
+  const openAlbum = typeof activePreviewAlbum === "function" ? activePreviewAlbum() : null;
+  if (openAlbum) return openAlbum;
+  if (document.getElementById("album-preview").open) return null;
+  return state.filtered[state.view.cursor] || null;
+}
+
+/**
+ * @param {import("./shortcuts.js").ShortcutAction} action
+ * @param {import("./controller-types.js").ViewerAlbum | null} targetAlbum
+ */
+function runShortcutAction(action, targetAlbum) {
+  if (action === "toggle-shortcuts") {
+    if (typeof toggleShortcutsDialog === "function") toggleShortcutsDialog();
+    return;
+  }
+  if (action === "focus-search") {
     els.search.focus();
     els.search.select();
     return;
   }
-  if (event.key !== "Escape") return;
+  if (!targetAlbum) return;
+  if (action === "toggle-shortlist") {
+    const card = cardCache.get(cardKey(targetAlbum));
+    toggleShortlist(targetAlbum.id, card ? card.querySelector(".shortlist-btn") : null);
+  } else if (action === "open-album") {
+    const url = safeHttpUrl(targetAlbum.album_url);
+    if (url) window.open(url, "_blank", "noreferrer");
+  } else if (action === "open-agent") {
+    const url = primaryAgentUrl(targetAlbum, state.prefs.agent);
+    if (url) {
+      window.open(url, "_blank", "noreferrer");
+    } else if (typeof actionStatus === "function") {
+      actionStatus(targetAlbum.links?.length && !state.prefs.agent
+        ? "Choose a shopping agent under Links and prices to open purchase links with 'a'."
+        : "No shopping-agent link is available for this album.");
+    }
+  }
+}
+
+window.addEventListener("keydown", (event) => {
+  const { key } = event;
+  const previewOpen = document.getElementById("album-preview").open;
+  const shortlistOpen = document.getElementById("shortlist-dialog").open;
+  const shortcutsOpen = document.getElementById("shortcuts-dialog").open;
+  const targetAlbum = activeShortcutAlbum();
+  const action = resolveShortcutAction(event, {
+    target: /** @type {HTMLElement | null} */ (document.activeElement),
+    previewOpen,
+    shortlistOpen,
+    shortcutsOpen,
+    shopsOpen: !els.shopsPanel.hidden,
+    hasTargetAlbum: Boolean(targetAlbum),
+  });
+  if (action) {
+    event.preventDefault();
+    runShortcutAction(action, targetAlbum);
+    return;
+  }
+  if (previewOpen || shortlistOpen || shortcutsOpen) return;
+  if (key !== "Escape") return;
   // Innermost overlay first: a group view opened from inside the panel
   // should not close both at once.
   if (!els.shopsPanel.hidden) setShopsOpen(false);
@@ -1313,6 +1435,7 @@ if (typeof ResizeObserver !== "undefined") {
 
 // Paint the loading state before the first fetch resolves, so the grid is
 // never a blank rectangle with no explanation.
+updateShortlistCount();
 setStatus();
 // saved-work.js runs after this script, and the browser may run a fetch's
 // continuation between the two: an index.json that arrives first would call

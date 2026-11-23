@@ -18,6 +18,8 @@ pub static FILES: &[(&str, &[u8])] = &[
     ("manifest.json", include_bytes!("../viewer/manifest.json")),
     ("prefs.js", include_bytes!("../viewer/prefs.js")),
     ("saved-work.js", include_bytes!("../viewer/saved-work.js")),
+    ("shortcuts.js", include_bytes!("../viewer/shortcuts.js")),
+    ("shortlist.js", include_bytes!("../viewer/shortlist.js")),
     ("style.css", include_bytes!("../viewer/style.css")),
     ("user-store.js", include_bytes!("../viewer/user-store.js")),
     ("view-state.js", include_bytes!("../viewer/view-state.js")),
