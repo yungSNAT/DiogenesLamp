@@ -14,6 +14,9 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  schedule:
+    # Weekly, Sundays 21:17 UTC. The Cargo dependency audit also denies unmaintained crates on this run.
+    - cron: "17 21 * * 0"
 
 concurrency:
   group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
@@ -26,6 +29,7 @@ jobs:
   test:
     # Branch protection and release.yml require these check names.
     name: test (${{ matrix.os }})
+    if: github.event_name != 'schedule'
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -109,7 +113,31 @@ jobs:
         with:
           tool: cargo-audit@0.22.2
           fallback: none
-      - run: cargo audit --deny warnings
+      # A vulnerability, unsound or yanked crate fails every run; an unmaintained crate
+      # fails only the weekly scheduled run.
+      - run: cargo audit ${{ github.event_name == 'schedule' && '--deny warnings' || '--deny unsound --deny yanked' }}
+
+  # Holds the merged report Codecov reads at 100%. Codecov counts a line covered when
+  # either the Linux or the Windows run covers it, so the floor takes each line's
+  # highest count across both reports, prints each file:line still at 0 and fails on
+  # any, or on reports with no lines.
+  coverage-floor:
+    name: coverage floor
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@<pin>
+        with:
+          pattern: coverage-rust*
+          path: reports
+      - name: Hold line coverage at 100%
+        run: |
+          awk -F'[:,]' '/^SF:/ { file = substr($0, 4) }
+            /^DA:/ { key = file ":" $2; if (!(key in count) || $3 > count[key]) count[key] = $3 }
+            END { for (key in count) { lines++; if (count[key] == 0) { print key; missed = 1 } }
+                  exit missed || !lines }' \
+            reports/coverage-rust/coverage-rust.lcov reports/coverage-rust-windows/coverage-rust.lcov
 
   # The upload runs apart from the tests so the OIDC token is never available
   # while test code runs. A Codecov outage fails only this job.

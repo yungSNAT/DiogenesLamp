@@ -1,6 +1,10 @@
 // Copyright 2026 Ryan Duguid
 // SPDX-License-Identifier: Apache-2.0
 
+#[cfg(target_env = "musl")]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 // The code is returned, not passed to process::exit, so the C runtime's exit
 // handlers run on Windows too.
 fn main() -> std::process::ExitCode {
