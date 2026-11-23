@@ -67,6 +67,10 @@ provenance
   <symbol id="mark-theme-dark" viewBox="0 0 24 24">
     <path d="M20 14.4A8.6 8.6 0 019.6 4 8.6 8.6 0 1020 14.4z" stroke-linejoin="round"/>
   </symbol>
+  <symbol id="mark-shortlist" viewBox="0 0 24 24">
+    <path d="M5 8h14l-1.2 12H6.2z" stroke-linejoin="miter"/>
+    <path d="M9 8V6a3 3 0 016 0v2" stroke-linecap="square"/>
+  </symbol>
 </svg>
 <a class="skip-link" href="#grid">Skip to albums</a>
 <header id="topbar">
@@ -76,11 +80,19 @@ provenance
       <span class="brand-name">Diogenes Lamp</span>
     </span>
     <p id="status" role="status"></p>
+    <button id="shortlist-toggle" type="button" aria-label="Open shortlist (0)">
+      <svg class="mark" aria-hidden="true" focusable="false"><use href="#mark-shortlist"/></svg>
+      <span class="btn-label">Shortlist</span>
+      <span id="shortlist-count" class="fig">0</span>
+    </button>
     <button id="export-favs" type="button" aria-label="Back up saved work">
       <svg class="mark" aria-hidden="true" focusable="false"><use href="#mark-export"/></svg>
       <span class="btn-label">Back up saved work</span></button>
     <button id="theme-toggle" type="button" aria-label="Colour theme: follow system">
       <svg class="mark" aria-hidden="true" focusable="false"><use id="theme-icon" href="#mark-theme-system"/></svg>
+    </button>
+    <button id="shortcuts-toggle" type="button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">
+      <span class="fig" aria-hidden="true">?</span>
     </button>
     <button id="shops-toggle" type="button" aria-expanded="false" aria-controls="shops-panel">
       Shops
@@ -124,6 +136,9 @@ provenance
     <label class="toggle"><input type="checkbox" id="favs-only">
       <svg class="mark mark-check" aria-hidden="true" focusable="false"><use href="#mark-tick"/></svg>
       <span>Favourites</span></label>
+    <label class="toggle"><input type="checkbox" id="shortlist-only">
+      <svg class="mark mark-check" aria-hidden="true" focusable="false"><use href="#mark-tick"/></svg>
+      <span>Shortlist</span></label>
     <label class="toggle" hidden><input type="checkbox" id="hide-dups">
       <svg class="mark mark-check" aria-hidden="true" focusable="false"><use href="#mark-tick"/></svg>
       <span>Hide duplicates</span></label>
@@ -197,7 +212,17 @@ provenance
       <div id="preview-links"></div>
       <p id="preview-copies-note" hidden></p><ul id="preview-copies" hidden></ul>
       <div id="preview-external"></div>
-      <button id="preview-favourite" type="button" aria-pressed="false">Add to favourites</button>
+      <div class="preview-actions">
+        <button id="preview-favourite" type="button" aria-pressed="false">Add to favourites</button>
+        <button id="preview-shortlist" type="button" aria-pressed="false">Add to shortlist</button>
+      </div>
+      <div id="preview-shortlist-fields" hidden>
+        <label>Size <input id="preview-shortlist-size" maxlength="40" autocomplete="off" placeholder="For example, L or 43"></label>
+        <label>Colour <input id="preview-shortlist-colour" maxlength="60" autocomplete="off" placeholder="For example, Black"></label>
+        <label>Shortlist note <input id="preview-shortlist-note" maxlength="500" autocomplete="off" placeholder="Optional haul note"></label>
+        <button id="preview-shortlist-save" type="button">Save shortlist details</button>
+        <p id="preview-shortlist-status" role="status"></p>
+      </div>
       <details><summary>Recorded changes</summary><ul id="preview-history"></ul></details>
       <details id="preview-similar"><summary>Similar covers (experimental)</summary>
         <p>Compares cached cover layouts. Resemblance does not establish product identity. Reviews at most 100,000 loaded albums.</p>
@@ -218,6 +243,31 @@ provenance
     </div>
   </div>
 </dialog>
+<dialog id="shortlist-dialog" aria-labelledby="shortlist-title">
+  <div class="dialog-toolbar">
+    <h1 id="shortlist-title">Shortlist</h1>
+    <span id="shortlist-summary" class="fig"></span>
+    <button id="shortlist-close" type="button" autofocus>Close shortlist</button>
+  </div>
+  <div class="shortlist-actions">
+    <button id="shortlist-filter-btn" type="button">Filter grid to shortlist</button>
+    <button id="shortlist-export-json" type="button">Export JSON</button>
+    <button id="shortlist-export-md" type="button">Export Markdown</button>
+    <button id="shortlist-copy-md" type="button">Copy Markdown</button>
+    <button id="shortlist-copy-json" type="button">Copy JSON</button>
+    <button id="shortlist-clear" type="button">Clear shortlist</button>
+  </div>
+  <p id="shortlist-status" role="status"></p>
+  <p id="shortlist-empty" hidden>No albums shortlisted yet. Use the shortlist button on any card or press s.</p>
+  <ul id="shortlist-list"></ul>
+</dialog>
+<dialog id="shortcuts-dialog" aria-labelledby="shortcuts-title">
+  <div class="dialog-toolbar">
+    <h1 id="shortcuts-title">Keyboard shortcuts</h1>
+    <button id="shortcuts-close" type="button" autofocus>Close</button>
+  </div>
+  <dl id="shortcuts-list"></dl>
+</dialog>
 <script src="dedup.js"></script>
 <script src="agents.js"></script>
 <script src="age.js"></script>
@@ -229,6 +279,8 @@ provenance
 <script src="discovery.js"></script>
 <script src="user-store.js"></script>
 <script src="view-state.js"></script>
+<script src="shortlist.js"></script>
+<script src="shortcuts.js"></script>
 <script src="app.js"></script>
 <script src="saved-work.js"></script>
 </body>
