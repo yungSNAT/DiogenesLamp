@@ -70,6 +70,17 @@ const SHORTLIST_HELPERS = typeof module !== "undefined"
 
 const SHORTLIST_STORAGE_KEY = "lamp.shortlist.v1";
 
+/** @type {import("./prefs.js").Prefs} */
+const EMPTY_PREFS = /** @type {import("./prefs.js").Prefs} */ (Object.freeze({
+  agent: "",
+  lookups: false,
+  currency: "",
+  rate: "",
+}));
+
+/** @type {ShortlistFields} */
+const EMPTY_FIELDS = Object.freeze({});
+
 const SHORTLIST_LIMITS = {
   maxItems: 5000,
   maxId: 200,
@@ -195,7 +206,7 @@ function writeShortlist(host, shortlist) {
  * @param {string} [nowIso]
  * @returns {{shortlist: ShortlistMap, added: boolean}}
  */
-function toggleShortlistItem(shortlist, albumId, fields = {}, nowIso = new Date().toISOString()) {
+function toggleShortlistItem(shortlist, albumId, fields = EMPTY_FIELDS, nowIso = new Date().toISOString()) {
   const id = cleanShortlistText(albumId, SHORTLIST_LIMITS.maxId);
   const next = new Map(shortlist);
   if (!id) return { shortlist: next, added: false };
@@ -304,7 +315,7 @@ function primaryAgentUrl(album, agentId = "") {
  * @param {import("./prefs.js").Prefs} [prefs]
  * @returns {ShortlistExportRecord[]}
  */
-function buildShortlistExportRecords(shortlist, albumsById, prefs = { agent: "", lookups: false, currency: "", rate: "" }) {
+function buildShortlistExportRecords(shortlist, albumsById, prefs = EMPTY_PREFS) {
   /** @type {ShortlistExportRecord[]} */
   const records = [];
   for (const item of shortlist.values()) {
@@ -336,7 +347,7 @@ function buildShortlistExportRecords(shortlist, albumsById, prefs = { agent: "",
  * @param {import("./prefs.js").Prefs} [prefs]
  * @returns {ShortlistTotals}
  */
-function shortlistTotals(records, prefs = { agent: "", lookups: false, currency: "", rate: "" }) {
+function shortlistTotals(records, prefs = EMPTY_PREFS) {
   let pricedCount = 0;
   let totalCny = 0;
   for (const record of records) {
@@ -364,7 +375,7 @@ function shortlistTotals(records, prefs = { agent: "", lookups: false, currency:
 function shortlistToJson(
   shortlist,
   albumsById,
-  prefs = { agent: "", lookups: false, currency: "", rate: "" },
+  prefs = EMPTY_PREFS,
   exportedAt = new Date().toISOString(),
 ) {
   const items = buildShortlistExportRecords(shortlist, albumsById, prefs);
@@ -422,7 +433,7 @@ function markdownLink(label, url) {
 function shortlistToMarkdown(
   shortlist,
   albumsById,
-  prefs = { agent: "", lookups: false, currency: "", rate: "" },
+  prefs = EMPTY_PREFS,
 ) {
   const records = buildShortlistExportRecords(shortlist, albumsById, prefs);
   const totals = shortlistTotals(records, prefs);

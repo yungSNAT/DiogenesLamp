@@ -44,6 +44,9 @@ const SHORTCUT_HINTS = Object.freeze([
 
 const EDITABLE_TAGS = new Set(["input", "textarea", "select"]);
 
+/** @type {ShortcutContext} */
+const EMPTY_CONTEXT = Object.freeze({});
+
 /**
  * True when typing should stay in a form field or editable surface.
  * @param {ShortcutTarget | null | undefined} target
@@ -63,7 +66,7 @@ function isEditableTarget(target) {
  * @param {ShortcutContext} [context]
  * @returns {ShortcutAction}
  */
-function resolveShortcutAction(event, context = {}) {
+function resolveShortcutAction(event, context = EMPTY_CONTEXT) {
   if (!event || event.ctrlKey || event.metaKey || event.altKey) return null;
   if (isEditableTarget(context.target)) return null;
   const key = event.key;
