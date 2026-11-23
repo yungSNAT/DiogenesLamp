@@ -82,7 +82,7 @@ function nextViewState(view, event) {
 /**
  * @template {CatalogueAlbum} T
  * @param {ViewState} view
- * @param {{albums: T[], favorites: Set<string>, bannedKeys: Set<string>,
+ * @param {{albums: T[], favorites: Set<string>, shortlist?: {has(id: string): boolean}, bannedKeys: Set<string>,
  * notes?: Map<string, unknown>, collections?: Map<string, unknown>, tags?: Map<string, unknown>,
  * reviews?: Map<string, unknown>}} catalogue
  * @param {number} [now]
@@ -110,13 +110,14 @@ function selectCatalogue(view, catalogue, now = Date.now()) {
     // An album deleted on Yupoo leads to a dead page, so it drops out of
     // browsing. Saved filters and change history keep it available for reference.
     filtered = albums.filter(album =>
-      (!album.gone_since || filters.favsOnly || !!filters.collection || !!filters.tag || filters.changed) &&
+      (!album.gone_since || filters.favsOnly || filters.shortlistOnly || !!filters.collection || !!filters.tag || filters.changed) &&
       (!filters.seller || album.seller === filters.seller) &&
       (!filters.category || album.category === filters.category) &&
       (!filters.kind || album.kind === filters.kind) &&
       traits.every(trait => album.traits?.includes(trait)) &&
       (!filters.newOnly || album.is_new) &&
       (!filters.favsOnly || favorites.has(album.id)) &&
+      (!filters.shortlistOnly || Boolean(catalogue.shortlist?.has(album.id))) &&
       (!maxDays || album.published_ms >= oldestMs) &&
       priceMatches(album.price) &&
       (!filters.collection || catalogue.collections?.get(album.id) === filters.collection) &&

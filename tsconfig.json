@@ -14,6 +14,8 @@
   "files": [
     "viewer/app.js",
     "viewer/saved-work.js",
+    "viewer/shortcuts.js",
+    "viewer/shortlist.js",
     "viewer/discovery.js",
     "viewer/user-store.js",
     "viewer/filters.js",

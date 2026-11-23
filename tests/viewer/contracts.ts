@@ -47,3 +47,24 @@ album.links.push({platform: "fixture", url: 123});
 void tags;
 void review;
 void tagText;
+
+import {
+  readShortlist,
+  toggleShortlistItem,
+  updateShortlistItem,
+  shortlistToJson,
+  shortlistToMarkdown,
+  primaryAgentUrl,
+} from "../../viewer/shortlist.js";
+import { resolveShortcutAction, SHORTCUT_HINTS } from "../../viewer/shortcuts.js";
+
+const emptyShortlist = readShortlist({ localStorage: { getItem: () => null, setItem: () => {} } });
+const toggled = toggleShortlistItem(emptyShortlist, "100", { size: "L", colour: "Black", note: "Check cuffs" });
+const updated = updateShortlistItem(toggled.shortlist, "100", { note: "Updated note" });
+const exportMap = new Map([["100", { id: "100", seller: "one", title: "Jacket", price: 320, album_url: "https://one.x.yupoo.com/albums/100", links: [] }]]);
+const exportedJson: string = shortlistToJson(updated, exportMap);
+const exportedMd: string = shortlistToMarkdown(updated, exportMap);
+const resolvedAgent: string = primaryAgentUrl(exportMap.get("100"), "superbuy");
+const shortcutAction = resolveShortcutAction({ key: "s" }, { hasTargetAlbum: true });
+const shortcutCount: number = SHORTCUT_HINTS.length;
+void [exportedJson, exportedMd, resolvedAgent, shortcutAction, shortcutCount];

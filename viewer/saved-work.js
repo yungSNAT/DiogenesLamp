@@ -59,7 +59,7 @@ function refreshSavedState(render = true) {
   selectOptions(workEl("saved-search"), entries.filter(e => e.kind === "search" && e.value).map(e => e.id));
   if (render) applyFilters();
   if (preview.open) {
-    reconcilePreview(); updatePreviewFavourite();
+    reconcilePreview(); updatePreviewFavourite(); updatePreviewShortlist();
     if (previewSnapshot) showListingCopies(previewSnapshot);
   }
 }
@@ -86,12 +86,20 @@ function useFilters(filters) {
 }
 window.addEventListener("popstate", () => useFilters(filtersFromURL(location.search) || defaultFilters()));
 window.addEventListener("storage", event => {
-  if (event.key === null || event.key.startsWith(USER_PREFIX) ||
-      event.key.startsWith(INHERITED_PREFIX)) refreshSavedState();
-  if (event.key === null || event.key === PREFS_STORAGE_KEY) {
+  const { key: storageKey } = event;
+  if (storageKey === null || storageKey.startsWith(USER_PREFIX) ||
+      storageKey.startsWith(INHERITED_PREFIX)) refreshSavedState();
+  if (storageKey === null || storageKey === PREFS_STORAGE_KEY) {
     state.prefs = readPrefs(window);
     showPrefs();
     applyPrefs();
+  }
+  if (storageKey === null || storageKey === SHORTLIST_STORAGE_KEY) {
+    state.shortlist = readShortlist(window);
+    if (typeof updateShortlistCount === "function") updateShortlistCount();
+    if (typeof syncAllShortlistCards === "function") syncAllShortlistCards();
+    if (state.view.filters.shortlistOnly) applyFilters();
+    syncShortlistUI();
   }
 });
 
@@ -197,6 +205,8 @@ function previewAvailability(unresolved) {
   previewUnresolved = unresolved;
   workEl("preview-save").disabled = unresolved;
   workEl("preview-favourite").disabled = unresolved;
+  workEl("preview-shortlist").disabled = unresolved;
+  workEl("preview-shortlist-save").disabled = unresolved;
   workEl("preview-prev").disabled = unresolved || previewAt === 0;
   workEl("preview-next").disabled = unresolved || previewAt + 1 === previewIds.length;
   workEl("preview-recovery").hidden = !unresolved;
@@ -224,11 +234,34 @@ function previewReady() {
   reconcilePreview();
   return Boolean(previewSnapshot && !previewUnresolved && state.albums.some(a => a.id === previewSnapshot?.id));
 }
+function activePreviewAlbum() {
+  return preview.open && previewReady() ? previewSnapshot : null;
+}
+
 function updatePreviewFavourite() {
   const fav = workEl("preview-favourite");
   const chosen = state.favorites.has(previewSnapshot?.id || "");
   fav.setAttribute("aria-pressed", String(chosen));
   fav.textContent = favLabel(chosen);
+}
+
+/** @param {boolean} [resetInputs] */
+function updatePreviewShortlist(resetInputs = false) {
+  const btn = workEl("preview-shortlist");
+  const fields = workEl("preview-shortlist-fields");
+  const id = previewSnapshot?.id || "";
+  const entry = id ? state.shortlist?.get(id) : undefined;
+  const active = Boolean(entry);
+  btn.setAttribute("aria-pressed", String(active));
+  btn.textContent = active ? "Remove from shortlist" : "Add to shortlist";
+  fields.hidden = !active;
+  const focusedInside = typeof fields.contains === "function" && fields.contains(document.activeElement);
+  if (active && entry && (resetInputs || !focusedInside)) {
+    workEl("preview-shortlist-size").value = entry.size;
+    workEl("preview-shortlist-colour").value = entry.colour;
+    workEl("preview-shortlist-note").value = entry.note;
+  }
+  if (!active || resetInputs) workEl("preview-shortlist-status").textContent = "";
 }
 /** @param {unknown} value */
 function localDate(value) { return value ? String(value).replace("T", " ") : "Not recorded"; }
@@ -359,6 +392,7 @@ function showPreview(album = resolvePreview(previewIds[previewAt])) {
   workEl("preview-similar").open = false;
   workEl("similar-results").replaceChildren();
   updatePreviewFavourite();
+  updatePreviewShortlist(true);
   previewAvailability(false);
   return true;
 }
@@ -410,6 +444,20 @@ preview.addEventListener("keydown", event => {
 });
 workEl("preview-favourite").addEventListener("click", event => {
   if (previewReady() && previewSnapshot) toggleFavorite(previewSnapshot.id, /** @type {Element} */ (event.currentTarget));
+});
+workEl("preview-shortlist").addEventListener("click", event => {
+  if (previewReady() && previewSnapshot) toggleShortlist(previewSnapshot.id, /** @type {Element} */ (event.currentTarget));
+});
+workEl("preview-shortlist-save").addEventListener("click", () => {
+  if (!previewReady() || !previewSnapshot) return;
+  const saved = saveShortlistFields(previewSnapshot.id, {
+    size: workEl("preview-shortlist-size").value,
+    colour: workEl("preview-shortlist-colour").value,
+    note: workEl("preview-shortlist-note").value,
+  });
+  workEl("preview-shortlist-status").textContent = saved
+    ? "Shortlist details saved."
+    : "Shortlist details could not be saved.";
 });
 workEl("preview-retain").addEventListener("click", () => {
   workEl("preview-save-status").textContent = "Draft retained in this open preview. Keep this page open until you transfer or discard it; the saved-work backup includes persisted fields only.";
@@ -525,6 +573,7 @@ function showPrefs() {
 function applyPrefs() {
   renderGrid(true);
   if (preview.open) showPreviewLinks(previewAlbum());
+  if (shortlistDialog.open) renderShortlistDialog();
 }
 showPrefs();
 {
@@ -571,4 +620,280 @@ workEl("import-sheet").addEventListener("change", async event => {
     else applyFilters();
   } catch (error) { savedDataError(/** @type {Error} */ (error).message); }
   finally { /** @type {HTMLInputElement | HTMLSelectElement} */ (event.target).value = ""; }
+});
+
+
+// Local haul shortlist dialog and keyboard shortcut reference.
+const shortlistDialog = workEl("shortlist-dialog");
+const shortcutsDialog = workEl("shortcuts-dialog");
+
+/** @returns {Map<string, import("./controller-types.js").ViewerAlbum>} */
+function albumsByIdForShortlist() {
+  /** @type {Map<string, import("./controller-types.js").ViewerAlbum>} */
+  const byId = new Map();
+  for (const album of state.albums) byId.set(album.id, album);
+  for (const [oldId, targetId] of Object.entries(state.albumAliases || {})) {
+    const target = byId.get(targetId);
+    if (target && !byId.has(oldId)) byId.set(oldId, target);
+  }
+  return byId;
+}
+
+/**
+ * @param {string} albumId
+ * @param {import("./shortlist.js").ShortlistFields} fields
+ */
+function saveShortlistFields(albumId, fields) {
+  const next = updateShortlistItem(state.shortlist, albumId, fields);
+  if (!writeShortlist(window, next)) {
+    savedDataError("Shortlist could not be saved. Browser storage may be full or blocked.");
+    return false;
+  }
+  state.shortlist = next;
+  if (typeof updateShortlistCount === "function") updateShortlistCount();
+  if (typeof syncAllShortlistCards === "function") syncAllShortlistCards();
+  syncShortlistUI();
+  return true;
+}
+
+/** @param {string} text @param {string} formatLabel */
+async function copyShortlistText(text, formatLabel) {
+  const statusEl = workEl("shortlist-status");
+  if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") {
+    statusEl.textContent = `Clipboard copy is unavailable in this browser; use Export ${formatLabel} instead.`;
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    statusEl.textContent = `Copied shortlist as ${formatLabel}.`;
+  } catch {
+    statusEl.textContent = `Could not copy shortlist to clipboard; use Export ${formatLabel} instead.`;
+  }
+}
+
+/**
+ * @param {import("./shortlist.js").ShortlistExportRecord} record
+ * @param {string} labelText
+ * @param {"size" | "colour" | "note"} fieldName
+ * @param {string} value
+ * @param {number} maxLength
+ * @param {string} placeholder
+ */
+function buildShortlistField(record, labelText, fieldName, value, maxLength, placeholder) {
+  const label = document.createElement("label");
+  label.textContent = labelText;
+  const input = document.createElement("input");
+  input.type = "text";
+  input.value = value;
+  input.maxLength = maxLength;
+  input.placeholder = placeholder;
+  input.autocomplete = "off";
+  input.addEventListener("change", () => {
+    const ok = saveShortlistFields(record.id, { [fieldName]: input.value });
+    workEl("shortlist-status").textContent = ok
+      ? `Saved ${labelText.toLowerCase()} for ${record.title || `Album ${record.id}`}.`
+      : "Shortlist could not be saved.";
+  });
+  label.appendChild(input);
+  return label;
+}
+
+/** @param {import("./shortlist.js").ShortlistExportRecord} record */
+function buildShortlistRowHead(record) {
+  const head = document.createElement("div");
+  head.className = "shortlist-item-head";
+  if (!record.loaded) {
+    const span = document.createElement("span");
+    span.textContent = `Album ${record.id} (not loaded)`;
+    head.appendChild(span);
+    return head;
+  }
+  const openBtn = document.createElement("button");
+  openBtn.type = "button";
+  openBtn.className = "shortlist-item-title";
+  openBtn.textContent = record.title || `Album ${record.id}`;
+  openBtn.addEventListener("click", () => {
+    shortlistDialog.close();
+    if (!state.filtered.some(a => a.id === record.id)) {
+      useFilters({ ...defaultFilters(), shortlistOnly: true });
+      saveFilterURL();
+    }
+    openPreview(record.id);
+  });
+  head.appendChild(openBtn);
+  return head;
+}
+
+/** @param {import("./shortlist.js").ShortlistExportRecord} record */
+function buildShortlistRowMeta(record) {
+  const meta = document.createElement("div");
+  meta.className = "shortlist-item-meta fig";
+  const priceText = record.price_cny !== null
+    ? (record.estimated_price
+      ? `${formatPrice(record.price_cny)} (${record.estimated_price})`
+      : formatPrice(record.price_cny))
+    : "Price unknown";
+  const metaText = document.createElement("span");
+  metaText.textContent = `${record.seller || "Seller not loaded"} · ${priceText}`;
+  meta.appendChild(metaText);
+  if (record.album_url) addLink(meta, "Yupoo album", record.album_url);
+  if (record.agent_url) addLink(meta, "Shopping agent", record.agent_url);
+  else if (record.purchase_url) addLink(meta, "Purchase link", record.purchase_url);
+  return meta;
+}
+
+/** @param {import("./shortlist.js").ShortlistExportRecord} record */
+function buildShortlistRow(record) {
+  const li = document.createElement("li");
+  li.className = "shortlist-item";
+  const fields = document.createElement("div");
+  fields.className = "shortlist-item-fields";
+  fields.append(
+    buildShortlistField(record, "Size", "size", record.size, SHORTLIST_LIMITS.maxSize, "L, 43..."),
+    buildShortlistField(record, "Colour", "colour", record.colour, SHORTLIST_LIMITS.maxColour, "Black..."),
+    buildShortlistField(record, "Note", "note", record.note, SHORTLIST_LIMITS.maxNote, "Optional note"),
+  );
+  const removeBtn = document.createElement("button");
+  removeBtn.type = "button";
+  removeBtn.textContent = "Remove";
+  removeBtn.setAttribute("aria-label", `Remove ${record.title || `Album ${record.id}`} from shortlist`);
+  removeBtn.addEventListener("click", () => {
+    const next = removeShortlistItem(state.shortlist, record.id);
+    if (!writeShortlist(window, next)) {
+      savedDataError("Shortlist could not be saved. Browser storage may be full or blocked.");
+      return;
+    }
+    state.shortlist = next;
+    if (typeof updateShortlistCount === "function") updateShortlistCount();
+    if (typeof syncAllShortlistCards === "function") syncAllShortlistCards();
+    if (state.view.filters.shortlistOnly) applyFilters();
+    workEl("shortlist-status").textContent = `Removed ${record.title || `Album ${record.id}`}.`;
+    syncShortlistUI();
+  });
+  fields.appendChild(removeBtn);
+  li.append(buildShortlistRowHead(record), buildShortlistRowMeta(record), fields);
+  return li;
+}
+
+function renderShortlistDialog() {
+  const byId = albumsByIdForShortlist();
+  const records = buildShortlistExportRecords(state.shortlist, byId, state.prefs);
+  const totals = shortlistTotals(records, state.prefs);
+  const noun = totals.count === 1 ? "album" : "albums";
+  const priceSummary = totals.totalCny > 0
+    ? ` · Est. ${formatPrice(totals.totalCny)}${totals.estimatedTotal ? ` (${totals.estimatedTotal})` : ""}`
+    : "";
+  workEl("shortlist-summary").textContent = `${totals.count.toLocaleString()} ${noun}${priceSummary}`;
+  workEl("shortlist-empty").hidden = records.length > 0;
+  const empty = records.length === 0;
+  for (const id of /** @type {const} */ ([
+    "shortlist-export-json", "shortlist-export-md", "shortlist-copy-md", "shortlist-copy-json", "shortlist-clear",
+  ])) {
+    workEl(id).disabled = empty;
+  }
+  workEl("shortlist-filter-btn").textContent = state.view.filters.shortlistOnly
+    ? "Show all albums"
+    : "Filter grid to shortlist";
+  const list = workEl("shortlist-list");
+  list.replaceChildren(...records.map(buildShortlistRow));
+}
+function syncShortlistUI() {
+  if (preview.open) updatePreviewShortlist();
+  if (shortlistDialog.open) renderShortlistDialog();
+}
+
+function openShortlistDialog() {
+  workEl("shortlist-status").textContent = "";
+  renderShortlistDialog();
+  document.body.classList.add("preview-open");
+  shortlistDialog.showModal();
+}
+
+workEl("shortlist-toggle").addEventListener("click", openShortlistDialog);
+workEl("shortlist-close").addEventListener("click", () => shortlistDialog.close());
+shortlistDialog.addEventListener("close", () => {
+  if (!preview.open) document.body.classList.remove("preview-open");
+  workEl("shortlist-toggle").focus();
+});
+
+workEl("shortlist-filter-btn").addEventListener("click", () => {
+  const nextOnly = !state.view.filters.shortlistOnly;
+  useFilters({ ...state.view.filters, shortlistOnly: nextOnly });
+  saveFilterURL();
+  shortlistDialog.close();
+  actionStatus(nextOnly ? "Showing shortlisted albums." : "Showing all matching albums.");
+});
+
+workEl("shortlist-export-json").addEventListener("click", () => {
+  const json = shortlistToJson(state.shortlist, albumsByIdForShortlist(), state.prefs);
+  downloadWork(json, "diogenes-shortlist.json", "application/json");
+  workEl("shortlist-status").textContent = `Exported ${state.shortlist.size} shortlisted items as JSON.`;
+});
+
+workEl("shortlist-export-md").addEventListener("click", () => {
+  const md = shortlistToMarkdown(state.shortlist, albumsByIdForShortlist(), state.prefs);
+  downloadWork(md, "diogenes-shortlist.md", "text/markdown;charset=utf-8");
+  workEl("shortlist-status").textContent = `Exported ${state.shortlist.size} shortlisted items as Markdown.`;
+});
+
+workEl("shortlist-copy-md").addEventListener("click", () => {
+  const md = shortlistToMarkdown(state.shortlist, albumsByIdForShortlist(), state.prefs);
+  void copyShortlistText(md, "Markdown");
+});
+
+workEl("shortlist-copy-json").addEventListener("click", () => {
+  const json = shortlistToJson(state.shortlist, albumsByIdForShortlist(), state.prefs);
+  void copyShortlistText(json, "JSON");
+});
+
+workEl("shortlist-clear").addEventListener("click", () => {
+  if (!state.shortlist.size) return;
+  if (!window.confirm("Remove all items from your shortlist?")) return;
+  const empty = new Map();
+  if (!writeShortlist(window, empty)) {
+    savedDataError("Shortlist could not be saved. Browser storage may be full or blocked.");
+    return;
+  }
+  state.shortlist = empty;
+  if (typeof updateShortlistCount === "function") updateShortlistCount();
+  if (typeof syncAllShortlistCards === "function") syncAllShortlistCards();
+  if (state.view.filters.shortlistOnly) applyFilters();
+  workEl("shortlist-status").textContent = "Shortlist cleared.";
+  syncShortlistUI();
+});
+
+function renderShortcutsDialog() {
+  const list = workEl("shortcuts-list");
+  list.replaceChildren();
+  for (const hint of SHORTCUT_HINTS) {
+    const dt = document.createElement("dt");
+    const kbd = document.createElement("kbd");
+    kbd.textContent = hint.keys;
+    dt.appendChild(kbd);
+    const dd = document.createElement("dd");
+    dd.textContent = hint.description;
+    list.append(dt, dd);
+  }
+}
+
+/** @type {HTMLElement | null} */
+let shortcutsReturnFocus = null;
+
+function toggleShortcutsDialog() {
+  if (shortcutsDialog.open) {
+    shortcutsDialog.close();
+    return;
+  }
+  shortcutsReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  renderShortcutsDialog();
+  shortcutsDialog.showModal();
+}
+
+workEl("shortcuts-toggle").addEventListener("click", toggleShortcutsDialog);
+workEl("shortcuts-close").addEventListener("click", () => shortcutsDialog.close());
+shortcutsDialog.addEventListener("close", () => {
+  if (shortcutsReturnFocus && shortcutsReturnFocus.isConnected) {
+    shortcutsReturnFocus.focus({ preventScroll: true });
+  }
+  shortcutsReturnFocus = null;
 });
