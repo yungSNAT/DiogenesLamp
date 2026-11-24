@@ -82,7 +82,8 @@ function nextViewState(view, event) {
 /**
  * @template {CatalogueAlbum} T
  * @param {ViewState} view
- * @param {{albums: T[], favorites: Set<string>, shortlist?: {has(id: string): boolean}, bannedKeys: Set<string>,
+ * @param {{albums: T[], favorites: Set<string>, shortlist?: {has(id: string): boolean},
+ * preferredSellers?: ReadonlySet<string>, bannedKeys: Set<string>,
  * notes?: Map<string, unknown>, collections?: Map<string, unknown>, tags?: Map<string, unknown>,
  * reviews?: Map<string, unknown>}} catalogue
  * @param {number} [now]
@@ -118,6 +119,7 @@ function selectCatalogue(view, catalogue, now = Date.now()) {
       (!filters.newOnly || album.is_new) &&
       (!filters.favsOnly || favorites.has(album.id)) &&
       (!filters.shortlistOnly || Boolean(catalogue.shortlist?.has(album.id))) &&
+      (!filters.preferredOnly || Boolean(catalogue.preferredSellers?.has(album.seller))) &&
       (!maxDays || album.published_ms >= oldestMs) &&
       priceMatches(album.price) &&
       (!filters.collection || catalogue.collections?.get(album.id) === filters.collection) &&
@@ -127,13 +129,13 @@ function selectCatalogue(view, catalogue, now = Date.now()) {
       matchesSearch(album)
     );
     if (filters.hideDups) {
-      const { out, counts } = VIEW_HELPERS.collapseDups(filtered, bannedKeys);
+      const { out, counts } = VIEW_HELPERS.collapseDups(filtered, bannedKeys, catalogue.preferredSellers);
       dupHidden = filtered.length - out.length;
       filtered = out;
       dupCounts = counts;
     }
   }
-  filtered = VIEW_HELPERS.sortAlbums(filtered, filters.sort);
+  filtered = VIEW_HELPERS.sortAlbums(filtered, filters.sort, catalogue.preferredSellers);
   return { filtered, dupCounts, dupHidden,
     cursor: VIEW_HELPERS.clampCursor(view.cursor, filtered.length) };
 }

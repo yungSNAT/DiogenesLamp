@@ -3,7 +3,7 @@
 
 //! Select the newest listing using the viewer's duplicate identities.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use indexmap::IndexMap;
 use unicode_normalization::UnicodeNormalization;
@@ -113,7 +113,26 @@ fn id_order(id: &str) -> (usize, String) {
     (trimmed.len(), trimmed.to_string())
 }
 
-fn rank(album: &Map) -> (Date, (usize, String)) {
+fn is_preferred_seller(album: &Map, preferred: &HashSet<String>) -> bool {
+    album
+        .get("seller")
+        .and_then(Value::as_str)
+        .is_some_and(|seller| preferred.contains(seller))
+}
+
+fn rank(
+    album: &Map,
+    preferred: &HashSet<String>,
+    prefer_live: bool,
+) -> (bool, bool, Date, (usize, String)) {
+    let (is_live, is_preferred) = if prefer_live {
+        (
+            !album.get("gone_since").is_some_and(Value::truthy),
+            is_preferred_seller(album, preferred),
+        )
+    } else {
+        (false, false)
+    };
     let id = album.get("id").and_then(Value::as_str).unwrap_or("0");
     let known = match album.get("date_published") {
         Some(Value::Str(s)) => s.as_str(),
@@ -129,15 +148,30 @@ fn rank(album: &Map) -> (Date, (usize, String)) {
             }
         });
     if shaped && let Some(date) = isodate::parse_date(prefix) {
-        return (date, id_order(id));
+        return (is_live, is_preferred, date, id_order(id));
     }
     let numeric: u128 = id.parse().unwrap_or(u128::MAX);
-    (estimate_published(numeric), id_order(id))
+    (
+        is_live,
+        is_preferred,
+        estimate_published(numeric),
+        id_order(id),
+    )
 }
 
 /// Canonical records and older-ID aliases, without changing captures. A
 /// title used over twice by one seller is a category label, as in dedup.js.
 pub fn newest_listings(albums: &[Map]) -> (Vec<Map>, Vec<(String, String)>) {
+    newest_listings_with_preferred(albums, &HashSet::new())
+}
+
+/// Canonical records and older-ID aliases. In any duplicate cluster holding a
+/// preferred seller, live availability ranks before seller preference, then
+/// newest posting; clusters with no preferred seller keep newest-posting order.
+pub fn newest_listings_with_preferred(
+    albums: &[Map],
+    preferred: &HashSet<String>,
+) -> (Vec<Map>, Vec<(String, String)>) {
     let albums: Vec<&Map> = albums.iter().filter(|a| canonical_album(a)).collect();
     let keys: Vec<Option<String>> = albums.iter().map(|a| duplicate_key(a)).collect();
     let mut counts: HashMap<&str, usize> = HashMap::new();
@@ -146,14 +180,28 @@ pub fn newest_listings(albums: &[Map]) -> (Vec<Map>, Vec<(String, String)>) {
             *counts.entry(key).or_default() += 1;
         }
     }
+    let mut preferred_clusters: HashSet<&str> = HashSet::new();
+    if !preferred.is_empty() {
+        for (index, key) in keys.iter().enumerate() {
+            let Some(key) = key else { continue };
+            if counts.get(key.as_str()).copied().unwrap_or(0) <= 2
+                && is_preferred_seller(albums[index], preferred)
+            {
+                preferred_clusters.insert(key.as_str());
+            }
+        }
+    }
     let mut winners: HashMap<&str, usize> = HashMap::new();
     for (index, key) in keys.iter().enumerate() {
         let Some(key) = key else { continue };
         if counts.get(key.as_str()).copied().unwrap_or(0) > 2 {
             continue;
         }
+        let prefer_live = preferred_clusters.contains(key.as_str());
         match winners.get(key.as_str()) {
-            Some(&current) if rank(albums[index]) <= rank(albums[current]) => {}
+            Some(&current)
+                if rank(albums[index], preferred, prefer_live)
+                    <= rank(albums[current], preferred, prefer_live) => {}
             _ => {
                 winners.insert(key, index);
             }

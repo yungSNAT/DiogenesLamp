@@ -28,6 +28,7 @@ pub struct Source {
     pub url: Value,
     pub name: Value,
     pub skip: bool,
+    pub preferred: bool,
 }
 
 impl PartialEq for Source {
@@ -38,6 +39,7 @@ impl PartialEq for Source {
             && pyjson::py_eq(&self.url, &other.url)
             && pyjson::py_eq(&self.name, &other.name)
             && self.skip == other.skip
+            && self.preferred == other.preferred
     }
 }
 
@@ -50,6 +52,7 @@ impl Source {
             url: url.into(),
             name: name.into(),
             skip: false,
+            preferred: false,
         }
     }
 
@@ -140,7 +143,11 @@ pub fn classify_url(raw: &str) -> Option<Source> {
     if parsed.username().is_some() || parsed.password().is_some() {
         return None;
     }
-    let host = parsed.hostname().unwrap_or_default().to_lowercase();
+    let host = parsed
+        .hostname()
+        .unwrap_or_default()
+        .trim_end_matches('.')
+        .to_lowercase();
     if host.is_empty() || !host.contains('.') {
         return None;
     }
@@ -245,6 +252,8 @@ pub struct ImportReport {
     pub shops_by_platform: Vec<(String, usize)>,
     /// (key, kept URL, dropped URL) for ids two different hosts slugged to.
     pub collisions: Vec<(String, String, String)>,
+    /// (key, url) entries refused because they matched `[blocklist].skip_sellers`.
+    pub blocked: Vec<(String, String)>,
 }
 
 static INDEX_PREFIX: LazyLock<Regex> = LazyLock::new(|| {
@@ -271,62 +280,19 @@ pub fn parse_dump(text: &str) -> Vec<String> {
 }
 
 pub fn merge_sources(existing: &Sources, raws: &[String]) -> (Sources, ImportReport) {
-    let mut merged = existing.clone();
-    let mut report = ImportReport {
-        rows: raws.len(),
-        ..Default::default()
-    };
-    let mut seen: std::collections::HashSet<String> = Default::default();
-    for raw in raws {
-        let Some(src) = classify_url(raw) else {
-            report.invalid += 1;
-            continue;
-        };
-        let key = format!("{}:{}", src.kind, src.id);
-        if merged.contains_key(&key) || seen.contains(&key) {
-            if let Some(held) = merged.get(&key)
-                && !pyjson::py_eq(&held.url, &src.url)
-            {
-                report
-                    .collisions
-                    .push((key.clone(), held.url.py_str(), src.url.py_str()));
-            }
-            if !seen.contains(&key) {
-                if src.kind == "yupoo" {
-                    report.yupoo_known += 1;
-                } else {
-                    report.shops_known += 1;
-                }
-            }
-            seen.insert(key);
-            continue;
-        }
-        seen.insert(key.clone());
-        if src.kind == "yupoo" {
-            report.yupoo_new += 1;
-        } else {
-            report.shops_new += 1;
-            let platform = src.platform.py_str();
-            match report
-                .shops_by_platform
-                .iter_mut()
-                .find(|(p, _)| *p == platform)
-            {
-                Some(entry) => entry.1 += 1,
-                None => report.shops_by_platform.push((platform, 1)),
-            }
-        }
-        merged.insert(key, src);
-    }
-    (merged, report)
+    crate::blocklist::merge_sources_with_blocklist(
+        existing,
+        raws,
+        &crate::blocklist::Blocklist::new(),
+    )
 }
 
 /// `_toml_str`: a JSON string literal, which TOML reads back, with DEL escaped.
-fn toml_value(value: &Value) -> String {
+pub(crate) fn toml_value(value: &Value) -> String {
     pyjson::dumps(value, pyjson::Style::Default).replace('\u{7f}', "\\u007f")
 }
 
-fn safe_id(id: &str) -> bool {
+pub(crate) fn safe_id(id: &str) -> bool {
     !id.is_empty()
         && id
             .bytes()
@@ -346,10 +312,10 @@ fn tmp_path(path: &Path) -> std::path::PathBuf {
     path.with_file_name(format!("{stem}.toml.tmp"))
 }
 
-pub fn write_sources(path: &Path, sources: &Sources) -> Result<()> {
+pub(crate) fn format_sources_lines(sources: &Sources) -> Result<Vec<String>> {
     let mut lines: Vec<String> = vec![
         "# Managed by 'lamp import'. Manual edits to name/url are preserved.".into(),
-        "# Add 'skip = true' to an entry to leave it out of scrapes.".into(),
+        "# Add 'skip = true' to omit from scrapes, or 'preferred = true' to prioritise.".into(),
         String::new(),
     ];
     let mut keys: Vec<&String> = sources.keys().collect();
@@ -370,15 +336,29 @@ pub fn write_sources(path: &Path, sources: &Sources) -> Result<()> {
         }
         lines.push(format!("url = {}", toml_value(&src.url)));
         lines.push(format!("name = {}", toml_value(&src.name)));
+        if src.preferred {
+            lines.push("preferred = true".into());
+        }
         if src.skip {
             lines.push("skip = true".into());
         }
         lines.push(String::new());
     }
+    Ok(lines)
+}
+
+pub(crate) fn write_sources_text(path: &Path, lines: &[String]) -> Result<()> {
     let tmp = tmp_path(path);
     let text = pyerr::native_newlines(&lines.join("\n"));
     std::fs::write(&tmp, text).map_err(|e| Error::Os(pyerr::os_error(&e, Call::Open, &tmp)))?;
     std::fs::rename(&tmp, path).map_err(|e| Error::Os(pyerr::os_error2(&e, Call::Os, &tmp, path)))
+}
+
+pub fn write_sources(path: &Path, sources: &Sources) -> Result<()> {
+    let blocklist = crate::blocklist::load_blocklist(path)?;
+    let mut lines = format_sources_lines(sources)?;
+    blocklist.append_toml_lines(&mut lines);
+    write_sources_text(path, &lines)
 }
 
 fn toml_to_value(value: &toml::Value) -> Value {
@@ -400,18 +380,7 @@ fn toml_to_value(value: &toml::Value) -> Value {
     }
 }
 
-pub fn load_sources(path: &Path) -> Result<Sources> {
-    if !path.exists() {
-        return Ok(Sources::new());
-    }
-    let text = pyerr::read_text(path).map_err(|f| Error::Value(f.message))?;
-    let data: toml::Table = text.parse().map_err(|e: toml::de::Error| {
-        Error::Value(format!(
-            "invalid sources file {}: {}",
-            pyerr::path_str(path),
-            e.message()
-        ))
-    })?;
+pub(crate) fn parse_sources_table(path: &Path, data: &toml::Table) -> Result<Sources> {
     let mut sources = Sources::new();
     let section = |name: &str| -> Result<Vec<(String, toml::Table)>> {
         match data.get(name) {
@@ -426,11 +395,18 @@ pub fn load_sources(path: &Path) -> Result<Sources> {
             Some(_) => value(format!("[{name}] must be a table")),
         }
     };
-    let truthy = |entry: &toml::Table| {
+    let skip_flag = |entry: &toml::Table| {
         entry
             .get("skip")
             .map(toml_to_value)
             .is_some_and(|v| v.truthy())
+    };
+    let preferred_flag = |section: &str, id: &str, entry: &toml::Table| -> Result<bool> {
+        match entry.get("preferred") {
+            None => Ok(false),
+            Some(toml::Value::Boolean(b)) => Ok(*b),
+            Some(_) => value(format!("[{section}.{id}].preferred must be a boolean")),
+        }
     };
     for (seller_id, entry) in section("yupoo")? {
         // Catalogue and run files are named after the seller, so the id must pass the
@@ -463,7 +439,8 @@ pub fn load_sources(path: &Path) -> Result<Sources> {
                 platform: "yupoo".into(),
                 url: url.trim_end_matches('/').into(),
                 name,
-                skip: truthy(&entry),
+                skip: skip_flag(&entry),
+                preferred: preferred_flag("yupoo", &seller_id, &entry)?,
             },
         );
     }
@@ -488,9 +465,14 @@ pub fn load_sources(path: &Path) -> Result<Sources> {
                     .get("name")
                     .map(toml_to_value)
                     .unwrap_or_else(|| shop_id.as_str().into()),
-                skip: truthy(&entry),
+                skip: skip_flag(&entry),
+                preferred: preferred_flag("shops", &shop_id, &entry)?,
             },
         );
     }
     Ok(sources)
+}
+
+pub fn load_sources(path: &Path) -> Result<Sources> {
+    crate::blocklist::load_sources_config(path).map(|cfg| cfg.sources)
 }

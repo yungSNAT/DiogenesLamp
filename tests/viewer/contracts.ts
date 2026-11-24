@@ -57,6 +57,14 @@ import {
   primaryAgentUrl,
 } from "../../viewer/shortlist.js";
 import { resolveShortcutAction, SHORTCUT_HINTS } from "../../viewer/shortcuts.js";
+import {
+  materialChipList,
+  countMaterials,
+  toggleMaterialFilter,
+  preferredSellerSet,
+  sortSellersForFilter,
+  sellerOptionLabel,
+} from "../../viewer/chips.js";
 
 const emptyShortlist = readShortlist({ localStorage: { getItem: () => null, setItem: () => {} } });
 const toggled = toggleShortlistItem(emptyShortlist, "100", { size: "L", colour: "Black", note: "Check cuffs" });
@@ -67,4 +75,11 @@ const exportedMd: string = shortlistToMarkdown(updated, exportMap);
 const resolvedAgent: string = primaryAgentUrl(exportMap.get("100"), "superbuy");
 const shortcutAction = resolveShortcutAction({ key: "s" }, { hasTargetAlbum: true });
 const shortcutCount: number = SHORTCUT_HINTS.length;
-void [exportedJson, exportedMd, resolvedAgent, shortcutAction, shortcutCount];
+const chipList = materialChipList([{ facet: "material", en: "wool" }]);
+const matCounts = countMaterials([{ traits: ["wool"] }], ["wool"]);
+const toggledMat: string = toggleMaterialFilter("wool", "wool");
+const prefSet = preferredSellerSet([{ id: "fav", preferred: true }]);
+const sortedSellers = sortSellersForFilter([{ id: "fav", name: "Fav", album_count: 5, preferred: true }]);
+const sellerLbl: string = sellerOptionLabel(sortedSellers[0]);
+void [exportedJson, exportedMd, resolvedAgent, shortcutAction, shortcutCount,
+  chipList, matCounts, toggledMat, prefSet, sellerLbl];

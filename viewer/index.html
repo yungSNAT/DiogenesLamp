@@ -139,12 +139,16 @@ provenance
     <label class="toggle"><input type="checkbox" id="shortlist-only">
       <svg class="mark mark-check" aria-hidden="true" focusable="false"><use href="#mark-tick"/></svg>
       <span>Shortlist</span></label>
+    <label class="toggle"><input type="checkbox" id="preferred-only">
+      <svg class="mark mark-check" aria-hidden="true" focusable="false"><use href="#mark-tick"/></svg>
+      <span>Preferred</span></label>
     <label class="toggle" hidden><input type="checkbox" id="hide-dups">
       <svg class="mark mark-check" aria-hidden="true" focusable="false"><use href="#mark-tick"/></svg>
       <span>Hide duplicates</span></label>
     <button id="filters-clear" type="button" hidden>Clear filters</button>
     <button id="group-clear" type="button" hidden></button>
   </div>
+  <div id="material-chips" class="chip-bar" role="group" aria-label="Material filters"></div>
   <details id="catalogue-tools">
     <summary>More filters and saved work</summary>
     <div class="work-tools">
@@ -272,6 +276,7 @@ provenance
 <script src="agents.js"></script>
 <script src="age.js"></script>
 <script src="kinds.js"></script>
+<script src="chips.js"></script>
 <script src="filters.js"></script>
 <script src="prefs.js"></script>
 <script src="anchor.js"></script>
