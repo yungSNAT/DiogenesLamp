@@ -225,7 +225,8 @@ mod tests {
 mod errno_tests {
     use super::*;
 
-    // The OSError subclass and text CPython gives each errno on Linux.
+    // The OSError subclass and text CPython gives each errno on Linux. The
+    // text is the C library's strerror; the literals are glibc's wording.
     #[cfg(target_os = "linux")]
     #[test]
     fn stream_errors_name_python_exception_classes() {
@@ -237,9 +238,15 @@ mod errno_tests {
             (32, "BrokenPipeError", "Broken pipe"),
             (5, "OSError", "Input/output error"),
         ] {
+            let error = io::Error::from_raw_os_error(errno);
+            let system = error.to_string();
+            let system = system
+                .strip_suffix(&format!(" (os error {errno})"))
+                .expect("an OS error's text");
+            assert!(!cfg!(target_env = "gnu") || system == text, "{system}");
             assert_eq!(
-                stream_error(&io::Error::from_raw_os_error(errno)),
-                (class, format!("[Errno {errno}] {text}"))
+                stream_error(&error),
+                (class, format!("[Errno {errno}] {system}"))
             );
         }
     }

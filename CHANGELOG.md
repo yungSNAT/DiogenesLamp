@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- On Linux musl builds, OSError messages now carry musl's own errno text (for example `[Errno 5] I/O error`), as Python built against musl prints, instead of glibc's wording.
 - `sources.toml` now supports `preferred = true` on seller and shop entries (prioritising preferred sellers in cross-seller duplicate clusters, default viewer sort, seller headers and a **Preferred** filter toggle) and `[blocklist]` `skip_sellers` (refusing blocked sellers during `lamp import` and `lamp scrape` with explicit reporting).
 - The local viewer adds 1-click material filter chips below the filter bar, reusing the existing garment and material gloss dictionary and staying in sync with the Material dropdown.
 
