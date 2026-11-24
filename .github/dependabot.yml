@@ -24,7 +24,9 @@ updates:
       - dependency-name: ryanduguid/release-policy/.github/workflows/attribution-policy.yml
       - dependency-name: ryanduguid/release-policy/.github/workflows/release-binary.yml
   - package-ecosystem: cargo
-    directory: /
+    directories:
+      - /
+      - /tools/commit-msg
     schedule:
       interval: weekly
     cooldown:

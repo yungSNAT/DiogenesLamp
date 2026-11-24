@@ -11,6 +11,13 @@ Propose changes as a pull request against `main`. A change lands on `main` only
 when the `test (ubuntu-latest)` and `test (windows-latest)` checks from
 [ci.yml](.github/workflows/ci.yml) pass. The `No AI attribution` check fails a
 pull request whose title, commit trailers or identities credit an AI tool.
+To catch one before it is pushed, install the local `commit-msg` hook once per
+clone from an up-to-date `main`; the commands are in the header of
+[.githooks/commit-msg](.githooks/commit-msg). The hook runs only the guard
+binary built from `tools/commit-msg` and installed beside it in your hooks
+folder, never code from the checked-out branch, so rerun the install after a
+change to either lands on `main`. A hook installed without its guard refuses
+every commit with a message naming the install.
 
 Run what CI runs before opening one. The tests need node: they run the viewer
 suite and check the scraper's duplicate, URL and age rules against the
@@ -23,6 +30,7 @@ cargo fmt --check
 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
 cargo build --locked --release
+cargo test --locked --manifest-path tools/commit-msg/Cargo.toml
 ```
 
 New functionality and bug fixes come with automated tests in `tests/`, run by
