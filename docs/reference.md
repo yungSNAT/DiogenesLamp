@@ -9,6 +9,18 @@ To leave a seller out of scrapes - a catalogue too large to be worth the
 hours, say - add `skip = true` to its entry. Commenting it out would not
 last, since `lamp import` rewrites the file from your dump.
 
+Add `preferred = true` to a seller entry to prioritise it: preferred sellers
+win cross-seller duplicate clusters, appear first in the viewer's default sort
+and seller dropdown, carry a `PREF` badge on cards and previews, and can be
+isolated with the **Preferred** filter toggle.
+
+To refuse known-bad sellers cleanly during `lamp import` and `lamp scrape`,
+list their IDs, `yupoo:<id>` keys or URLs under `[blocklist]` in
+`sources.toml`:
+
+    [blocklist]
+    skip_sellers = ["knownbad", "yupoo:scamseller"]
+
 ## Scrape
 
 Big catalogues are mostly stale stock. Skipping listings older than 6
@@ -215,7 +227,9 @@ unmeasured; the seller's own category filter is unchanged.
 
 **Colour**, **Fit** and **Material**, also read from titles and
 experimental, keep albums whose title names a word such as black, loose or
-cotton, in English as a whole word or in Chinese. An English title is read
+cotton, in English as a whole word or in Chinese. The viewer also surfaces
+1-click **material filter chips** directly below the filter bar, built from the
+same material dictionary and synced with the Material dropdown. An English title is read
 as written, so a brand spelt with a space, such as Off White or Old Navy,
 counts as its colour; down counts only in Chinese, because in English it is
 as often a direction. A card whose title has Chinese words from the same

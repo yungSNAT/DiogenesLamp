@@ -274,7 +274,8 @@ function validCatalogueIndex(raw) {
   const sellers = new Set(), indexed = new Set();
   for (const seller of index.sellers) {
     if (!seller || typeof seller.id !== "string" || !/^[a-z0-9_-]+$/.test(seller.id) ||
-        sellers.has(seller.id) || seller.shard !== `catalog/${seller.id}.json`) return false;
+        sellers.has(seller.id) || seller.shard !== `catalog/${seller.id}.json` ||
+        (seller.preferred !== undefined && typeof seller.preferred !== "boolean")) return false;
     sellers.add(seller.id);
     if (seller.album_ids !== undefined) {
       if (!Array.isArray(seller.album_ids) || seller.album_ids.some(

@@ -25,9 +25,10 @@ export type ViewerAlbum = Omit<CatalogueAlbum, 'links'> & {
 export type ListingCopy = Pick<ViewerAlbum, 'id' | 'seller' | 'price' | 'date_published' | 'first_seen'
   | 'gone_since' | 'album_url'>;
 export type Seller = {id: string; name: string; album_count: number; shard: string;
+  preferred?: boolean;
   album_ids?: string[];
   run?: {last_success?: string; failed_ids?: string[]}};
-export type Shop = {name: string; url: string; platform: string};
+export type Shop = {name: string; url: string; platform: string; preferred?: boolean};
 export type CatalogueIndex = {schema_version?: 1; generated_at: string; sellers: Seller[]; shops: Shop[];
   selection_version?: 1;
   album_aliases?: Record<string, string>};
@@ -39,6 +40,7 @@ export type ViewerState = {
   filtered: ViewerAlbum[];
   favorites: Set<string>;
   shortlist: ShortlistMap;
+  preferredSellers: Set<string>;
   collections: Map<string, string>;
   tags: Map<string, string[]>;
   reviews: Map<string, number>;
@@ -69,7 +71,8 @@ export interface ViewerElements {
   'kind-filter': HTMLSelectElement; 'colour-filter': HTMLSelectElement; 'fit-filter': HTMLSelectElement;
   'material-filter': HTMLSelectElement; 'description-coverage': HTMLElement;
   search: HTMLInputElement; 'seller-filter': HTMLSelectElement; 'category-filter': HTMLSelectElement;
-  'new-only': HTMLInputElement; 'favs-only': HTMLInputElement; 'shortlist-only': HTMLInputElement; 'hide-dups': HTMLInputElement;
+  'new-only': HTMLInputElement; 'favs-only': HTMLInputElement; 'shortlist-only': HTMLInputElement;
+  'preferred-only': HTMLInputElement; 'material-chips': HTMLDivElement; 'hide-dups': HTMLInputElement;
   'age-filter': HTMLSelectElement; 'sort-filter': HTMLSelectElement;
   'export-favs': HTMLButtonElement; 'group-clear': HTMLButtonElement; 'filters-clear': HTMLButtonElement;
   status: HTMLElement; grid: HTMLDivElement; 'grid-spacer': HTMLDivElement;

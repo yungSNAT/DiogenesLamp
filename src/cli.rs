@@ -10,8 +10,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
 
+use crate::blocklist::{
+    SourcesConfig, filter_blocked_sources, load_sources_config, merge_sources_with_blocklist,
+    write_sources_config,
+};
 use crate::errors::Error;
-use crate::ingest::{load_sources, merge_sources, parse_dump, write_sources};
+use crate::ingest::parse_dump;
 use crate::out;
 use crate::pyerr;
 use crate::pyjson::{self, Style};
@@ -334,9 +338,14 @@ fn cmd_import(args: &Args) -> i32 {
         }
     };
     let raws = parse_dump(&text);
-    let result = load_sources(&sources_path).and_then(|existing| {
-        let (merged, report) = merge_sources(&existing, &raws);
-        write_sources(&sources_path, &merged)?;
+    let result = load_sources_config(&sources_path).and_then(|existing| {
+        let (merged, report) =
+            merge_sources_with_blocklist(&existing.sources, &raws, &existing.blocklist);
+        let updated = SourcesConfig {
+            sources: merged,
+            blocklist: existing.blocklist,
+        };
+        write_sources_config(&sources_path, &updated)?;
         Ok(report)
     });
     let report = match result {
@@ -353,8 +362,20 @@ fn cmd_import(args: &Args) -> i32 {
         let detail: Vec<String> = items.iter().map(|(k, v)| format!("{k} {v}")).collect();
         platforms = format!(" ({})", detail.join(", "));
     }
+    let blocked_line = if report.blocked.is_empty() {
+        String::new()
+    } else {
+        let mut names: Vec<&str> = report.blocked.iter().map(|(k, _)| k.as_str()).collect();
+        names.sort_unstable();
+        names.dedup();
+        format!(
+            "\nblocked: {} refused ({})",
+            report.blocked.len(),
+            names.join(", ")
+        )
+    };
     out::out(&format!(
-        "{} rows read, {} invalid\nyupoo sellers: {} new, {} known\nshops: {} new, {} known{platforms}\nwrote {}",
+        "{} rows read, {} invalid\nyupoo sellers: {} new, {} known\nshops: {} new, {} known{platforms}{blocked_line}\nwrote {}",
         report.rows,
         report.invalid,
         report.yupoo_new,
@@ -443,18 +464,32 @@ pub fn report_line(s: &SellerSummary, reported: usize, total: usize, dry_run: bo
 }
 
 fn cmd_scrape(args: &Args) -> i32 {
-    let sources = match load_sources(&args.path("sources")) {
-        Ok(sources) => sources,
+    let config = match load_sources_config(&args.path("sources")) {
+        Ok(config) => config,
         Err(e) => {
             out::err(&format!("error: {e}"));
             return 1;
         }
     };
-    if !sources.values().any(|s| s.kind == "yupoo") {
-        out::err("error: no sources - run 'lamp import' first");
+    let seller = args.str("seller");
+    if !seller.is_empty() && config.blocklist.matches_yupoo_id(&seller) {
+        out::err(&format!(
+            "error: seller {seller} is blocked by [blocklist] skip_sellers"
+        ));
         return 1;
     }
-    let seller = args.str("seller");
+    let (sources, blocked) = filter_blocked_sources(&config.sources, &config.blocklist);
+    if !sources.values().any(|s| s.kind == "yupoo") {
+        if !blocked.is_empty() {
+            out::err(&format!(
+                "error: all configured yupoo sellers are blocked ({})",
+                blocked.join(", ")
+            ));
+        } else {
+            out::err("error: no sources - run 'lamp import' first");
+        }
+        return 1;
+    }
     let only: Option<HashSet<String>> = if seller.is_empty() {
         None
     } else {
@@ -534,11 +569,18 @@ fn cmd_scrape(args: &Args) -> i32 {
         .map(|s| s.id.as_str())
         .collect();
     skipped.sort();
-    let tail = if skipped.is_empty() {
+    let mut tail = if skipped.is_empty() {
         String::new()
     } else {
         format!(", {} skipped ({})", skipped.len(), skipped.join(", "))
     };
+    if !blocked.is_empty() {
+        tail.push_str(&format!(
+            ", {} blocked ({})",
+            blocked.len(),
+            blocked.join(", ")
+        ));
+    }
     let dry_tag = if dry_run {
         " [DRY RUN - no files written]"
     } else {

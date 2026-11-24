@@ -3,7 +3,7 @@
 
 //! Select the newest listing using the viewer's duplicate identities.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use indexmap::IndexMap;
 use unicode_normalization::UnicodeNormalization;
@@ -113,7 +113,11 @@ fn id_order(id: &str) -> (usize, String) {
     (trimmed.len(), trimmed.to_string())
 }
 
-fn rank(album: &Map) -> (Date, (usize, String)) {
+fn rank(album: &Map, preferred: &HashSet<String>) -> (bool, Date, (usize, String)) {
+    let is_preferred = album
+        .get("seller")
+        .and_then(Value::as_str)
+        .is_some_and(|seller| preferred.contains(seller));
     let id = album.get("id").and_then(Value::as_str).unwrap_or("0");
     let known = match album.get("date_published") {
         Some(Value::Str(s)) => s.as_str(),
@@ -129,15 +133,24 @@ fn rank(album: &Map) -> (Date, (usize, String)) {
             }
         });
     if shaped && let Some(date) = isodate::parse_date(prefix) {
-        return (date, id_order(id));
+        return (is_preferred, date, id_order(id));
     }
     let numeric: u128 = id.parse().unwrap_or(u128::MAX);
-    (estimate_published(numeric), id_order(id))
+    (is_preferred, estimate_published(numeric), id_order(id))
 }
 
 /// Canonical records and older-ID aliases, without changing captures. A
 /// title used over twice by one seller is a category label, as in dedup.js.
 pub fn newest_listings(albums: &[Map]) -> (Vec<Map>, Vec<(String, String)>) {
+    newest_listings_with_preferred(albums, &HashSet::new())
+}
+
+/// Canonical records and older-ID aliases, favouring preferred sellers in
+/// cross-seller duplicate clusters before falling back to newest posting.
+pub fn newest_listings_with_preferred(
+    albums: &[Map],
+    preferred: &HashSet<String>,
+) -> (Vec<Map>, Vec<(String, String)>) {
     let albums: Vec<&Map> = albums.iter().filter(|a| canonical_album(a)).collect();
     let keys: Vec<Option<String>> = albums.iter().map(|a| duplicate_key(a)).collect();
     let mut counts: HashMap<&str, usize> = HashMap::new();
@@ -153,7 +166,8 @@ pub fn newest_listings(albums: &[Map]) -> (Vec<Map>, Vec<(String, String)>) {
             continue;
         }
         match winners.get(key.as_str()) {
-            Some(&current) if rank(albums[index]) <= rank(albums[current]) => {}
+            Some(&current)
+                if rank(albums[index], preferred) <= rank(albums[current], preferred) => {}
             _ => {
                 winners.insert(key, index);
             }

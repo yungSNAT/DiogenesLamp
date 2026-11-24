@@ -5,7 +5,7 @@
 
 /**
  * @typedef {{url?: unknown, platform?: string} | null | undefined} PurchaseLink
- * @typedef {{links: PurchaseLink[], updated_at?: string | null, dup_key?: string | null}} DuplicateAlbum
+ * @typedef {{links: PurchaseLink[], seller?: string, updated_at?: string | null, dup_key?: string | null}} DuplicateAlbum
  */
 
 // Duplicate-posting detection. Pure functions only - no DOM access - so the
@@ -153,8 +153,12 @@ function dupKey(album) {
 /**
  * @param {DuplicateAlbum} a
  * @param {DuplicateAlbum} b
+ * @param {ReadonlySet<string>} [preferredSellers]
  */
-function better(a, b) {
+function better(a, b, preferredSellers) {
+  const aPref = Boolean(preferredSellers && a.seller && preferredSellers.has(a.seller));
+  const bPref = Boolean(preferredSellers && b.seller && preferredSellers.has(b.seller));
+  if (aPref !== bPref) return aPref;
   if (a.links.length !== b.links.length) return a.links.length > b.links.length;
   const ta = Date.parse(a.updated_at || "");
   const tb = Date.parse(b.updated_at || "");
@@ -226,9 +230,10 @@ function registerTitleKeys(albums, counts, banned) {
  * @template {DuplicateAlbum} T
  * @param {T[]} list
  * @param {Set<string>} [banned]
+ * @param {ReadonlySet<string>} [preferredSellers]
  * @returns {{out: T[], counts: Map<string, number>}}
  */
-function collapseDups(list, banned = bannedTitleKeys(list)) {
+function collapseDups(list, banned = bannedTitleKeys(list), preferredSellers = undefined) {
   /** @type {T[]} */
   const out = [];
   /** @type {Map<string, number>} */
@@ -245,7 +250,7 @@ function collapseDups(list, banned = bannedTitleKeys(list)) {
       out.push(album);
     } else {
       counts.set(key, /** @type {number} */ (counts.get(key)) + 1);
-      if (better(album, out[idx])) out[idx] = album;
+      if (better(album, out[idx], preferredSellers)) out[idx] = album;
     }
   }
   return { out, counts };
@@ -256,8 +261,9 @@ function collapseDups(list, banned = bannedTitleKeys(list)) {
  * @template {DuplicateAlbum & {id: string, published_ms?: number, date_published?: string,
  * gone_since?: string}} T
  * @param {T[]} list
+ * @param {ReadonlySet<string>} [preferredSellers]
  */
-function newestListings(list) {
+function newestListings(list, preferredSellers = undefined) {
   const banned = bannedTitleKeys(list);
   /** @type {Map<string, T>} */
   const winners = new Map();
@@ -279,6 +285,12 @@ function newestListings(list) {
     const current = winners.get(key);
     if (!current) {
       winners.set(key, album);
+      continue;
+    }
+    const albumPref = Boolean(preferredSellers && album.seller && preferredSellers.has(album.seller));
+    const currentPref = Boolean(preferredSellers && current.seller && preferredSellers.has(current.seller));
+    if (albumPref !== currentPref) {
+      if (albumPref) winners.set(key, album);
       continue;
     }
     const albumPosted = posted(album), currentPosted = posted(current);

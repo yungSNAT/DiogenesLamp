@@ -19,6 +19,7 @@ const state = {
   filtered: [],
   favorites: userStore.favorites(),
   shortlist: readShortlist(window),
+  preferredSellers: new Set(),
   collections: userStore.section("collection"),
   tags: userStore.section("tags"),
   reviews: userStore.section("review"),
@@ -60,6 +61,8 @@ const els = {
   newOnly: document.getElementById("new-only"),
   favsOnly: document.getElementById("favs-only"),
   shortlistOnly: document.getElementById("shortlist-only"),
+  preferredOnly: document.getElementById("preferred-only"),
+  materialChips: document.getElementById("material-chips"),
   hideDups: document.getElementById("hide-dups"),
   age: document.getElementById("age-filter"),
   sort: document.getElementById("sort-filter"),
@@ -96,6 +99,7 @@ function currentFilters() {
     newOnly: els.newOnly.checked,
     favsOnly: els.favsOnly.checked,
     shortlistOnly: els.shortlistOnly.checked,
+    preferredOnly: els.preferredOnly.checked,
     hideDups: els.hideDups.checked,
     priceMin: els.priceMin.value,
     priceMax: els.priceMax.value,
@@ -133,6 +137,7 @@ function applyStoredFilters() {
   els.newOnly.checked = storedFilters.newOnly;
   els.favsOnly.checked = storedFilters.favsOnly;
   els.shortlistOnly.checked = storedFilters.shortlistOnly;
+  els.preferredOnly.checked = storedFilters.preferredOnly;
   els.hideDups.checked = storedFilters.hideDups;
   els.priceMin.value = storedFilters.priceMin;
   els.priceMax.value = storedFilters.priceMax;
@@ -153,8 +158,51 @@ els.kind.add(new Option("Unsorted: no kind found in the title", UNSORTED));
 for (const word of WORDS) {
   if (word.facet !== "garment") els[word.facet].add(new Option(word.en[0].toUpperCase() + word.en.slice(1), word.en));
 }
+const MATERIAL_CHIPS = materialChipList(WORDS);
+const MATERIAL_CHIP_IDS = MATERIAL_CHIPS.map((chip) => chip.id);
+/** @type {Map<string, HTMLButtonElement>} */
+const materialChipButtons = new Map();
+function initMaterialChips() {
+  els.materialChips.replaceChildren();
+  for (const chip of MATERIAL_CHIPS) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "filter-chip";
+    btn.dataset.material = chip.id;
+    btn.setAttribute("aria-pressed", "false");
+    const label = document.createElement("span");
+    label.className = "chip-label";
+    label.textContent = chip.label;
+    const count = document.createElement("span");
+    count.className = "chip-count fig";
+    count.hidden = true;
+    btn.append(label, count);
+    btn.addEventListener("click", () => {
+      els.material.value = toggleMaterialFilter(els.material.value, chip.id);
+      userFilterChange();
+    });
+    materialChipButtons.set(chip.id, btn);
+    els.materialChips.appendChild(btn);
+  }
+}
+function syncMaterialChips() {
+  const active = state.view.filters.material;
+  const counts = countMaterials(state.albums, MATERIAL_CHIP_IDS);
+  for (const chip of MATERIAL_CHIPS) {
+    const btn = materialChipButtons.get(chip.id);
+    if (!btn) continue;
+    const pressed = active === chip.id;
+    btn.setAttribute("aria-pressed", String(pressed));
+    const countEl = /** @type {HTMLElement} */ (btn.querySelector(".chip-count"));
+    const n = counts.get(chip.id) || 0;
+    countEl.textContent = n > 0 ? n.toLocaleString() : "";
+    countEl.hidden = n === 0;
+  }
+}
+initMaterialChips();
 applyStoredFilters();
 state.view = createViewState(storedFilters, currentFilters());
+syncMaterialChips();
 
 // A figure in the tally, held at the width its largest value will need. The
 // counts climb the whole time the catalogue streams in, and a number that
@@ -326,10 +374,11 @@ async function loadAll() {
   state.albumAliases = {};
   refreshSavedState(false);
   state.generatedAt = index.generated_at;
-  for (const seller of index.sellers) {
+  state.preferredSellers = preferredSellerSet(index.sellers);
+  for (const seller of sortSellersForFilter(index.sellers)) {
     const opt = document.createElement("option");
     opt.value = seller.id;
-    opt.textContent = `${seller.name} (${seller.album_count})`;
+    opt.textContent = sellerOptionLabel(seller);
     els.seller.appendChild(opt);
   }
   renderShops(index.shops);
@@ -408,7 +457,7 @@ async function shardWorker() {
 function rebuildAlbums() {
   const loaded = /** @type {import("./controller-types.js").CatalogueIndex} */ (state.index)
     .sellers.flatMap(seller => state.shardAlbums.get(seller.id) || []);
-  const selected = newestListings(loaded);
+  const selected = newestListings(loaded, state.preferredSellers);
   state.albums = selected.albums;
   state.albumAliases = inheritableAliases(state.index || {}, state.albums, selected.aliases,
     state.loadedSellers === state.index?.sellers.length && !state.failedShards?.length);
@@ -540,6 +589,7 @@ function applyFilters() {
       `${sellers} ${sellers === 1 ? "seller" : "sellers"}`
     );
   }
+  syncMaterialChips();
   setStatus();
   // Reuse the existing card window during streaming catalogue refreshes.
   renderGrid();
@@ -674,6 +724,8 @@ function makeCard(album) {
   card.className = "card";
   const isNew = album.is_new;
   if (isNew) card.classList.add("is-new");
+  const isPreferred = state.preferredSellers.has(album.seller);
+  if (isPreferred) card.classList.add("is-preferred");
   const isFav = state.favorites.has(album.id);
   const isShortlisted = state.shortlist.has(album.id);
   // Everything interpolated below reaches us from scraped remote HTML. The
@@ -739,7 +791,7 @@ function makeCard(album) {
     `<span${album.gloss?.length ? ` data-gloss="${escapeAttr(album.gloss.slice(0, CARD_GLOSS_WORDS).join(" · "))}"` : ""}>` +
     `</span></button>` +
     `<div class="card-meta">` +
-    `<span class="seller-tag">${escapeHtml(album.seller)}</span>` +
+    `<span class="seller-tag">${escapeHtml(album.seller)}${isPreferred ? ` <span class="badge-preferred" title="Preferred seller">PREF</span>` : ""}</span>` +
     `<span class="card-links">${links}</span>` +
     `<button class="shortlist-btn" type="button" aria-pressed="${isShortlisted}" ` +
     `aria-label="${shortlistLabel(isShortlisted)}" title="${shortlistLabel(isShortlisted)}"></button>` +
@@ -1220,6 +1272,13 @@ function renderShops(shops) {
       link.target = "_blank";
       link.rel = "noreferrer";
       link.textContent = shop.name;
+      if (shop.preferred) {
+        const badge = document.createElement("span");
+        badge.className = "badge-preferred";
+        badge.title = "Preferred shop";
+        badge.textContent = "PREF";
+        link.append(" ", badge);
+      }
       els.shopsPanel.appendChild(link);
     }
   }
@@ -1259,7 +1318,7 @@ function clearFilters() {
   state.view = nextViewState(state.view, { type: "clear-filters" });
   const filters = state.view.filters;
   for (const key of /** @type {const} */ (["search", "seller", "category", "age", "sort", "priceMin", "priceMax", "collection", "tag", "kind", "colour", "fit", "material"])) els[key].value = filters[key];
-  for (const key of /** @type {const} */ (["newOnly", "favsOnly", "shortlistOnly", "hideDups", "includeUnknown", "unreviewed", "changed"])) els[key].checked = filters[key];
+  for (const key of /** @type {const} */ (["newOnly", "favsOnly", "shortlistOnly", "preferredOnly", "hideDups", "includeUnknown", "unreviewed", "changed"])) els[key].checked = filters[key];
   writeFilters(window, filters);
   saveFilterURL();
   setCursor(state.view.cursor);
@@ -1275,7 +1334,7 @@ els.search.addEventListener("input", () => {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(userFilterChange, 150);
 });
-for (const el of [els.seller, els.category, els.newOnly, els.favsOnly, els.shortlistOnly,
+for (const el of [els.seller, els.category, els.newOnly, els.favsOnly, els.shortlistOnly, els.preferredOnly,
                   els.hideDups, els.age, els.sort, els.priceMin, els.priceMax, els.includeUnknown,
                   els.collection, els.tag, els.unreviewed, els.changed, els.kind, els.colour, els.fit,
                   els.material]) {
