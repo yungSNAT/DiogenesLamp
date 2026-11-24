@@ -340,7 +340,8 @@ function showListingCopies(album) {
     : Number(priced(b)) - Number(priced(a)));
   for (const listing of listings.hidden ? [] : ordered) {
     const item = document.createElement("li");
-    item.textContent = `${listing.seller} · ${priced(listing) ? `CNY ${listing.price}` : "Price unknown"} · ` +
+    const prefCopy = state.preferredSellers?.has(listing.seller) ? " (preferred)" : "";
+    item.textContent = `${listing.seller}${prefCopy} · ${priced(listing) ? `CNY ${listing.price}` : "Price unknown"} · ` +
       (listing.date_published ? `posted ${localDate(listing.date_published)}` : `first seen ${localDate(listing.first_seen)}`) +
       (listing.gone_since ? " · no longer listed" : "") + (listing === album ? " · shown here " : " ");
     addLink(item, "Original album", listing.album_url);
@@ -357,7 +358,8 @@ function showPreview(album = resolvePreview(previewIds[previewAt])) {
   workEl("preview-position").textContent = `${previewAt + 1} of ${previewIds.length}`;
   workEl("preview-prev").disabled = previewAt === 0;
   workEl("preview-next").disabled = previewAt + 1 === previewIds.length;
-  workEl("preview-facts").textContent = `${album.seller} · Album ${album.id} · ${album.category || "No category"}` +
+  const prefNote = state.preferredSellers?.has(album.seller) ? " (preferred)" : "";
+  workEl("preview-facts").textContent = `${album.seller}${prefNote} · Album ${album.id} · ${album.category || "No category"}` +
     ` · Kind: ${album.kind || UNSORTED} (read from the title, experimental)` +
     (album.gloss?.length ? `\nTitle words (experimental): ${album.gloss.join(", ")}` : "") +
     `\nFirst seen: ${localDate(album.first_seen)}\nListed: ${localDate(album.last_seen)}\nDetails checked: ${localDate(album.updated_at)}` +
@@ -734,7 +736,9 @@ function buildShortlistRowMeta(record) {
       : formatPrice(record.price_cny))
     : "Price unknown";
   const metaText = document.createElement("span");
-  metaText.textContent = `${record.seller || "Seller not loaded"} · ${priceText}`;
+  const prefShortlist = record.seller && state.preferredSellers?.has(record.seller) ? " (preferred)" : "";
+  const sellerLabel = record.seller ? `${record.seller}${prefShortlist}` : "Seller not loaded";
+  metaText.textContent = `${sellerLabel} · ${priceText}`;
   meta.appendChild(metaText);
   if (record.album_url) addLink(meta, "Yupoo album", record.album_url);
   if (record.agent_url) addLink(meta, "Shopping agent", record.agent_url);

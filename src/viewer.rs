@@ -10,6 +10,7 @@ pub static FILES: &[(&str, &[u8])] = &[
     ("anchor.js", include_bytes!("../viewer/anchor.js")),
     ("app.js", include_bytes!("../viewer/app.js")),
     ("catalogue.js", include_bytes!("../viewer/catalogue.js")),
+    ("chips.js", include_bytes!("../viewer/chips.js")),
     ("dedup.js", include_bytes!("../viewer/dedup.js")),
     ("discovery.js", include_bytes!("../viewer/discovery.js")),
     ("filters.js", include_bytes!("../viewer/filters.js")),

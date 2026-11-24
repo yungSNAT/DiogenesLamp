@@ -259,6 +259,32 @@ button:hover { border-color: var(--ink); }
   background: var(--ink-red); color: var(--on-red);
 }
 
+.chip-bar {
+  display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  padding: 5px 14px 7px; border-top: 1px solid var(--rule);
+}
+.filter-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 8px; min-height: 24px;
+  font-size: var(--t-mark); line-height: 1.4;
+  font-family: ui-monospace, "Cascadia Mono", "Segoe UI Mono", Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2); background: transparent;
+  border: 1px solid var(--rule-strong); border-radius: 0;
+}
+.filter-chip:hover { color: var(--ink); border-color: var(--ink); }
+.filter-chip[aria-pressed="true"] {
+  background: var(--ink-red); border-color: var(--ink-red);
+  color: var(--on-red); font-weight: 600;
+}
+.filter-chip .chip-count { opacity: 0.85; }
+.badge-preferred {
+  display: inline-block; margin-left: 4px; padding: 0 4px;
+  font-size: var(--t-mark); line-height: 1.3; font-weight: 600;
+  color: var(--ink-red); border: 1px solid var(--ink-red);
+  font-family: ui-monospace, "Cascadia Mono", "Segoe UI Mono", Menlo, monospace;
+  vertical-align: baseline;
+}
 /* The load rule fills left to right. Transformed rather than resized: a width
    transition relayouts the header on every shard that lands. */
 #load-progress { height: 2px; background: var(--rule); }
@@ -641,6 +667,7 @@ button:hover { border-color: var(--ink); }
   :root { --card-w: 158px; --card-h: 202px; --cover-h: 152px; --gap: 8px; }
   :root.group-view { --card-w: 300px; --card-h: 300px; --cover-h: 220px; --gap: 8px; }
   .band, .rules { padding: 7px 10px; }
+  .chip-bar { padding: 5px 10px 7px; }
   #status { order: 3; margin-left: 0; width: 100%; text-align: left; }
   /* The mark carries the button on a phone; the name stays on the element,
      so nothing that reads the page loses it. */

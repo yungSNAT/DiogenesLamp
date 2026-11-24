@@ -1080,24 +1080,32 @@ pub fn write_scrape_index(
         }
         // write_index loads each shard and replaces this count when it can
         // read the shard; an unreadable or missing shard keeps 0.
-        seller_meta.push(crate::obj! {
+        let mut meta = crate::obj! {
             "id" => source.id.as_str(),
             "name" => source.name.clone(),
             "url" => source.url.clone(),
             "album_count" => 0usize,
             "shard" => format!("catalog/{}.json", source.id),
             "run" => Value::Object(read_run(data_dir, &source.id)?),
-        });
+        };
+        if source.preferred {
+            meta.insert("preferred".into(), true.into());
+        }
+        seller_meta.push(meta);
     }
     let shop_meta: Vec<Value> = shops
         .iter()
         .map(|s| {
-            Value::Object(crate::obj! {
+            let mut meta = crate::obj! {
                 "id" => s.id.as_str(),
                 "platform" => s.platform.clone(),
                 "name" => s.name.clone(),
                 "url" => s.url.clone(),
-            })
+            };
+            if s.preferred {
+                meta.insert("preferred".into(), true.into());
+            }
+            Value::Object(meta)
         })
         .collect();
     write_index(

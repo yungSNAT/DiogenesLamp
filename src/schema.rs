@@ -282,11 +282,12 @@ pub fn validate_metadata(value_in: &Value, relative: &str) -> Result<()> {
             let Some(s) = seller.as_object() else {
                 return value("invalid seller ID");
             };
-            let Some(Value::Str(id)) = get(s, "id") else {
+            let Some(Value::Str(id)) = get(s, "id").filter(|v| v.as_str().is_some_and(seller_id))
+            else {
                 return value("invalid seller ID");
             };
-            if !seller_id(id) {
-                return value("invalid seller ID");
+            if get(s, "preferred").is_some_and(|v| !matches!(v, Value::Bool(_))) {
+                return value("invalid seller preferred flag");
             }
             let shard_ok = matches!(get(s, "shard"), Some(Value::Str(p)) if *p == format!("catalog/{id}.json"));
             if seen.contains(&id.as_str()) || !shard_ok {

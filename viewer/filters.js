@@ -5,12 +5,13 @@
 
 /**
  * @typedef {{search: string, seller: string, category: string, age: string,
- *   sort: string, newOnly: boolean, favsOnly: boolean, shortlistOnly: boolean, hideDups: boolean, priceMin: string,
+ *   sort: string, newOnly: boolean, favsOnly: boolean, shortlistOnly: boolean,
+ *   preferredOnly: boolean, hideDups: boolean, priceMin: string,
  * priceMax: string, includeUnknown: boolean, collection: string, tag: string,
  * unreviewed: boolean, changed: boolean, kind: string, colour: string, fit: string,
  * material: string}} Filters
  * @typedef {{localStorage: Pick<Storage, "getItem" | "setItem">}} StorageHost
- * @typedef {{id: string, price?: number | null, photo_count?: number,
+ * @typedef {{id: string, seller?: string, price?: number | null, photo_count?: number,
  *   published_ms?: number}} SortableAlbum
  */
 
@@ -34,6 +35,7 @@ const FILTER_DEFAULTS = {
   newOnly: false,
   favsOnly: false,
   shortlistOnly: false,
+  preferredOnly: false,
   hideDups: false,
   priceMin: "",
   priceMax: "",
@@ -195,23 +197,27 @@ function matchSearch(query) {
  * @template {SortableAlbum} T
  * @param {T[]} albums
  * @param {string} sortOrder
+ * @param {ReadonlySet<string>} [preferredSellers]
  * @returns {T[]}
  */
-function sortAlbums(albums, sortOrder) {
+function sortAlbums(albums, sortOrder, preferredSellers) {
+  /** @param {T} album */
+  const pref = album => (preferredSellers && album.seller && preferredSellers.has(album.seller) ? 1 : 0);
   if (sortOrder !== "price-asc" && sortOrder !== "price-desc" && sortOrder !== "photos-desc") {
     // Prepare numeric keys once; sorting compares each album many times.
     const keyed = albums.map(album => ({album,
+      preferred: pref(album),
       published: album.published_ms || 0, id: Number(album.id) || 0}));
-    keyed.sort((a, b) => (b.published - a.published) || (b.id - a.id));
+    keyed.sort((a, b) => (b.preferred - a.preferred) || (b.published - a.published) || (b.id - a.id));
     return keyed.map(entry => entry.album);
   }
   const out = albums.slice();
   if (sortOrder === "price-asc") {
-    out.sort((a, b) => (a.price || Infinity) - (b.price || Infinity));
+    out.sort((a, b) => ((a.price || Infinity) - (b.price || Infinity)) || (pref(b) - pref(a)));
   } else if (sortOrder === "price-desc") {
-    out.sort((a, b) => (b.price || 0) - (a.price || 0));
+    out.sort((a, b) => ((b.price || 0) - (a.price || 0)) || (pref(b) - pref(a)));
   } else if (sortOrder === "photos-desc") {
-    out.sort((a, b) => (b.photo_count || 0) - (a.photo_count || 0));
+    out.sort((a, b) => ((b.photo_count || 0) - (a.photo_count || 0)) || (pref(b) - pref(a)));
   }
   return out;
 }

@@ -12,6 +12,7 @@
 [yupoo.exampleseller]
 url = "https://exampleseller.x.yupoo.com"
 name = "exampleseller"
+preferred = true
 
 # A catalogue too large to be worth the hours, or one you no longer buy from:
 [yupoo.skippedseller]
@@ -23,3 +24,7 @@ skip = true
 platform = "taobao"
 url = "https://shop00000000.taobao.com/"
 name = "shop00000000"
+
+# Sellers listed here are refused during 'lamp import' and skipped during 'lamp scrape':
+[blocklist]
+skip_sellers = ["knownbad"]

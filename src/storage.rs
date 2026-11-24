@@ -11,7 +11,9 @@ use std::time::Duration;
 
 use indexmap::IndexMap;
 
-use crate::dedup::newest_listings;
+use std::collections::HashSet;
+
+use crate::dedup::newest_listings_with_preferred;
 use crate::errors::{Error, Result, value};
 use crate::locking::CatalogueLock;
 use crate::pyerr::{self, Call};
@@ -275,7 +277,12 @@ pub fn write_index(
     if ids.len() != total {
         return value("duplicate album ID across shards");
     }
-    let (selected, aliases) = newest_listings(&captures);
+    let preferred: HashSet<String> = sellers
+        .iter()
+        .filter(|s| truthy(s, "preferred"))
+        .map(seller_id_of)
+        .collect();
+    let (selected, aliases) = newest_listings_with_preferred(&captures, &preferred);
     let mut by_seller: std::collections::HashMap<String, Vec<&Map>> =
         std::collections::HashMap::new();
     for album in &selected {
