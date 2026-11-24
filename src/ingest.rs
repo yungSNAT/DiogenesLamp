@@ -288,7 +288,7 @@ pub(crate) fn toml_value(value: &Value) -> String {
     pyjson::dumps(value, pyjson::Style::Default).replace('\u{7f}', "\\u007f")
 }
 
-fn safe_id(id: &str) -> bool {
+pub(crate) fn safe_id(id: &str) -> bool {
     !id.is_empty()
         && id
             .bytes()
@@ -351,7 +351,9 @@ pub(crate) fn write_sources_text(path: &Path, lines: &[String]) -> Result<()> {
 }
 
 pub fn write_sources(path: &Path, sources: &Sources) -> Result<()> {
-    let lines = format_sources_lines(sources)?;
+    let blocklist = crate::blocklist::load_blocklist(path)?;
+    let mut lines = format_sources_lines(sources)?;
+    blocklist.append_toml_lines(&mut lines);
     write_sources_text(path, &lines)
 }
 
@@ -389,11 +391,18 @@ pub(crate) fn parse_sources_table(path: &Path, data: &toml::Table) -> Result<Sou
             Some(_) => value(format!("[{name}] must be a table")),
         }
     };
-    let flag = |entry: &toml::Table, key: &str| {
+    let skip_flag = |entry: &toml::Table| {
         entry
-            .get(key)
+            .get("skip")
             .map(toml_to_value)
             .is_some_and(|v| v.truthy())
+    };
+    let preferred_flag = |section: &str, id: &str, entry: &toml::Table| -> Result<bool> {
+        match entry.get("preferred") {
+            None => Ok(false),
+            Some(toml::Value::Boolean(b)) => Ok(*b),
+            Some(_) => value(format!("[{section}.{id}].preferred must be a boolean")),
+        }
     };
     for (seller_id, entry) in section("yupoo")? {
         // Catalogue and run files are named after the seller, so the id must pass the
@@ -426,8 +435,8 @@ pub(crate) fn parse_sources_table(path: &Path, data: &toml::Table) -> Result<Sou
                 platform: "yupoo".into(),
                 url: url.trim_end_matches('/').into(),
                 name,
-                skip: flag(&entry, "skip"),
-                preferred: flag(&entry, "preferred"),
+                skip: skip_flag(&entry),
+                preferred: preferred_flag("yupoo", &seller_id, &entry)?,
             },
         );
     }
@@ -452,8 +461,8 @@ pub(crate) fn parse_sources_table(path: &Path, data: &toml::Table) -> Result<Sou
                     .get("name")
                     .map(toml_to_value)
                     .unwrap_or_else(|| shop_id.as_str().into()),
-                skip: flag(&entry, "skip"),
-                preferred: flag(&entry, "preferred"),
+                skip: skip_flag(&entry),
+                preferred: preferred_flag("shops", &shop_id, &entry)?,
             },
         );
     }

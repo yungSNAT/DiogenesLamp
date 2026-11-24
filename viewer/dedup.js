@@ -5,7 +5,7 @@
 
 /**
  * @typedef {{url?: unknown, platform?: string} | null | undefined} PurchaseLink
- * @typedef {{links: PurchaseLink[], seller?: string, updated_at?: string | null, dup_key?: string | null}} DuplicateAlbum
+ * @typedef {{links: PurchaseLink[], seller?: string, gone_since?: string, updated_at?: string | null, dup_key?: string | null}} DuplicateAlbum
  */
 
 // Duplicate-posting detection. Pure functions only - no DOM access - so the
@@ -154,11 +154,17 @@ function dupKey(album) {
  * @param {DuplicateAlbum} a
  * @param {DuplicateAlbum} b
  * @param {ReadonlySet<string>} [preferredSellers]
+ * @param {boolean} [preferLive]
  */
-function better(a, b, preferredSellers) {
-  const aPref = Boolean(preferredSellers && a.seller && preferredSellers.has(a.seller));
-  const bPref = Boolean(preferredSellers && b.seller && preferredSellers.has(b.seller));
-  if (aPref !== bPref) return aPref;
+function better(a, b, preferredSellers, preferLive = false) {
+  if (preferLive) {
+    const aLive = !a.gone_since;
+    const bLive = !b.gone_since;
+    if (aLive !== bLive) return aLive;
+    const aPref = Boolean(preferredSellers && a.seller && preferredSellers.has(a.seller));
+    const bPref = Boolean(preferredSellers && b.seller && preferredSellers.has(b.seller));
+    if (aPref !== bPref) return aPref;
+  }
   if (a.links.length !== b.links.length) return a.links.length > b.links.length;
   const ta = Date.parse(a.updated_at || "");
   const tb = Date.parse(b.updated_at || "");
@@ -234,6 +240,16 @@ function registerTitleKeys(albums, counts, banned) {
  * @returns {{out: T[], counts: Map<string, number>}}
  */
 function collapseDups(list, banned = bannedTitleKeys(list), preferredSellers = undefined) {
+  /** @type {Set<string>} */
+  const preferredClusters = new Set();
+  if (preferredSellers?.size) {
+    for (const album of list) {
+      const key = album.dup_key;
+      if (key && !banned.has(key) && album.seller && preferredSellers.has(album.seller)) {
+        preferredClusters.add(key);
+      }
+    }
+  }
   /** @type {T[]} */
   const out = [];
   /** @type {Map<string, number>} */
@@ -250,7 +266,7 @@ function collapseDups(list, banned = bannedTitleKeys(list), preferredSellers = u
       out.push(album);
     } else {
       counts.set(key, /** @type {number} */ (counts.get(key)) + 1);
-      if (better(album, out[idx], preferredSellers)) out[idx] = album;
+      if (better(album, out[idx], preferredSellers, preferredClusters.has(key))) out[idx] = album;
     }
   }
   return { out, counts };
@@ -279,6 +295,16 @@ function newestListings(list, preferredSellers = undefined) {
   };
   /** @param {T} album */
   const id = album => /^\d+$/.test(album.id) ? BigInt(album.id) : 0n;
+  /** @type {Set<string>} */
+  const preferredClusters = new Set();
+  if (preferredSellers?.size) {
+    for (const album of list) {
+      const key = album.dup_key;
+      if (key && !banned.has(key) && album.seller && preferredSellers.has(album.seller)) {
+        preferredClusters.add(key);
+      }
+    }
+  }
   for (const album of list) {
     const key = album.dup_key;
     if (!key || banned.has(key)) continue;
@@ -287,11 +313,19 @@ function newestListings(list, preferredSellers = undefined) {
       winners.set(key, album);
       continue;
     }
-    const albumPref = Boolean(preferredSellers && album.seller && preferredSellers.has(album.seller));
-    const currentPref = Boolean(preferredSellers && current.seller && preferredSellers.has(current.seller));
-    if (albumPref !== currentPref) {
-      if (albumPref) winners.set(key, album);
-      continue;
+    if (preferredClusters.has(key)) {
+      const albumLive = !album.gone_since;
+      const currentLive = !current.gone_since;
+      if (albumLive !== currentLive) {
+        if (albumLive) winners.set(key, album);
+        continue;
+      }
+      const albumPref = Boolean(preferredSellers && album.seller && preferredSellers.has(album.seller));
+      const currentPref = Boolean(preferredSellers && current.seller && preferredSellers.has(current.seller));
+      if (albumPref !== currentPref) {
+        if (albumPref) winners.set(key, album);
+        continue;
+      }
     }
     const albumPosted = posted(album), currentPosted = posted(current);
     if (albumPosted !== currentPosted ? albumPosted > currentPosted : id(album) > id(current)) {

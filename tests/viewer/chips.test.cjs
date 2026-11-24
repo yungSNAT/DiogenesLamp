@@ -95,7 +95,7 @@ describe("preferred sellers in viewer", () => {
     );
   });
 
-  it("favours preferred sellers in duplicate clustering (newestListings and collapseDups)", () => {
+  it("favours live listings before preferred sellers in duplicate clustering", () => {
     const pref = new Set(["trusted"]);
     const olderPref = {
       id: "100",
@@ -129,15 +129,42 @@ describe("preferred sellers in viewer", () => {
     assert.deepEqual(selected.albums.map((a) => a.id), ["100"]);
     assert.deepEqual(selected.aliases, { "200": "100" });
 
-    // Among two preferred listings, newest posting still wins.
+    // Among two live preferred listings, newest posting wins.
     const bothPref = newestListings([olderPref, newerOther, newerPref], pref);
     assert.deepEqual(bothPref.albums.map((a) => a.id), ["300"]);
     assert.deepEqual(bothPref.aliases, { "100": "300", "200": "300" });
 
-    // collapseDups favours preferred over more links / newer updated_at.
+    // A gone preferred listing must not hide a live non-preferred duplicate (in either order).
+    const gonePref = {
+      ...newerPref,
+      id: "400",
+      date_published: "2026-04-01",
+      gone_since: "2026-11-01",
+      traits: ["cashmere"],
+    };
+    const liveOther = {
+      ...newerOther,
+      id: "200",
+      date_published: "2026-01-15",
+      traits: ["cashmere"],
+    };
+    assert.deepEqual(newestListings([gonePref, liveOther], pref).albums.map((a) => a.id), ["200"]);
+    assert.deepEqual(newestListings([liveOther, gonePref], pref).albums.map((a) => a.id), ["200"]);
+    assert.equal(
+      countMaterials(newestListings([gonePref, liveOther], pref).albums, ["cashmere"]).get("cashmere"),
+      1,
+    );
+
+    // When every listing in the cluster is gone, preferred still wins.
+    const goneOther = { ...liveOther, gone_since: "2026-10-01" };
+    assert.deepEqual(newestListings([goneOther, gonePref], pref).albums.map((a) => a.id), ["400"]);
+
+    // collapseDups ranks live before preferred, then preferred before links/updated_at.
     const collapsed = collapseDups([newerOther, olderPref], new Set(), pref);
     assert.deepEqual(collapsed.out.map((a) => a.id), ["100"]);
     assert.equal(collapsed.counts.get("i:weidian:7"), 2);
+    const collapsedLive = collapseDups([gonePref, liveOther], new Set(), pref);
+    assert.deepEqual(collapsedLive.out.map((a) => a.id), ["200"]);
   });
 
   it("filters preferredOnly in selectCatalogue and round-trips through URL/storage", () => {

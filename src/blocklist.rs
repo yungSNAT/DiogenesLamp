@@ -9,10 +9,11 @@ use std::path::Path;
 use crate::errors::{Error, Result, value};
 use crate::ingest::{
     ImportReport, Source, Sources, classify_url, format_sources_lines, parse_sources_table,
-    toml_value, write_sources_text,
+    safe_id, toml_value, write_sources_text,
 };
 use crate::pyerr;
 use crate::pyjson::{self, Value};
+use crate::pystr;
 
 /// Sellers refused during `lamp import` and omitted from `lamp scrape`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -38,28 +39,48 @@ impl Blocklist {
         if trimmed.is_empty() {
             return value("blocklist skip_sellers entries must be non-empty strings");
         }
+        let invalid = || value(format!("invalid blocklist entry: {}", pystr::repr(trimmed)));
         let normalized = if trimmed.contains("://") || trimmed.contains('.') {
-            match classify_url(trimmed) {
-                Some(src) => format!("{}:{}", src.kind, src.id),
-                None => trimmed.to_ascii_lowercase(),
+            let Some(src) = classify_url(trimmed) else {
+                return invalid();
+            };
+            format!("{}:{}", src.kind, src.id.to_ascii_lowercase())
+        } else if let Some((prefix, rest)) = trimmed.split_once(':') {
+            let kind = prefix.to_ascii_lowercase();
+            let id = rest.to_ascii_lowercase();
+            let valid = (kind == "yupoo" && crate::schema::is_seller_id(&id))
+                || (kind == "shop" && safe_id(&id));
+            if !valid {
+                return invalid();
             }
+            format!("{kind}:{id}")
         } else {
-            trimmed.to_ascii_lowercase()
+            let id = trimmed.to_ascii_lowercase();
+            if !safe_id(&id) {
+                return invalid();
+            }
+            id
         };
         self.entries.insert(normalized);
         Ok(())
     }
 
-    pub fn matches(&self, src: &Source) -> bool {
-        let id = src.id.to_ascii_lowercase();
-        let key = format!("{}:{id}", src.kind);
+    fn matches_id_key(&self, kind: &str, id: &str) -> bool {
+        let id = id.to_ascii_lowercase();
+        let key = format!("{kind}:{id}");
         self.entries.contains(&id) || self.entries.contains(&key)
     }
 
+    pub fn matches(&self, src: &Source) -> bool {
+        if self.matches_id_key(&src.kind, &src.id) {
+            return true;
+        }
+        classify_url(&src.url_str())
+            .is_some_and(|canonical| self.matches_id_key(&canonical.kind, &canonical.id))
+    }
+
     pub fn matches_yupoo_id(&self, seller_id: &str) -> bool {
-        let id = seller_id.to_ascii_lowercase();
-        let key = format!("yupoo:{id}");
-        self.entries.contains(&id) || self.entries.contains(&key)
+        self.matches_id_key("yupoo", seller_id)
     }
 
     pub fn append_toml_lines(&self, lines: &mut Vec<String>) {
@@ -113,18 +134,30 @@ pub(crate) fn parse_blocklist_table(data: &toml::Table) -> Result<Blocklist> {
     Ok(blocklist)
 }
 
-pub fn load_sources_config(path: &Path) -> Result<SourcesConfig> {
-    if !path.exists() {
-        return Ok(SourcesConfig::default());
-    }
+fn read_toml_table(path: &Path) -> Result<toml::Table> {
     let text = pyerr::read_text(path).map_err(|f| Error::Value(f.message))?;
-    let data: toml::Table = text.parse().map_err(|e: toml::de::Error| {
+    text.parse().map_err(|e: toml::de::Error| {
         Error::Value(format!(
             "invalid sources file {}: {}",
             pyerr::path_str(path),
             e.message()
         ))
-    })?;
+    })
+}
+
+pub(crate) fn load_blocklist(path: &Path) -> Result<Blocklist> {
+    if !path.exists() {
+        return Ok(Blocklist::new());
+    }
+    let data = read_toml_table(path)?;
+    parse_blocklist_table(&data)
+}
+
+pub fn load_sources_config(path: &Path) -> Result<SourcesConfig> {
+    if !path.exists() {
+        return Ok(SourcesConfig::default());
+    }
+    let data = read_toml_table(path)?;
     let blocklist = parse_blocklist_table(&data)?;
     let sources = parse_sources_table(path, &data)?;
     Ok(SourcesConfig { sources, blocklist })

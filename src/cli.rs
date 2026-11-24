@@ -472,24 +472,23 @@ fn cmd_scrape(args: &Args) -> i32 {
         }
     };
     let seller = args.str("seller");
-    if !seller.is_empty() && config.blocklist.matches_yupoo_id(&seller) {
+    let requested_blocked = !seller.is_empty()
+        && (config.blocklist.matches_yupoo_id(&seller)
+            || config
+                .sources
+                .get(&format!("yupoo:{seller}"))
+                .is_some_and(|src| config.blocklist.matches(src)));
+    if requested_blocked {
         out::err(&format!(
             "error: seller {seller} is blocked by [blocklist] skip_sellers"
         ));
         return 1;
     }
-    let (sources, blocked) = filter_blocked_sources(&config.sources, &config.blocklist);
-    if !sources.values().any(|s| s.kind == "yupoo") {
-        if !blocked.is_empty() {
-            out::err(&format!(
-                "error: all configured yupoo sellers are blocked ({})",
-                blocked.join(", ")
-            ));
-        } else {
-            out::err("error: no sources - run 'lamp import' first");
-        }
+    if !config.sources.values().any(|s| s.kind == "yupoo") {
+        out::err("error: no sources - run 'lamp import' first");
         return 1;
     }
+    let (sources, blocked) = filter_blocked_sources(&config.sources, &config.blocklist);
     let only: Option<HashSet<String>> = if seller.is_empty() {
         None
     } else {
