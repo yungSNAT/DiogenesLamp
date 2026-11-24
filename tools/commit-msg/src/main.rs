@@ -4,7 +4,9 @@
 //! install step in CONTRIBUTING.md puts it; it never runs from the working
 //! tree. Usage: `commit-msg-guard <message file>`, or `--version`.
 
+use std::ffi::OsString;
 use std::io::Write;
+use std::path::PathBuf;
 use std::process::{Command, ExitCode, Stdio};
 
 mod check;
@@ -34,8 +36,41 @@ fn git(args: &[&str], quiet: bool) -> String {
         .to_owned()
 }
 
+/// Warn when the rules on the remote default branch differ from the source
+/// this guard was built from. It runs git only, never code from the tree, and
+/// stays silent when the source or the remote branch is unknown.
+fn warn_if_stale() {
+    let Some(source) = SOURCE else { return };
+    let status = Command::new("git")
+        .args(["diff", "--quiet", source, "origin/HEAD", "--"])
+        .args(RULE_FILES)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    if status.is_ok_and(|s| s.code() == Some(1)) {
+        eprintln!(
+            "commit-msg: warning: the installed guard (source {source}) differs from the rules on origin/HEAD; reinstall it as the header of .githooks/commit-msg says."
+        );
+    }
+}
+
+/// The files that decide what the guard refuses.
+const RULE_FILES: [&str; 3] = [
+    "tools/commit-msg",
+    "src/pytables.rs",
+    ".githooks/commit-msg",
+];
+
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    // A check that cannot finish panics (exit 101), so Git refuses the commit.
+    std::panic::set_hook(Box::new(|info| {
+        eprintln!(
+            "commit-msg: {}",
+            info.payload_as_str().unwrap_or("internal error")
+        );
+    }));
+    let args: Vec<OsString> = std::env::args_os().skip(1).collect();
     let path = match args.as_slice() {
         [flag] if flag == "--version" => {
             println!(
@@ -45,16 +80,17 @@ fn main() -> ExitCode {
             );
             return ExitCode::SUCCESS;
         }
-        [path] => path,
+        // The message path may not be UTF-8 (a worktree under such a folder).
+        [path] => PathBuf::from(path),
         _ => {
             eprintln!("usage: commit-msg-guard <message file> | --version");
             return ExitCode::from(2);
         }
     };
-    let message = match std::fs::read(path) {
+    let message = match std::fs::read(&path) {
         Ok(bytes) => bytes,
         Err(err) => {
-            eprintln!("commit-msg: cannot read {path}: {err}");
+            eprintln!("commit-msg: cannot read {}: {err}", path.display());
             return ExitCode::FAILURE;
         }
     };
@@ -64,6 +100,7 @@ fn main() -> ExitCode {
     let committer = git(&["var", "GIT_COMMITTER_IDENT"], false);
     let comment_string = git(&["config", "--get", "core.commentString"], true);
     let comment_char = git(&["config", "--get", "core.commentChar"], true);
+    warn_if_stale();
     let failures = check::failures(
         &message,
         &author,
@@ -74,6 +111,13 @@ fn main() -> ExitCode {
     if failures.is_empty() {
         return ExitCode::SUCCESS;
     }
-    let _ = std::io::stderr().write_all(check::report(&failures).as_bytes());
+    let report = check::report(&failures);
+    // Python's text-mode stderr wrote CRLF on Windows.
+    let report = if cfg!(windows) {
+        report.replace('\n', "\r\n")
+    } else {
+        report
+    };
+    let _ = std::io::stderr().write_all(report.as_bytes());
     ExitCode::FAILURE
 }

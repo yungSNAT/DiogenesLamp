@@ -3,12 +3,35 @@
 //! Each folder under tests/cases was recorded by running that hook on
 //! `message` with the identity in `env/` (dates fixed at 1700000000 +0000)
 //! and the git config in `config/`: `code` is its exit code and `stderr` its
-//! output (CRLF written by Windows Python recorded as LF).
+//! output, recorded with LF line ends. On Windows, Python's report had CRLF
+//! line ends and so does the guard's; [`windows_line_ends`] restores them
+//! before comparing.
 
 mod common;
 
 use std::fs;
 use std::path::Path;
+
+/// On Windows the hook's report had CRLF line ends (Python's text-mode
+/// stderr); a line git itself printed first, such as an empty-identity
+/// error, kept LF.
+fn windows_line_ends(stderr: Vec<u8>) -> Vec<u8> {
+    const REPORT: &[u8] = b"commit-msg: AI attribution found:";
+    if !cfg!(windows) {
+        return stderr;
+    }
+    let Some(at) = stderr.windows(REPORT.len()).position(|w| w == REPORT) else {
+        return stderr;
+    };
+    let mut out = stderr[..at].to_vec();
+    for &b in &stderr[at..] {
+        if b == b'\n' {
+            out.push(b'\r');
+        }
+        out.push(b);
+    }
+    out
+}
 
 #[test]
 fn every_case_matches_the_recorded_hook() {
@@ -19,7 +42,7 @@ fn every_case_matches_the_recorded_hook() {
         .map(|e| e.unwrap().file_name().into_string().unwrap())
         .collect();
     names.sort();
-    assert!(names.len() >= 100, "{} cases", names.len());
+    assert_eq!(names.len(), 128, "a recorded case was added or lost");
     let mut wrong = Vec::new();
     for name in &names {
         let dir = root.join(name);
@@ -46,7 +69,7 @@ fn every_case_matches_the_recorded_hook() {
             .trim()
             .parse()
             .unwrap();
-        let stderr = fs::read(dir.join("stderr")).unwrap();
+        let stderr = windows_line_ends(fs::read(dir.join("stderr")).unwrap());
         if out.status.code() != Some(code) || out.stderr != stderr || !out.stdout.is_empty() {
             wrong.push(format!(
                 "{name}: code {:?} (want {code})\n--- got\n{}--- want\n{}",

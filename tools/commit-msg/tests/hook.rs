@@ -80,7 +80,9 @@ fn missing_guard_fails_closed_and_names_the_install() {
         assert!(!out.status.success());
         let text = stderr(&out);
         assert!(
-            text.contains("commit-msg-guard is not installed; cannot check attribution."),
+            text.contains(
+                "commit-msg-guard is missing or not executable; cannot check attribution."
+            ),
             "{text}"
         );
         assert!(
@@ -99,7 +101,7 @@ fn guard_without_execute_permission_fails_closed() {
     let out = commit(&repo, PASS);
     assert!(!out.status.success());
     assert!(
-        stderr(&out).contains("is not installed"),
+        stderr(&out).contains("is missing or not executable"),
         "{}",
         stderr(&out)
     );

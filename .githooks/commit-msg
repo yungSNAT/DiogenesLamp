@@ -2,18 +2,21 @@
 # Refuse AI authorship credit before a commit is written.
 #
 # The rules live in tools/commit-msg (Rust). Install once per clone from the
-# reviewed default branch, at the repository root:
+# reviewed default branch, at the repository root, with no local edits (the
+# first line refuses otherwise):
 #
-#     hooks="$(git rev-parse --git-common-dir)/hooks"
+#     git fetch origin && git diff --quiet HEAD && git merge-base --is-ancestor HEAD origin/main &&
+#     hooks="$(git rev-parse --git-common-dir)/hooks" &&
 #     COMMIT_MSG_GUARD_SOURCE="$(git rev-parse HEAD)" cargo install --locked --quiet \
-#         --path tools/commit-msg --root "$hooks/commit-msg-guard"
+#         --path tools/commit-msg --root "$hooks/commit-msg-guard" &&
 #     cp .githooks/commit-msg "$hooks/commit-msg" && chmod +x "$hooks/commit-msg"
 #
 # (--git-common-dir also works in a linked worktree, where .git is a file. Do
 # not use --git-path hooks: it resolves to core.hooksPath when one is set.)
 # Rerun both steps from the default branch after reviewing a change to either;
 # `"$hooks/commit-msg-guard/bin/commit-msg-guard" --version` names the commit
-# the installed copy was built from.
+# the installed copy was built from, and the guard warns when the rules on
+# origin/HEAD differ from it.
 #
 # This file runs only the binary installed beside it, never anything from the
 # working tree, so checking out a contributor's branch and committing runs no
@@ -36,7 +39,7 @@ set -eu
 
 guard="$(dirname "$0")/commit-msg-guard/bin/commit-msg-guard"
 if [ ! -x "$guard" ] && [ ! -x "$guard.exe" ]; then
-	printf 'commit-msg: %s is not installed; cannot check attribution.\n' "$guard" >&2
+	printf 'commit-msg: %s is missing or not executable; cannot check attribution.\n' "$guard" >&2
 	printf 'Install it as the header of .githooks/commit-msg says, or skip with --no-verify and expect CI to reject it.\n' >&2
 	exit 1
 fi

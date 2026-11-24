@@ -128,8 +128,16 @@ fn translate(pattern: &str) -> String {
     out
 }
 
+/// Python's engine has no backtracking limit. The default of 1,000,000 stops
+/// on a single 100 KB line; this one lets lines of a few megabytes finish in
+/// seconds, as Python's do, and [`engine`] refuses anything beyond it.
+const BACKTRACK_LIMIT: usize = 1_000_000_000;
+
 fn rx(pattern: &str) -> Regex {
-    Regex::new(&translate(pattern)).expect("valid pattern")
+    fancy_regex::RegexBuilder::new(&translate(pattern))
+        .backtrack_limit(BACKTRACK_LIMIT)
+        .build()
+        .expect("valid pattern")
 }
 
 /// Case-insensitive, as Python's `re.I`.
@@ -145,15 +153,24 @@ fn rxi_full(pattern: &str) -> Regex {
 /// Python's `re.match`: a match that starts at the beginning. The leftmost
 /// match is the one starting there whenever one does.
 fn at_start<'t>(re: &Regex, text: &'t str) -> Option<Match<'t>> {
-    re.find(text).ok().flatten().filter(|m| m.start() == 0)
+    engine(re.find(text)).filter(|m| m.start() == 0)
 }
 
 fn found(re: &Regex, text: &str) -> bool {
-    re.is_match(text).unwrap_or(false)
+    engine(re.is_match(text))
 }
 
 fn matches<'t>(re: &Regex, text: &'t str) -> Vec<Match<'t>> {
-    re.find_iter(text).filter_map(Result::ok).collect()
+    re.find_iter(text).map(engine).collect()
+}
+
+/// A pattern the engine could not finish (its backtracking limit, say) must
+/// refuse the commit, never read as 'no credit found'. Python's engine has no
+/// such limit, so this is the one place the guard can refuse what it passed.
+pub fn engine<T>(result: Result<T, fancy_regex::Error>) -> T {
+    result.unwrap_or_else(|err| {
+        panic!("the pattern engine stopped ({err}); cannot check attribution")
+    })
 }
 
 /// The last piece of Python's `re.split(pattern, text)`.
@@ -240,6 +257,14 @@ pub fn comparable(text: &str) -> String {
             }
         })
         .collect()
+}
+
+/// The copy of the text that case-insensitive patterns read. Python's `re.I`
+/// matches dotless i (U+0131) to `i`; the regex crate's simple case folding
+/// does not. Every case-insensitive pattern is ASCII, and after NFKD this is
+/// the only non-ASCII letter `re.I` equates with an ASCII one.
+fn case_folded(text: &str) -> String {
+    text.replace('\u{131}', "i")
 }
 
 fn strip(s: &str) -> &str {
@@ -423,12 +448,7 @@ fn last_action(p: &Prose, text: &str) -> Option<String> {
     let mut pos = 0;
     let mut last = None;
     while pos <= text.len() {
-        let Some(caps) = p
-            .handling_starts
-            .captures_from_pos(text, pos)
-            .ok()
-            .flatten()
-        else {
+        let Some(caps) = engine(p.handling_starts.captures_from_pos(text, pos)) else {
             break;
         };
         let start = caps.get(0).map_or(pos, |m| m.start());
@@ -445,7 +465,7 @@ const POLICY_ACTIONS: [&str; 9] = [
 /// Whether `text` carries prose authorship credit.
 pub fn prose_credit(text: &str) -> bool {
     let p = &*PROSE;
-    let text = comparable(text).replace('_', " ");
+    let text = case_folded(&comparable(text)).replace('_', " ");
     let text = text.as_str();
     // Classify each match in the original text; removing words can join clauses.
     let mut objects: Vec<Span> = matches(&p.technical, text)
@@ -518,7 +538,7 @@ pub fn prose_credit(text: &str) -> bool {
             return true;
         }
     }
-    for caps in p.byline.captures_iter(text).filter_map(Result::ok) {
+    for caps in p.byline.captures_iter(text).map(engine) {
         let m = caps.get(0).expect("group 0");
         if inside(&objects, &m) {
             continue;
@@ -560,7 +580,7 @@ fn fenced(lines: &[&str]) -> Vec<bool> {
     let mut skip = vec![false; lines.len()];
     let mut open: Option<(char, usize)> = None;
     for (index, line) in lines.iter().enumerate() {
-        let caps = FENCE.captures(line).ok().flatten();
+        let caps = engine(FENCE.captures(line));
         // CommonMark: a backtick fence's info string may not contain a backtick.
         let caps = caps.filter(|c| {
             !(open.is_none()
@@ -625,7 +645,7 @@ pub fn message_failures(message: &str, markers: &[String]) -> Vec<String> {
             let mut all = readings(&text, markers);
             all.extend(readings(&comparable(&text), markers));
             let hit = all.iter().find_map(|reading| {
-                let reading = comparable(reading);
+                let reading = case_folded(&comparable(reading));
                 let shown = chars_prefix(strip(&text), 120);
                 RX.iter()
                     .find(|(_, re)| at_start(re, &reading).is_some())
@@ -653,7 +673,7 @@ static ACCOUNT: LazyLock<Regex> =
 /// The failure for an author or committer identity, if any. A non-printable
 /// identity is refused before normalising, as the shared action does.
 pub fn identity_failure(role: &str, ident: &str) -> Option<String> {
-    let Some(caps) = IDENT.captures(ident).ok().flatten() else {
+    let Some(caps) = engine(IDENT.captures(ident)) else {
         return Some(format!("{role} identity is malformed: {ident}"));
     };
     let (name, email) = (
@@ -670,9 +690,11 @@ pub fn identity_failure(role: &str, ident: &str) -> Option<String> {
     let name = comparable(name);
     let email = comparable(email);
     let (name, email) = (strip(&name), strip(&email));
-    let account = ACCOUNT.captures(email).ok().flatten();
+    let folded_email = case_folded(email);
+    let account = engine(ACCOUNT.captures(&folded_email));
+    // casefold() keeps dotless i, so the blocked list compares the email as is.
     let blocked = BLOCKED_EMAILS.contains(&email.to_lowercase().as_str());
-    let ai = |s: &str| found(&AI_NAME_FULL, s);
+    let ai = |s: &str| found(&AI_NAME_FULL, &case_folded(s));
     if ai(name) || blocked || account.is_some_and(|a| ai(a.get(1).map_or("", |m| m.as_str()))) {
         return Some(format!("AI {role} identity: {name} <{email}>"));
     }
@@ -726,4 +748,17 @@ pub fn report(failures: &[String]) -> String {
     }
     out.push_str(REFUSAL);
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use fancy_regex::{Error, RuntimeError};
+
+    #[test]
+    #[should_panic(expected = "cannot check attribution")]
+    fn an_engine_error_refuses_instead_of_passing() {
+        super::engine::<bool>(Err(Error::RuntimeError(
+            RuntimeError::BacktrackLimitExceeded,
+        )));
+    }
 }
