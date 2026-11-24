@@ -112,15 +112,13 @@ fn prefix(err: &io::Error, call: Call) -> Option<String> {
     }
     #[cfg(not(windows))]
     {
+        // Python prints the C library's own strerror text, which differs
+        // between glibc and musl, so take the system's rather than a table's.
         let _ = call;
-        let text = errno_text(code);
-        let text = if text == "Unknown error" {
-            let full = err.to_string();
-            full.rsplit_once(" (os error ")
-                .map_or(full.clone(), |(head, _)| head.to_string())
-        } else {
-            text.to_string()
-        };
+        let full = err.to_string();
+        let text = full
+            .rsplit_once(" (os error ")
+            .map_or(full.as_str(), |(head, _)| head);
         Some(format!("[Errno {code}] {text}"))
     }
 }
@@ -733,8 +731,9 @@ mod tests {
         assert_eq!(resolve(&path), path);
     }
 
-    // Python's OSError text on Linux is glibc's strerror, as Rust's is.
-    #[cfg(target_os = "linux")]
+    // The table's shared texts are glibc's strerror wording; musl words
+    // several differently, so this holds only against glibc.
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
     #[test]
     fn errno_texts_match_the_system_on_linux() {
         for errno in [
@@ -852,30 +851,51 @@ mod tests {
         assert_eq!(normpath(Path::new("./a")), PathBuf::from("a"));
     }
 
-    // Python's OSError text on Linux is glibc's strerror, including the
-    // codes the Windows C runtime names differently.
+    /// The C library's strerror text for `errno`, as Rust reports it.
+    #[cfg(target_os = "linux")]
+    fn system_text(errno: i32) -> String {
+        let full = io::Error::from_raw_os_error(errno).to_string();
+        full.strip_suffix(&format!(" (os error {errno})"))
+            .expect("an OS error's text")
+            .to_string()
+    }
+
+    // Python's OSError text on Linux is the C library's strerror, so glibc
+    // and musl builds each print their own; the literals are glibc's.
     #[cfg(target_os = "linux")]
     #[test]
-    fn os_errors_without_an_own_text_use_the_system_one() {
-        for (errno, text) in [
-            (7, "Argument list too long"),
-            (8, "Exec format error"),
-            (10, "No child processes"),
-            (11, "Resource temporarily unavailable"),
-            (12, "Cannot allocate memory"),
-            (18, "Invalid cross-device link"),
-            (41, "Unknown error 41"),
-            (42, "No message of desired type"),
-        ] {
-            assert_eq!(errno_text(errno), "Unknown error");
+    fn os_errors_use_the_system_text_on_linux() {
+        for errno in 1..=45 {
             assert_eq!(
                 os_error(
                     &io::Error::from_raw_os_error(errno),
                     Call::Open,
                     Path::new("p")
                 ),
-                format!("[Errno {errno}] {text}: 'p'")
+                format!("[Errno {errno}] {}: 'p'", system_text(errno))
             );
+        }
+        // The table has no text of its own for these outside Windows.
+        for errno in [7, 8, 10, 11, 12, 18, 41, 42] {
+            assert_eq!(errno_text(errno), "Unknown error");
+        }
+        #[cfg(target_env = "gnu")]
+        for (errno, text) in [
+            (5, "Input/output error"),
+            (7, "Argument list too long"),
+            (8, "Exec format error"),
+            (10, "No child processes"),
+            (11, "Resource temporarily unavailable"),
+            (12, "Cannot allocate memory"),
+            (16, "Device or resource busy"),
+            (18, "Invalid cross-device link"),
+            (24, "Too many open files"),
+            (36, "File name too long"),
+            (40, "Too many levels of symbolic links"),
+            (41, "Unknown error 41"),
+            (42, "No message of desired type"),
+        ] {
+            assert_eq!(system_text(errno), text);
         }
         assert_eq!(
             os_error2(
@@ -884,7 +904,7 @@ mod tests {
                 Path::new("a"),
                 Path::new("b")
             ),
-            "[Errno 18] Invalid cross-device link: 'a' -> 'b'"
+            format!("[Errno 18] {}: 'a' -> 'b'", system_text(18))
         );
     }
 
