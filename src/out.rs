@@ -243,9 +243,7 @@ mod errno_tests {
             let system = system
                 .strip_suffix(&format!(" (os error {errno})"))
                 .expect("an OS error's text");
-            if cfg!(target_env = "gnu") {
-                assert_eq!(system, text);
-            }
+            assert!(!cfg!(target_env = "gnu") || system == text, "{system}");
             assert_eq!(
                 stream_error(&error),
                 (class, format!("[Errno {errno}] {system}"))

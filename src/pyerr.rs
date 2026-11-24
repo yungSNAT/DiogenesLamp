@@ -875,6 +875,11 @@ mod tests {
                 format!("[Errno {errno}] {}: 'p'", system_text(errno))
             );
         }
+        // The table has no text of its own for these outside Windows.
+        for errno in [7, 8, 10, 11, 12, 18, 41, 42] {
+            assert_eq!(errno_text(errno), "Unknown error");
+        }
+        #[cfg(target_env = "gnu")]
         for (errno, text) in [
             (5, "Input/output error"),
             (7, "Argument list too long"),
@@ -890,9 +895,7 @@ mod tests {
             (41, "Unknown error 41"),
             (42, "No message of desired type"),
         ] {
-            if cfg!(target_env = "gnu") {
-                assert_eq!(system_text(errno), text);
-            }
+            assert_eq!(system_text(errno), text);
         }
         assert_eq!(
             os_error2(
