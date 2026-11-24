@@ -272,6 +272,23 @@ use your own ntfy server.
 </details>
 
 <details>
+<summary>Telegram message (Linux and macOS: jq and curl)</summary>
+
+Create a bot with `@BotFather` and send it any message; your chat id is
+`chat.id` in `https://api.telegram.org/bot<token>/getUpdates`. Set
+`TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in the environment lamp runs in
+(for cron, as `NAME=value` lines above the job), not in the script: anyone
+with the token controls the bot. A message holds at most 4096 characters,
+so the script sends the first 15 albums and cuts the text at 4000.
+
+    #!/bin/sh
+    jq -r '["\(length) new or changed"] + [.[:15][] | (if .new then "new: " else "changed: " end) + .seller + " " + (.title // "") + " " + (.album_url // "")] | join("\n") | .[:4000]' |
+      curl -fsS --form-string "chat_id=$TELEGRAM_CHAT_ID" -F 'text=<-' \
+        "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" > /dev/null
+
+</details>
+
+<details>
 <summary>Email (Linux and macOS: jq and a configured mail command)</summary>
 
     #!/bin/sh
