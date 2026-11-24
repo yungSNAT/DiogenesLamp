@@ -85,6 +85,44 @@ fn import_creates_sources() {
 }
 
 #[test]
+fn import_reports_each_id_collision_and_keeps_the_first_url() {
+    let dir = common::tmp();
+    let dump = dir.path().join("links.tsv");
+    write(
+        &dump,
+        "1\thttps://croft.demo.x.yupoo.com/\n2\thttps://croft-demo.x.yupoo.com/\n\
+         3\thttps://field.note.x.yupoo.com/\n4\thttps://field-note.x.yupoo.com/\n",
+    );
+    let sources = dir.path().join("sources.toml");
+    let (code, out, err) = lamp(
+        &[
+            "--sources",
+            &sources.to_string_lossy(),
+            "import",
+            &dump.to_string_lossy(),
+        ],
+        None,
+    );
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("yupoo sellers: 2 new, 0 known"), "{out}");
+    assert_eq!(
+        err,
+        concat!(
+            "2 id collision(s), second URL not stored:\n",
+            "  yupoo:croft-demo: kept https://croft.demo.x.yupoo.com, dropped https://croft-demo.x.yupoo.com\n",
+            "  yupoo:field-note: kept https://field.note.x.yupoo.com, dropped https://field-note.x.yupoo.com\n"
+        )
+    );
+    let text = read(&sources);
+    for winner in ["croft.demo.x.yupoo.com", "field.note.x.yupoo.com"] {
+        assert!(text.contains(winner), "{text}");
+    }
+    for loser in ["croft-demo.x.yupoo.com", "field-note.x.yupoo.com"] {
+        assert!(!text.contains(loser), "{text}");
+    }
+}
+
+#[test]
 fn import_reports_missing_and_undecodable_dumps() {
     let dir = common::tmp();
     let s = dir.path().join("s.toml").to_string_lossy().into_owned();
