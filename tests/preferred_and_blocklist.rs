@@ -286,7 +286,8 @@ fn blocklist_strict_validation_alias_matching_and_write_sources_preservation() {
     assert!(bl.matches_yupoo_id("badurl"));
     assert!(!bl.matches_yupoo_id("goodseller"));
 
-    // Alias source whose table ID differs from its URL-derived Yupoo identity is still matched.
+    // Alias source whose table ID differs from its URL-derived Yupoo identity is still matched,
+    // including when the URL carries a trailing DNS dot.
     let alias_src = Source::new(
         "yupoo",
         "alias",
@@ -295,6 +296,28 @@ fn blocklist_strict_validation_alias_matching_and_write_sources_preservation() {
         "Alias Seller",
     );
     assert!(bl.matches(&alias_src));
+    let dotted_alias = Source::new(
+        "yupoo",
+        "dottedalias",
+        "yupoo",
+        "https://badurl.x.yupoo.com.",
+        "Dotted Alias",
+    );
+    assert!(bl.matches(&dotted_alias));
+
+    // A dotted blocklist URL matches an undotted source.
+    let mut dotted_bl = Blocklist::new();
+    dotted_bl
+        .insert_raw("https://dottedblock.x.yupoo.com.")
+        .unwrap();
+    let undotted_src = Source::new(
+        "yupoo",
+        "dottedblock",
+        "yupoo",
+        "https://dottedblock.x.yupoo.com",
+        "dottedblock",
+    );
+    assert!(dotted_bl.matches(&undotted_src));
 
     // Malformed entries fail closed rather than loading as silent no-ops.
     for invalid in [
@@ -432,8 +455,10 @@ name = "bad"
             err.contains(expected),
             "case {body:?}: expected {expected:?}, got {err:?}"
         );
-        // write_sources also fails closed if target file carries malformed policy.
+        // write_sources also fails closed if target file carries malformed policy,
+        // leaving the destination file byte-for-byte unchanged.
         assert!(write_sources(&path, &kept).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), body);
     }
 
     // Empty [blocklist] table without skip_sellers key is allowed.
@@ -493,13 +518,18 @@ skip_sellers = ["scamseller", "yupoo:badtwo"]
     assert!(!rewritten.contains("[yupoo.scamseller]"));
     assert!(rewritten.contains("[blocklist]"));
 
-    // Explicit `lamp scrape --seller <blocked>` refuses cleanly (direct ID and URL-derived alias).
+    // Explicit `lamp scrape --seller <blocked>` refuses cleanly (direct ID, URL-derived alias
+    // and trailing-dot DNS alias) and ordinary scraping filters both aliases.
     write(
         &sources,
         r#"
 [yupoo.alias]
 url = "https://scamseller.x.yupoo.com"
 name = "Alias"
+
+[yupoo.dottedalias]
+url = "https://scamseller.x.yupoo.com."
+name = "Dotted Alias"
 
 [shops.taobao-ok]
 platform = "taobao"
@@ -510,7 +540,7 @@ name = "ok"
 skip_sellers = ["scamseller"]
 "#,
     );
-    for target in ["scamseller", "alias"] {
+    for target in ["scamseller", "alias", "dottedalias"] {
         let (code, _, stderr) = lamp(
             &[
                 "--sources",
@@ -577,7 +607,10 @@ skip_sellers = ["scamseller"]
         None,
     );
     assert_eq!(code, 0, "stderr: {stderr}");
-    assert!(stdout.contains("1 blocked (alias)"), "stdout: {stdout}");
+    assert!(
+        stdout.contains("2 blocked (alias, dottedalias)"),
+        "stdout: {stdout}"
+    );
     assert_eq!(
         std::fs::read_to_string(data.join("index.json")).unwrap(),
         before_dry
@@ -596,7 +629,10 @@ skip_sellers = ["scamseller"]
         None,
     );
     assert_eq!(code, 0, "stderr: {stderr}");
-    assert!(stdout.contains("1 blocked (alias)"), "stdout: {stdout}");
+    assert!(
+        stdout.contains("2 blocked (alias, dottedalias)"),
+        "stdout: {stdout}"
+    );
     let reconciled = read_json(&data.join("index.json"));
     validate_metadata(&reconciled, "index.json").unwrap();
     let rec_map = obj(&reconciled);

@@ -143,7 +143,11 @@ pub fn classify_url(raw: &str) -> Option<Source> {
     if parsed.username().is_some() || parsed.password().is_some() {
         return None;
     }
-    let host = parsed.hostname().unwrap_or_default().to_lowercase();
+    let host = parsed
+        .hostname()
+        .unwrap_or_default()
+        .trim_end_matches('.')
+        .to_lowercase();
     if host.is_empty() || !host.contains('.') {
         return None;
     }
