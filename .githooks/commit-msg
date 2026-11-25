@@ -2,10 +2,15 @@
 # Refuse AI authorship credit before a commit is written.
 #
 # The rules live in tools/commit-msg (Rust). Install once per clone from the
-# reviewed default branch, at the repository root, with no local edits (the
-# first line refuses otherwise):
+# reviewed default branch, at the repository root, with no local edits, no
+# untracked files and no core.hooksPath set (the first 5 lines refuse
+# otherwise, saying why; cargo install would build an untracked build.rs):
 #
-#     git fetch origin && git diff --quiet HEAD && git merge-base --is-ancestor HEAD origin/main &&
+#     git fetch origin && { [ -z "$(git status --porcelain --untracked-files=all)" ] &&
+#         git merge-base --is-ancestor HEAD origin/main ||
+#         { echo 'install: check out an up-to-date main with no local edits or untracked files' >&2; false; }; } &&
+#     { [ -z "$(git config --get-all core.hooksPath)" ] ||
+#         { echo 'install: core.hooksPath is set, so Git would never run this hook; see below' >&2; false; }; } &&
 #     hooks="$(git rev-parse --git-common-dir)/hooks" &&
 #     COMMIT_MSG_GUARD_SOURCE="$(git rev-parse HEAD)" cargo install --locked --quiet \
 #         --path tools/commit-msg --root "$hooks/commit-msg-guard" &&
@@ -16,14 +21,16 @@
 # Rerun both steps from the default branch after reviewing a change to either;
 # `"$hooks/commit-msg-guard/bin/commit-msg-guard" --version` names the commit
 # the installed copy was built from, and the guard warns when the rules on
-# origin/HEAD differ from it.
+# origin/HEAD (origin/main when there is none) differ from it.
 #
 # This file runs only the binary installed beside it, never anything from the
 # working tree, so checking out a contributor's branch and committing runs no
 # code from that branch. Never set core.hooksPath to .githooks: Git would then
 # run every hook name (post-checkout, pre-commit and so on) from whichever
 # branch is checked out. An absolute hooks directory you control outside the
-# clone is fine. Earlier copies of this header said to set it: check with
+# clone is fine, but Git then never reads $hooks: put the guard folder and this
+# file in that directory instead (the install above refuses rather than
+# installing where Git does not look). Earlier copies of this header said to set it: check with
 # `git config --show-origin --get-all core.hooksPath` and, if it names
 # .githooks, run `git config --unset core.hooksPath` (add --global or
 # --worktree when the origin is that file), then check again before checking

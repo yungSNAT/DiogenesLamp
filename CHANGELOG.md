@@ -6,6 +6,12 @@
 - `lamp serve` and `lamp demo` now reject requests with non-localhost, mismatched-port, duplicate or missing HTTP/1.1 `Host` headers to block DNS rebinding, and apply bounded read (10 s) and write (30 s) timeouts on accepted sockets.
 - Shortlist entries for aliased duplicates now move to their canonical listing ID when it has no entry of its own (other entries keep their size, colour and note, and removing an album removes them too), resolve cleanly in `shortlistOnly` filtering, preview opening and saved-work backup/restore, and open the canonical preview without resetting active filters.
 - The local viewer caches material chip counts across filter changes instead of rescanning loaded albums, prevents long seller names from clipping `PREF` badges, and shows shortcut hints inside the open preview modal instead of behind its backdrop.
+- The local `commit-msg` guard's stale-rules warning now also works in a clone
+  with no `origin/HEAD` (it falls back to `origin/main`) and compares with
+  `git diff-tree`, so no diff setting changes the result. The install line in
+  `.githooks/commit-msg` now says why it refuses, and also refuses with
+  untracked files (which `cargo install` could build) and when `core.hooksPath`
+  is set, where Git would never run the installed hook.
 
 ## 0.1.3 (2026-11-24)
 
