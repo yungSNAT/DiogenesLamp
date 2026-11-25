@@ -1,21 +1,41 @@
 # Changelog
 
 ## Unreleased
+
 - `[shops.*].url` in `sources.toml`, `index.json` shop entries and the viewer's shops panel now require explicit `http:` or `https:` URLs without embedded credentials, rejecting `javascript:`, `data:`, `file:` and other schemes.
 - `lamp serve` and `lamp demo` now reject requests with non-localhost, mismatched-port, duplicate or missing HTTP/1.1 `Host` headers to block DNS rebinding, and apply bounded read (10 s) and write (30 s) timeouts on accepted sockets.
 - Shortlist entries for aliased duplicates now inherit to their canonical listing ID, resolve cleanly in `shortlistOnly` filtering, preview opening and saved-work backup/restore, and open the canonical preview without resetting active filters.
 - The local viewer caches material chip counts across filter changes instead of rescanning loaded albums, prevents long seller names from clipping `PREF` badges, and shows shortcut hints inside the open preview modal instead of behind its backdrop.
-- On Linux musl builds, OSError messages now carry musl's own errno text (for example `[Errno 5] I/O error`), as Python built against musl prints, instead of glibc's wording.
-- `sources.toml` now supports `preferred = true` on seller and shop entries (prioritising preferred sellers in cross-seller duplicate clusters, default viewer sort, seller headers and a **Preferred** filter toggle) and `[blocklist]` `skip_sellers` (refusing blocked sellers during `lamp import` and `lamp scrape` with explicit reporting).
-- The local viewer adds 1-click material filter chips below the filter bar, reusing the existing garment and material gloss dictionary and staying in sync with the Material dropdown.
 
-- The local `commit-msg` hook's attribution check is now Rust (`tools/commit-msg`) with the same results. Reinstall it as the header of `.githooks/commit-msg` says: the hook now runs a guard binary installed beside it and refuses commits until that binary is installed.
-- The local viewer adds a browser-stored shortlist with optional size, colour and note fields, a Shortlist grid filter, JSON and Markdown export or clipboard copy, and keyboard shortcuts (`s` to toggle shortlist, `o` to open the Yupoo album, `a` to open the shopping-agent link, `/` to focus search and `?` to toggle the shortcut reference).
-- `lamp completions <shell>` generates shell completion scripts for `bash`, `elvish`, `fish`, `powershell` and `zsh`.
-- Release builds strip symbols (`strip = true`), use `mimalloc` (`no_thp`) on Linux musl targets and carry `[package.metadata.binstall]` metadata for `cargo-binstall`.
+## 0.1.3 (2026-11-24)
 
-## 0.1.3 (2026-11-19)
-
+- On Linux musl builds, OSError messages now carry musl's own errno text (for
+  example `[Errno 5] I/O error`), as Python built against musl prints, instead
+  of glibc's wording.
+- The README's Alerts section adds a Telegram bot recipe for
+  `lamp scrape --notify`.
+- `sources.toml` now supports `preferred = true` on seller and shop entries
+  (prioritising preferred sellers in cross-seller duplicate clusters, default
+  viewer sort, seller headers and a **Preferred** filter toggle) and
+  `[blocklist]` `skip_sellers` (refusing blocked sellers during `lamp import`
+  and `lamp scrape` with explicit reporting).
+- The local viewer adds 1-click material filter chips below the filter bar,
+  reusing the existing garment and material gloss dictionary and staying in
+  sync with the Material dropdown.
+- The local `commit-msg` hook's attribution check is now Rust
+  (`tools/commit-msg`) with the same results. Reinstall it as the header of
+  `.githooks/commit-msg` says: the hook now runs a guard binary installed
+  beside it and refuses commits until that binary is installed.
+- The local viewer adds a browser-stored shortlist with optional size, colour
+  and note fields, a Shortlist grid filter, JSON and Markdown export or
+  clipboard copy, and keyboard shortcuts (`s` to toggle shortlist, `o` to open
+  the Yupoo album, `a` to open the shopping-agent link, `/` to focus search
+  and `?` to toggle the shortcut reference).
+- `lamp completions <shell>` generates shell completion scripts for `bash`,
+  `elvish`, `fish`, `powershell` and `zsh`.
+- Release builds strip symbols (`strip = true`), use `mimalloc` (`no_thp`) on
+  Linux musl targets and carry `[package.metadata.binstall]` metadata for
+  `cargo-binstall`.
 - Dates and times come from jiff instead of chrono, which RustSec lists as
   unmaintained (RUSTSEC-2026-0543); output is unchanged. A `Retry-After`
   date after 11:59:59 UTC on 31 December 9999, other than an IMF-fixdate
