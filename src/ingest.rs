@@ -456,14 +456,6 @@ pub(crate) fn parse_sources_table(path: &Path, data: &toml::Table) -> Result<Sou
                 "[shops.{shop_id}] url must be an http or https URL without credentials"
             ));
         }
-        if ["name", "platform"]
-            .iter()
-            .any(|k| entry.get(*k).is_some_and(|v| !v.is_str()))
-        {
-            return value(format!(
-                "[shops.{shop_id}] name and platform must be strings"
-            ));
-        }
         sources.insert(
             format!("shop:{shop_id}"),
             Source {

@@ -894,7 +894,7 @@ function syncAllShortlistCards() {
 
 /** @param {string} albumId @param {Element | null} [button] */
 function toggleShortlist(albumId, button = null) {
-  const { shortlist, added, full } = toggleShortlistItem(state.shortlist, albumId);
+  const { shortlist, added, full } = toggleShortlistItem(state.shortlist, albumId, undefined, undefined, state.albumAliases);
   if (full) {
     if (typeof actionStatus === "function") {
       actionStatus(`Shortlist is full (${SHORTLIST_LIMITS.maxItems.toLocaleString()} items). Remove an item before adding another.`);
@@ -1257,14 +1257,18 @@ function renderShops(shops) {
   /** @type {Map<string, import("./controller-types.js").Shop[]>} */
   const groups = new Map();
   // Each entry is checked here rather than in validCatalogueIndex, so one
-  // malformed shop is dropped instead of refusing the whole catalogue.
+  // malformed shop is dropped instead of refusing the whole catalogue. lamp
+  // keeps a hand-edited non-string name or platform as written, so both are
+  // shown as text.
   for (const shop of shops) {
-    if (!shop || typeof shop.name !== "string" || typeof shop.platform !== "string" ||
-        (shop.preferred !== undefined && typeof shop.preferred !== "boolean")) continue;
+    if (!shop || typeof shop !== "object") continue;
     const url = safeHttpUrl(shop.url);
     if (!url) continue;
-    if (!groups.has(shop.platform)) groups.set(shop.platform, []);
-    /** @type {import("./controller-types.js").Shop[]} */ (groups.get(shop.platform)).push({ ...shop, url });
+    const platform = String(shop.platform ?? "web");
+    if (!groups.has(platform)) groups.set(platform, []);
+    /** @type {import("./controller-types.js").Shop[]} */ (groups.get(platform)).push({
+      platform, url, name: String(shop.name ?? ""), preferred: shop.preferred === true,
+    });
   }
   els.shopsPanel.replaceChildren();
   // A slide-over that covers the grid needs a way out that is not the

@@ -353,9 +353,6 @@ pub fn validate_metadata(value_in: &Value, relative: &str) -> Result<()> {
                 if !url_valid {
                     return value("invalid shop URL");
                 }
-                if !is_str(get(s, "name")) || !is_str(get(s, "platform")) {
-                    return value("invalid shop name or platform");
-                }
             }
         }
         let aliases_ok = match map.get("album_aliases") {

@@ -205,15 +205,15 @@ function writeShortlist(host, shortlist) {
  * @param {string} albumId
  * @param {ShortlistFields} [fields]
  * @param {string} [nowIso]
+ * @param {Record<string, string> | null} [aliases]
  * @returns {{shortlist: ShortlistMap, added: boolean, full: boolean}}
  */
-function toggleShortlistItem(shortlist, albumId, fields = EMPTY_FIELDS, nowIso = new Date().toISOString()) {
+function toggleShortlistItem(shortlist, albumId, fields = EMPTY_FIELDS, nowIso = new Date().toISOString(), aliases = null) {
   const id = cleanShortlistText(albumId, SHORTLIST_LIMITS.maxId);
   const next = new Map(shortlist);
   if (!id) return { shortlist: next, added: false, full: false };
   if (next.has(id)) {
-    next.delete(id);
-    return { shortlist: next, added: false, full: false };
+    return { shortlist: removeShortlistItem(next, id, aliases), added: false, full: false };
   }
   if (next.size >= SHORTLIST_LIMITS.maxItems) {
     return { shortlist: next, added: false, full: true };
@@ -259,13 +259,22 @@ function updateShortlistItem(shortlist, albumId, fields, nowIso = new Date().toI
 }
 
 /**
+ * Remove an album and every older entry whose alias resolves to it, which
+ * inheritance would otherwise move back in on the next refresh.
  * @param {ShortlistMap} shortlist
  * @param {string} albumId
+ * @param {Record<string, string> | null} [aliases]
  * @returns {ShortlistMap}
  */
-function removeShortlistItem(shortlist, albumId) {
+function removeShortlistItem(shortlist, albumId, aliases = null) {
   const next = new Map(shortlist);
   next.delete(albumId);
+  if (aliases) {
+    for (const id of shortlist.keys()) {
+      const resolved = resolveShortlistAlias(id, aliases);
+      if (!resolved.cycled && resolved.target === albumId) next.delete(id);
+    }
+  }
   return next;
 }
 

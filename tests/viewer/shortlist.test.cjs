@@ -520,6 +520,16 @@ test("aliased shortlist entries resolve chains, cycles, filters, backup/restore 
   const paired = inheritShortlistAliases(pair, { 100: "200", 150: "200" }).shortlist;
   assert.equal(paired.get("200").note, "Later");
   assert.equal(paired.get("100").colour, "Red");
+  // Removing the canonical album also drops the older entries that resolve to it,
+  // or the next refresh would move one back in.
+  const siblings = new Map([
+    ["200", { id: "200", size: "", colour: "", note: "Canonical", added_at: "" }],
+    ["100", { id: "100", size: "", colour: "", note: "Old copy", added_at: "" }],
+    ["300", { id: "300", size: "", colour: "", note: "Other", added_at: "" }],
+  ]);
+  assert.deepEqual([...toggleShortlistItem(siblings, "200", undefined, undefined, { 100: "200" }).shortlist.keys()], ["300"]);
+  assert.deepEqual([...removeShortlistItem(siblings, "200", { 100: "200" }).keys()], ["300"]);
+  assert.deepEqual([...removeShortlistItem(siblings, "100", { 100: "200" }).keys()], ["200", "300"]);
 
   const explicitWins = inheritShortlistAliases(
     updateShortlistItem(list, "250", { size: "XL", colour: "Grey", note: "Explicit" }),

@@ -532,14 +532,6 @@ fn malformed_sources_files_are_refused_with_the_reason() {
         ),
         ("[shops.s]\nname = \"s\"\n", "[shops.s] needs a url"),
         ("[shops.s]\nurl = 1\n", "[shops.s] needs a url string"),
-        (
-            "[shops.s]\nurl = \"https://a.com\"\nname = 5\n",
-            "[shops.s] name and platform must be strings",
-        ),
-        (
-            "[shops.s]\nurl = \"https://a.com\"\nplatform = true\n",
-            "[shops.s] name and platform must be strings",
-        ),
     ];
     for (text, reason) in cases {
         common::write(&path, text);

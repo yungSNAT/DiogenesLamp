@@ -37,18 +37,22 @@ test("shop groups are headed in platform-name order and omit non-HTTP(S) URLs", 
     { platform: "evil-only", name: "BadData", url: "data:text/html,<h1>x</h1>" },
     { platform: "evil-file", name: "BadFile", url: "file:///etc/passwd" },
     { platform: "evil-space", name: "BadHost", url: "http://shop example/" },
-    { platform: 7, name: "BadPlatform", url: "https://p.example" },
-    { platform: "evil-name", name: 5, url: "https://n.example" },
-    { platform: "evil-pref", name: "BadPref", url: "https://pref.example", preferred: "yes" },
+    // A hand-edited non-string name or platform is shown as text.
+    { platform: 7, name: "Numbered", url: "https://p.example" },
+    { platform: "web", name: 5, url: "https://n.example", preferred: "yes" },
     null,
     [],
   ]);
   const headings = panel.children.filter(c => c.tagName === "h3").map(c => c.textContent);
-  assert.deepEqual(headings, ["1688", "taobao", "taobao global"]);
+  assert.deepEqual(headings, ["1688", "7", "taobao", "taobao global", "web"]);
   const links = panel.children.filter(c => c.tagName === "a");
   assert.deepEqual(links.map(l => [l.textContent, l.href]), [
     ["C", "https://c.example/"],
+    ["Numbered", "https://p.example/"],
     ["A", "http://a.example/"],
     ["B", "https://b.example/"],
+    ["5", "https://n.example/"],
   ]);
+  // Only a boolean true earns the badge.
+  assert.equal(links.at(-1).children.length, 0);
 });

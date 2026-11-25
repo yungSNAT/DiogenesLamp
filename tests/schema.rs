@@ -84,16 +84,6 @@ fn index_refusals_name_the_broken_field() {
             r#"{"sellers": [], "shops": [{"name": "Missing URL"}]}"#.into(),
             "invalid shop URL",
         ),
-        (
-            r#"{"sellers": [], "shops": [{"name": 5, "platform": "web", "url": "https://shop.example/"}]}"#
-                .into(),
-            "invalid shop name or platform",
-        ),
-        (
-            r#"{"sellers": [], "shops": [{"name": "No platform", "url": "https://shop.example/"}]}"#
-                .into(),
-            "invalid shop name or platform",
-        ),
     ];
     for (text, reason) in cases {
         assert_eq!(refusal(&text, "index.json"), reason, "{text}");

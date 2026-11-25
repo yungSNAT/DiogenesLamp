@@ -814,7 +814,7 @@ function buildShortlistRow(record) {
   removeBtn.textContent = "Remove";
   removeBtn.setAttribute("aria-label", `Remove ${record.title || `Album ${record.id}`} from shortlist`);
   removeBtn.addEventListener("click", () => {
-    const next = removeShortlistItem(state.shortlist, record.id);
+    const next = removeShortlistItem(state.shortlist, record.id, state.albumAliases);
     if (!writeShortlist(window, next)) {
       savedDataError("Shortlist could not be saved. Browser storage may be full or blocked.");
       return;
