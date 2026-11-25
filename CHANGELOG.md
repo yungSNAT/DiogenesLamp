@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `[shops.*].url` in `sources.toml`, `index.json` shop entries and the viewer's shops panel now require explicit `http:` or `https:` URLs without embedded credentials, rejecting `javascript:`, `data:`, `file:` and other schemes, a schemeless address such as `weidian.com/?userid=1`, an invalid port and a host name a browser refuses; `lamp` refuses a `sources.toml` or `index.json` holding such a shop, naming it; the viewer drops such an entry and still loads the catalogue.
+- `lamp serve` and `lamp demo` now reject requests with non-localhost, mismatched-port, duplicate or missing HTTP/1.1 `Host` headers to block DNS rebinding, and apply bounded read (10 s) and write (30 s) timeouts on accepted sockets.
+- Shortlist entries for aliased duplicates now move to their canonical listing ID when it has no entry of its own (other entries keep their size, colour and note, and removing an album removes them too), resolve cleanly in `shortlistOnly` filtering, preview opening and saved-work backup/restore, and open the canonical preview without resetting active filters.
+- The local viewer caches material chip counts across filter changes instead of rescanning loaded albums, prevents long seller names from clipping `PREF` badges, and shows shortcut hints inside the open preview modal instead of behind its backdrop.
+
 ## 0.1.3 (2026-11-24)
 
 - On Linux musl builds, OSError messages now carry musl's own errno text (for

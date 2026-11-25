@@ -50,6 +50,64 @@ describe("material filter chips", () => {
     assert.equal(toggleMaterialFilter("cashmere", "wool"), "wool");
     assert.equal(toggleMaterialFilter("wool", "wool"), "");
   });
+
+  it("caches material chip counts per state.albums reference across filter changes", () => {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const vm = require("node:vm");
+    const appSource = fs.readFileSync(path.join(__dirname, "../../viewer/app.js"), "utf8");
+    const block = appSource.match(/let cachedMaterialAlbums = null;[\s\S]*?\nfunction syncMaterialChips\(\) \{[\s\S]*?\n\}/);
+    assert.ok(block, "app.js no longer declares cachedMaterialAlbums and syncMaterialChips");
+    let scans = 0;
+    const chipButtons = new Map([
+      ["wool", {
+        attrs: {},
+        countEl: { textContent: "", hidden: true },
+        setAttribute(k, v) { this.attrs[k] = v; },
+        querySelector() { return this.countEl; },
+      }],
+    ]);
+    const firstAlbums = [{ traits: ["wool"] }, { traits: ["wool"] }];
+    const context = {
+      MATERIAL_CHIPS: [{ id: "wool", label: "Wool" }],
+      MATERIAL_CHIP_IDS: ["wool"],
+      materialChipButtons: chipButtons,
+      state: { albums: firstAlbums, view: { filters: { material: "" } } },
+      countMaterials(albums, ids) {
+        scans += 1;
+        return countMaterials(albums, ids);
+      },
+    };
+    vm.createContext(context);
+    vm.runInContext(block[0], context);
+    context.syncMaterialChips();
+    assert.equal(scans, 1);
+    assert.equal(chipButtons.get("wool").countEl.textContent, "2");
+    assert.equal(chipButtons.get("wool").attrs["aria-pressed"], "false");
+
+    // Repeated filter changes reuse cached counts without rescanning state.albums.
+    context.state.view.filters.material = "wool";
+    context.syncMaterialChips();
+    context.state.view.filters.material = "";
+    context.syncMaterialChips();
+    assert.equal(scans, 1);
+
+    // Replacing state.albums (shard rebuild) recomputes counts once.
+    context.state.albums = [{ traits: ["wool"] }];
+    context.syncMaterialChips();
+    assert.equal(scans, 2);
+    assert.equal(chipButtons.get("wool").countEl.textContent, "1");
+  });
+
+  it("isolates seller name truncation from the PREF badge in card markup and CSS", () => {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const appSource = fs.readFileSync(path.join(__dirname, "../../viewer/app.js"), "utf8");
+    const cssSource = fs.readFileSync(path.join(__dirname, "../../viewer/style.css"), "utf8");
+    assert.match(appSource, /<span class="seller-tag"><span class="seller-name">\$\{escapeHtml\(album\.seller\)\}<\/span>/);
+    assert.match(cssSource, /\.seller-name\s*\{[^}]*text-overflow:\s*ellipsis/);
+    assert.match(cssSource, /\.seller-tag\s+\.badge-preferred\s*\{[^}]*flex:\s*none/);
+  });
 });
 
 describe("preferred sellers in viewer", () => {

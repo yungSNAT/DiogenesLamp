@@ -46,7 +46,7 @@ const ERROR_TEMPLATE: &str = "<!DOCTYPE HTML>
 ";
 
 /// `http.server`'s phrases for the codes this server sends.
-const STATUS_TEXT: [(u16, &str, &str); 6] = [
+const STATUS_TEXT: [(u16, &str, &str); 8] = [
     (200, "OK", "Request fulfilled, document follows"),
     (
         301,
@@ -57,6 +57,16 @@ const STATUS_TEXT: [(u16, &str, &str); 6] = [
         304,
         "Not Modified",
         "Document has not changed since given time",
+    ),
+    (
+        400,
+        "Bad Request",
+        "Bad request syntax or unsupported method",
+    ),
+    (
+        403,
+        "Forbidden",
+        "Request forbidden -- authorization will not help",
     ),
     (404, "Not Found", "Nothing matches the given URI"),
     (
@@ -70,6 +80,40 @@ const STATUS_TEXT: [(u16, &str, &str); 6] = [
         "Server does not support this operation",
     ),
 ];
+
+const SOCKET_READ_TIMEOUT: Duration = Duration::from_secs(10);
+const SOCKET_WRITE_TIMEOUT: Duration = Duration::from_secs(30);
+
+fn configure_stream(stream: &TcpStream) {
+    let _ = stream.set_nonblocking(false);
+    let _ = stream.set_read_timeout(Some(SOCKET_READ_TIMEOUT));
+    let _ = stream.set_write_timeout(Some(SOCKET_WRITE_TIMEOUT));
+}
+
+fn valid_host_header(value: &str, expected_port: u16) -> bool {
+    let (host, port) = if let Some(rest) = value.strip_prefix('[') {
+        let Some((ipv6, tail)) = rest.split_once(']') else {
+            return false;
+        };
+        if ipv6 != "::1" {
+            return false;
+        }
+        if tail.is_empty() {
+            ("::1", None)
+        } else if let Some(p) = tail.strip_prefix(':') {
+            ("::1", Some(p))
+        } else {
+            return false;
+        }
+    } else if let Some((h, p)) = value.split_once(':') {
+        (h, Some(p))
+    } else {
+        (value, None)
+    };
+    let host_ok = host == "127.0.0.1" || host == "::1" || host.eq_ignore_ascii_case("localhost");
+    let port_ok = port.is_none_or(|p| p == expected_port.to_string());
+    host_ok && port_ok
+}
 
 fn status_text(code: u16) -> (&'static str, &'static str) {
     STATUS_TEXT
@@ -550,7 +594,7 @@ fn latin1(b: u8) -> u8 {
     b
 }
 
-fn handle(stream: &TcpStream, viewer: &Viewer, data_dir: &Path) {
+fn handle(stream: &TcpStream, viewer: &Viewer, data_dir: &Path, port: u16) {
     let mut reader = BufReader::new(stream);
     let mut raw = Vec::new();
     if reader
@@ -668,6 +712,24 @@ fn handle(stream: &TcpStream, viewer: &Viewer, data_dir: &Path) {
                     .push((name.trim().to_string(), value.trim().to_string()));
             }
         }
+        let hosts: Vec<&str> = handler
+            .headers
+            .iter()
+            .filter(|(k, _)| k.eq_ignore_ascii_case("host"))
+            .map(|(_, v)| v.as_str())
+            .collect();
+        if hosts.len() > 1 || (hosts.is_empty() && handler.request_version == "HTTP/1.1") {
+            handler.send_error(400, Some("Bad Request"), Some("Invalid Host header"));
+            let _ = handler.stream.flush();
+            return;
+        }
+        if let Some(&host) = hosts.first()
+            && !valid_host_header(host, port)
+        {
+            handler.send_error(403, Some("Forbidden"), Some("Host header is not allowed"));
+            let _ = handler.stream.flush();
+            return;
+        }
     }
     match handler.command.as_str() {
         "GET" | "HEAD" => handler.send_head(),
@@ -712,11 +774,12 @@ impl Server {
         while !self.shutdown.load(Ordering::SeqCst) {
             match self.listener.accept() {
                 Ok((stream, _)) => {
-                    let _ = stream.set_nonblocking(false);
+                    configure_stream(&stream);
+                    let port = self.port();
                     let viewer = self.viewer.clone();
                     let data_dir = self.data_dir.clone();
                     std::thread::spawn(move || {
-                        handle(&stream, &viewer, &data_dir);
+                        handle(&stream, &viewer, &data_dir, port);
                         let _ = stream.shutdown(std::net::Shutdown::Both);
                     });
                 }
@@ -877,5 +940,51 @@ mod tests {
         ] {
             assert_eq!(parse_http_date(text), expected, "{text}");
         }
+    }
+
+    #[test]
+    fn host_header_allowlist_and_stream_timeouts() {
+        for valid in [
+            "127.0.0.1",
+            "127.0.0.1:8080",
+            "localhost",
+            "LOCALHOST",
+            "LocalHost:8080",
+            "[::1]",
+            "[::1]:8080",
+        ] {
+            assert!(valid_host_header(valid, 8080), "{valid}");
+        }
+        for invalid in [
+            "",
+            "evil.example",
+            "evil.example:8080",
+            "localhost.evil.example:8080",
+            "127.0.0.2:8080",
+            "127.0.0.1:9090",
+            "127.0.0.1:",
+            "localhost:08080",
+            "[::1]:9090",
+            "[::1]extra",
+            "[::1",
+            "[::2]:8080",
+            "user@localhost:8080",
+        ] {
+            assert!(!valid_host_header(invalid, 8080), "{invalid}");
+        }
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let addr = listener.local_addr().unwrap();
+        let client = TcpStream::connect(addr).unwrap();
+        let (server_stream, _) = listener.accept().unwrap();
+        configure_stream(&server_stream);
+        assert_eq!(
+            server_stream.read_timeout().unwrap(),
+            Some(SOCKET_READ_TIMEOUT)
+        );
+        assert_eq!(
+            server_stream.write_timeout().unwrap(),
+            Some(SOCKET_WRITE_TIMEOUT)
+        );
+        drop(client);
     }
 }

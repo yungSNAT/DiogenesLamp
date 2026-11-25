@@ -531,11 +531,27 @@ fn malformed_sources_files_are_refused_with_the_reason() {
             "unsafe TOML id: 'a b'",
         ),
         ("[shops.s]\nname = \"s\"\n", "[shops.s] needs a url"),
+        ("[shops.s]\nurl = 1\n", "[shops.s] needs a url string"),
     ];
     for (text, reason) in cases {
         common::write(&path, text);
         let error = load_sources(&path).unwrap_err().to_string();
         assert!(error.contains(reason), "{text:?}: {error}");
+    }
+    for bad_url in [
+        "javascript:alert(1)",
+        "data:text/html,<h1>x</h1>",
+        "file:///etc/passwd",
+        "https://user:pass@shop.example/",
+        "http://shop example/",
+        "http://shop.example:99999/",
+    ] {
+        common::write(&path, format!("[shops.s]\nurl = \"{bad_url}\"\n"));
+        let error = load_sources(&path).unwrap_err().to_string();
+        assert!(
+            error.contains("[shops.s] url must be an http or https URL"),
+            "{bad_url}: {error}"
+        );
     }
     // A seller id with no lower-case spelling the catalogue accepts gets no example.
     common::write(&path, "[yupoo.\"a b\"]\nurl = \"https://a.x.yupoo.com\"\n");
