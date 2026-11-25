@@ -72,7 +72,7 @@ fn stale_against(dir: &Path, source: &str) -> Option<&'static str> {
     })?;
     // diff-tree is plumbing: no diff driver or user diff setting applies.
     let differs = [
-        &["diff-tree", "--quiet", source, remote, "--"][..],
+        &["diff-tree", "-r", "--quiet", source, remote, "--"][..],
         &RULE_FILES,
     ]
     .concat();
@@ -215,7 +215,10 @@ mod tests {
             ],
         );
         assert_eq!(stale_against(&dir, &new), Some("origin/HEAD"));
-        // A change outside the rule files is not a stale guard.
+        // A change outside the rule files is not a stale guard, even beside them.
+        let sibling = commit(&dir, "src/serve.rs", "server\n");
+        git(&dir, &["update-ref", "refs/remotes/origin/trunk", &sibling]);
+        assert_eq!(stale_against(&dir, &other), None);
         let docs = commit(&dir, "README.md", "docs\n");
         git(&dir, &["update-ref", "refs/remotes/origin/trunk", &docs]);
         assert_eq!(stale_against(&dir, &other), None);

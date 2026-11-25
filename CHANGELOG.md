@@ -5,8 +5,9 @@
 - The local `commit-msg` guard's stale-rules warning now also works in a clone
   with no `origin/HEAD` (it falls back to `origin/main`) and compares with
   `git diff-tree`, so no diff setting changes the result. The install line in
-  `.githooks/commit-msg` now says why it refuses, and refuses when
-  `core.hooksPath` is set, where Git would never run the installed hook.
+  `.githooks/commit-msg` now says why it refuses, and also refuses with
+  untracked files (which `cargo install` could build) and when `core.hooksPath`
+  is set, where Git would never run the installed hook.
 
 ## 0.1.3 (2026-11-24)
 
