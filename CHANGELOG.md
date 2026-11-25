@@ -1,17 +1,36 @@
 # Changelog
 
 ## Unreleased
-- On Linux musl builds, OSError messages now carry musl's own errno text (for example `[Errno 5] I/O error`), as Python built against musl prints, instead of glibc's wording.
-- `sources.toml` now supports `preferred = true` on seller and shop entries (prioritising preferred sellers in cross-seller duplicate clusters, default viewer sort, seller headers and a **Preferred** filter toggle) and `[blocklist]` `skip_sellers` (refusing blocked sellers during `lamp import` and `lamp scrape` with explicit reporting).
-- The local viewer adds 1-click material filter chips below the filter bar, reusing the existing garment and material gloss dictionary and staying in sync with the Material dropdown.
 
-- The local `commit-msg` hook's attribution check is now Rust (`tools/commit-msg`) with the same results. Reinstall it as the header of `.githooks/commit-msg` says: the hook now runs a guard binary installed beside it and refuses commits until that binary is installed.
-- The local viewer adds a browser-stored shortlist with optional size, colour and note fields, a Shortlist grid filter, JSON and Markdown export or clipboard copy, and keyboard shortcuts (`s` to toggle shortlist, `o` to open the Yupoo album, `a` to open the shopping-agent link, `/` to focus search and `?` to toggle the shortcut reference).
-- `lamp completions <shell>` generates shell completion scripts for `bash`, `elvish`, `fish`, `powershell` and `zsh`.
-- Release builds strip symbols (`strip = true`), use `mimalloc` (`no_thp`) on Linux musl targets and carry `[package.metadata.binstall]` metadata for `cargo-binstall`.
+## 0.1.3 (2026-11-24)
 
-## 0.1.3 (2026-11-19)
-
+- On Linux musl builds, OSError messages now carry musl's own errno text (for
+  example `[Errno 5] I/O error`), as Python built against musl prints, instead
+  of glibc's wording.
+- The README's Alerts section adds a Telegram bot recipe for
+  `lamp scrape --notify`.
+- `sources.toml` now supports `preferred = true` on seller and shop entries
+  (prioritising preferred sellers in cross-seller duplicate clusters, default
+  viewer sort, seller headers and a **Preferred** filter toggle) and
+  `[blocklist]` `skip_sellers` (refusing blocked sellers during `lamp import`
+  and `lamp scrape` with explicit reporting).
+- The local viewer adds 1-click material filter chips below the filter bar,
+  reusing the existing garment and material gloss dictionary and staying in
+  sync with the Material dropdown.
+- The local `commit-msg` hook's attribution check is now Rust
+  (`tools/commit-msg`) with the same results. Reinstall it as the header of
+  `.githooks/commit-msg` says: the hook now runs a guard binary installed
+  beside it and refuses commits until that binary is installed.
+- The local viewer adds a browser-stored shortlist with optional size, colour
+  and note fields, a Shortlist grid filter, JSON and Markdown export or
+  clipboard copy, and keyboard shortcuts (`s` to toggle shortlist, `o` to open
+  the Yupoo album, `a` to open the shopping-agent link, `/` to focus search
+  and `?` to toggle the shortcut reference).
+- `lamp completions <shell>` generates shell completion scripts for `bash`,
+  `elvish`, `fish`, `powershell` and `zsh`.
+- Release builds strip symbols (`strip = true`), use `mimalloc` (`no_thp`) on
+  Linux musl targets and carry `[package.metadata.binstall]` metadata for
+  `cargo-binstall`.
 - Dates and times come from jiff instead of chrono, which RustSec lists as
   unmaintained (RUSTSEC-2026-0543); output is unchanged. A `Retry-After`
   date after 11:59:59 UTC on 31 December 9999, other than an IMF-fixdate

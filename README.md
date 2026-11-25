@@ -121,6 +121,13 @@ On Windows, in PowerShell:
 [Verify a release](https://github.com/ryanduguid/release-policy/blob/main/docs/verify-a-release.md)
 explains these checks and what they prove.
 
+### With cargo-binstall
+
+With [cargo-binstall](https://github.com/cargo-bins/cargo-binstall), you can
+fetch the prebuilt release executable directly:
+
+    cargo binstall diogenes-lamp
+
 ### From source
 
 With a Rust toolchain (the version is pinned in `rust-toolchain.toml`):
@@ -152,7 +159,10 @@ when you press Ctrl+C. It never writes to `data/` or `sources.toml`.
        lamp import links.csv
 
    This creates or updates `sources.toml`. Non-Yupoo shop links (taobao,
-   weidian, link aggregators) are kept as a link-out directory.
+   weidian, link aggregators) are kept as a link-out directory. Mark trusted
+   sellers or shops with `preferred = true` to prioritise them in duplicate
+   selection and default sort, or exclude unwanted sellers under `[blocklist]`
+   `skip_sellers`.
 
 2. Scrape (the first run is slow by design: it rate-limits itself to stay
    polite; re-runs read every listing page again but skip albums whose
@@ -164,8 +174,17 @@ when you press Ctrl+C. It never writes to `data/` or `sources.toml`.
 
        lamp serve
 
+   The viewer includes 1-click material filter chips below the filter bar, a
+   **Preferred** seller filter toggle, a browser-stored shortlist (with size,
+   colour, note fields and JSON or Markdown export and copy), and keyboard
+   shortcuts (`s` to shortlist, `o` to open the Yupoo album, `a` to open the
+   shopping-agent link, `/` to focus search and `?` for the shortcut guide).
+
 Flags, scrape behaviour and the viewer's features are in
-[docs/reference.md](docs/reference.md).
+[docs/reference.md](docs/reference.md). To generate shell completions for
+`bash`, `elvish`, `fish`, `powershell` or `zsh`:
+
+    lamp completions powershell
 
 Search in English also finds the Chinese words sellers write for garments,
 colours, fits and materials (experimental), and, except on a narrow screen,
