@@ -37,6 +37,7 @@ test("shop groups are headed in platform-name order and omit non-HTTP(S) URLs", 
     { platform: "evil-only", name: "BadData", url: "data:text/html,<h1>x</h1>" },
     { platform: "evil-file", name: "BadFile", url: "file:///etc/passwd" },
     { platform: "evil-space", name: "BadHost", url: "http://shop example/" },
+    { platform: "evil-schemeless", name: "NoScheme", url: "weidian.com/?userid=1" },
     // A hand-edited non-string name or platform is shown as text.
     { platform: 7, name: "Numbered", url: "https://p.example" },
     { platform: "web", name: 5, url: "https://n.example", preferred: "yes" },

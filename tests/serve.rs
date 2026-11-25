@@ -693,6 +693,10 @@ fn host_header_rejects_rebinding_and_allows_localhost_variants() {
         format!("[::1]:{other_port}"),
         "[::1]junk".to_string(),
         "".to_string(),
+        format!("localhost.:{port}"),
+        format!("localhost:{port}, attacker.example"),
+        format!("[::ffff:127.0.0.1]:{port}"),
+        format!("127.0.0.1 attacker.example:{port}"),
     ] {
         let reply = request(port, "GET", "/data/index.json", &[("Host", &forbidden)]);
         assert_eq!(reply.status, 403, "{forbidden}");
@@ -712,6 +716,30 @@ fn host_header_rejects_rebinding_and_allows_localhost_variants() {
         String::from_utf8_lossy(&missing_http11).starts_with("HTTP/1.0 400 Bad Request\r\n"),
         "{}",
         String::from_utf8_lossy(&missing_http11)
+    );
+
+    // An absolute-form target names a host too, but only the Host header counts.
+    let absolute = exchange(
+        port,
+        format!(
+            "GET http://localhost:{port}/data/index.json HTTP/1.1\r\nHost: attacker.example\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    assert!(
+        String::from_utf8_lossy(&absolute).starts_with("HTTP/1.0 403 Forbidden\r\n"),
+        "{}",
+        String::from_utf8_lossy(&absolute)
+    );
+    // A header line without a colon cannot stand in for Host.
+    let colonless = exchange(
+        port,
+        b"GET /data/index.json HTTP/1.1\r\nHost localhost\r\n\r\n",
+    );
+    assert!(
+        String::from_utf8_lossy(&colonless).starts_with("HTTP/1.0 400 Bad Request\r\n"),
+        "{}",
+        String::from_utf8_lossy(&colonless)
     );
 
     let valid_http11 = exchange(
