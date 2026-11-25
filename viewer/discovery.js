@@ -295,17 +295,6 @@ function validCatalogueIndex(raw) {
           typeof newest !== "string" || !indexed.has(newest)) return false;
     }
   }
-  for (const shop of index.shops) {
-    if (!shop || typeof shop !== "object" || Array.isArray(shop) ||
-        typeof shop.name !== "string" || typeof shop.platform !== "string" ||
-        typeof shop.url !== "string" ||
-        (shop.preferred !== undefined && typeof shop.preferred !== "boolean")) return false;
-    try {
-      const parsed = new URL(shop.url.trim());
-      if ((parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
-          parsed.username || parsed.password) return false;
-    } catch { return false; }
-  }
   return true;
 }
 

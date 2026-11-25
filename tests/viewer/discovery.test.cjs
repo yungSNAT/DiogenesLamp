@@ -36,9 +36,13 @@ test("catalogue index accepts legacy data and validates selections before saved 
     {name: "Creds", platform: "web", url: "https://user:pass@shop.example/"},
     {name: "BadPref", platform: "web", url: "https://shop.example/", preferred: "yes"},
     {name: "NoPlatform", url: "https://shop.example/"},
+    {name: 5, platform: "web", url: "https://shop.example/"},
+    {name: "Space", platform: "web", url: "http://shop example/"},
   ]) {
-    assert.equal(validCatalogueIndex({...index, shops: [badShop]}), false, JSON.stringify(badShop));
+    // One bad shop entry must not cost the whole catalogue: renderShops drops it.
+    assert.equal(validCatalogueIndex({...index, shops: [badShop]}), true, JSON.stringify(badShop));
   }
+  assert.equal(validCatalogueIndex({...index, shops: {}}), false);
 });
 const {prepareAlbumSearch, compileCatalogueSearch, catalogueCsv, similarCovers, validCatalogueShard} = require("../../viewer/discovery.js");
 const {filtersToURL, filtersFromURL} = require("../../viewer/filters.js");

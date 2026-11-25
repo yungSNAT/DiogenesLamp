@@ -36,6 +36,12 @@ test("shop groups are headed in platform-name order and omit non-HTTP(S) URLs", 
     { platform: "1688", name: "BadCreds", url: "https://user:pass@shop.example/" },
     { platform: "evil-only", name: "BadData", url: "data:text/html,<h1>x</h1>" },
     { platform: "evil-file", name: "BadFile", url: "file:///etc/passwd" },
+    { platform: "evil-space", name: "BadHost", url: "http://shop example/" },
+    { platform: 7, name: "BadPlatform", url: "https://p.example" },
+    { platform: "evil-name", name: 5, url: "https://n.example" },
+    { platform: "evil-pref", name: "BadPref", url: "https://pref.example", preferred: "yes" },
+    null,
+    [],
   ]);
   const headings = panel.children.filter(c => c.tagName === "h3").map(c => c.textContent);
   assert.deepEqual(headings, ["1688", "taobao", "taobao global"]);

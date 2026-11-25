@@ -1256,7 +1256,11 @@ window.addEventListener("resize", () => {
 function renderShops(shops) {
   /** @type {Map<string, import("./controller-types.js").Shop[]>} */
   const groups = new Map();
+  // Each entry is checked here rather than in validCatalogueIndex, so one
+  // malformed shop is dropped instead of refusing the whole catalogue.
   for (const shop of shops) {
+    if (!shop || typeof shop.name !== "string" || typeof shop.platform !== "string" ||
+        (shop.preferred !== undefined && typeof shop.preferred !== "boolean")) continue;
     const url = safeHttpUrl(shop.url);
     if (!url) continue;
     if (!groups.has(shop.platform)) groups.set(shop.platform, []);
