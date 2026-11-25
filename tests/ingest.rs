@@ -532,6 +532,14 @@ fn malformed_sources_files_are_refused_with_the_reason() {
         ),
         ("[shops.s]\nname = \"s\"\n", "[shops.s] needs a url"),
         ("[shops.s]\nurl = 1\n", "[shops.s] needs a url string"),
+        (
+            "[shops.s]\nurl = \"https://a.com\"\nname = 5\n",
+            "[shops.s] name and platform must be strings",
+        ),
+        (
+            "[shops.s]\nurl = \"https://a.com\"\nplatform = true\n",
+            "[shops.s] name and platform must be strings",
+        ),
     ];
     for (text, reason) in cases {
         common::write(&path, text);
@@ -543,6 +551,8 @@ fn malformed_sources_files_are_refused_with_the_reason() {
         "data:text/html,<h1>x</h1>",
         "file:///etc/passwd",
         "https://user:pass@shop.example/",
+        "http://shop example/",
+        "http://shop.example:99999/",
     ] {
         common::write(&path, format!("[shops.s]\nurl = \"{bad_url}\"\n"));
         let error = load_sources(&path).unwrap_err().to_string();

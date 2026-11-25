@@ -498,26 +498,38 @@ test("app.js toggleShortlist reports capacity limit without writing storage or a
 });
 
 test("aliased shortlist entries resolve chains, cycles, filters, backup/restore and modal status", async () => {
-  // 1. inheritShortlistAliases resolves chains, prefers higher older numeric IDs,
-  // preserves explicit canonical entries and guards against cycles without dropping items.
+  // 1. inheritShortlistAliases resolves chains and moves only into an absent target:
+  // the highest older ID moves, the others and explicit canonical entries stay, and
+  // cycles are left alone, so no saved field is dropped.
   let list = new Map();
   list = updateShortlistItem(list, "100", { size: "M", colour: "Navy", note: "Earlier" }, "2026-11-20T00:00:00Z");
   list = updateShortlistItem(list, "150", { size: "L", colour: "Black", note: "Later" }, "2026-11-21T00:00:00Z");
   list = updateShortlistItem(list, "500", { size: "42", colour: "White", note: "Unchanged" }, "2026-11-22T00:00:00Z");
   const inherited = inheritShortlistAliases(list, { 100: "200", 150: "200", 200: "250" });
   assert.equal(inherited.changed, true);
-  assert.deepEqual([...inherited.shortlist.keys()], ["250", "500"]);
+  assert.deepEqual([...inherited.shortlist.keys()], ["100", "250", "500"]);
   assert.equal(inherited.shortlist.get("250").note, "Later");
+  assert.deepEqual(
+    [inherited.shortlist.get("100").size, inherited.shortlist.get("100").colour, inherited.shortlist.get("100").note],
+    ["M", "Navy", "Earlier"],
+  );
   assert.equal(inheritShortlistAliases(inherited.shortlist, { 100: "200", 200: "250" }).changed, false);
+  // 2 listings merged into one target: the other's size, colour and note survive.
+  let pair = updateShortlistItem(new Map(), "100", { size: "S", colour: "Red", note: "Earlier" });
+  pair = updateShortlistItem(pair, "150", { size: "L", colour: "", note: "Later" });
+  const paired = inheritShortlistAliases(pair, { 100: "200", 150: "200" }).shortlist;
+  assert.equal(paired.get("200").note, "Later");
+  assert.equal(paired.get("100").colour, "Red");
 
   const explicitWins = inheritShortlistAliases(
     updateShortlistItem(list, "250", { size: "XL", colour: "Grey", note: "Explicit" }),
     { 100: "200", 150: "200", 200: "250" },
   );
+  assert.equal(explicitWins.changed, false);
   assert.equal(explicitWins.shortlist.get("250").note, "Explicit");
-  assert.deepEqual([...explicitWins.shortlist.keys()], ["250", "500"]);
+  assert.deepEqual([...explicitWins.shortlist.keys()].sort(), ["100", "150", "250", "500"]);
 
-  // Cycle guard: lone entry in cycle stays untouched; multiple entries in cycle retain the highest ID.
+  // Cycle guard: entries on or leading into a cycle stay untouched.
   const loneCycle = new Map([["100", { id: "100", size: "M", colour: "", note: "Lone", added_at: "" }]]);
   const loneRes = inheritShortlistAliases(loneCycle, { 100: "200", 200: "100" });
   assert.equal(loneRes.changed, false);
@@ -527,9 +539,8 @@ test("aliased shortlist entries resolve chains, cycles, filters, backup/restore 
   multiCycle = updateShortlistItem(multiCycle, "100", { size: "M", colour: "", note: "Mid" });
   multiCycle = updateShortlistItem(multiCycle, "200", { size: "L", colour: "", note: "Top" });
   const cycleRes = inheritShortlistAliases(multiCycle, { 50: "100", 100: "200", 200: "100" });
-  assert.equal(cycleRes.changed, true);
-  assert.deepEqual([...cycleRes.shortlist.keys()], ["200"]);
-  assert.equal(cycleRes.shortlist.get("200").note, "Top");
+  assert.equal(cycleRes.changed, false);
+  assert.deepEqual([...cycleRes.shortlist.keys()], ["50", "100", "200"]);
 
   // Prototype keys on aliases object are ignored via Object.hasOwn.
   const protoList = new Map([["toString", { id: "toString", size: "", colour: "", note: "", added_at: "" }]]);
@@ -608,6 +619,9 @@ test("aliased shortlist entries resolve chains, cycles, filters, backup/restore 
   assert.equal(context.state.shortlist.has("200"), true);
   assert.equal(context.state.shortlist.has("100"), false);
   assert.equal(context.state.shortlist.get("200").note, "From tab 2");
+  // ...in memory only: writing it back would let 2 tabs with opposite alias maps
+  // rewrite each other's shortlist on every storage event.
+  assert.deepEqual([...readShortlist(win).keys()], ["100"]);
 
   // Clicking an unmigrated aliased shortlist row opens canonical 200 without resetting filters.
   context.state.shortlist = new Map([["100", { id: "100", size: "L", colour: "Black", note: "Aliased", added_at: "" }]]);

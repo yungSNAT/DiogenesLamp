@@ -249,12 +249,23 @@ fn url_ok(url: &str) -> Result<bool> {
         && parsed.password().is_none_or(|p| p.is_empty()))
 }
 
+/// An http or https URL with a host and no credentials that the viewer's
+/// URL parser also accepts: a valid port, and no character a browser refuses
+/// in a host name (a bracketed IPv6 host is checked by `urlsplit`).
 pub fn is_http_url(url: &str) -> bool {
     let Ok(parsed) = pyurl::urlsplit(url) else {
         return false;
     };
+    let bracketed = parsed.netloc.as_deref().is_some_and(|n| n.contains('['));
     matches!(parsed.scheme.as_str(), "http" | "https")
-        && parsed.hostname().is_some_and(|h| !h.is_empty())
+        && parsed.hostname().is_some_and(|h| {
+            !h.is_empty()
+                && (bracketed
+                    || !h
+                        .chars()
+                        .any(|c| c.is_control() || c == ' ' || r"#%/:<>?@[\]^|".contains(c)))
+        })
+        && parsed.port().is_ok()
         && parsed.username().is_none_or(|u| u.is_empty())
         && parsed.password().is_none_or(|p| p.is_empty())
 }
@@ -341,6 +352,9 @@ pub fn validate_metadata(value_in: &Value, relative: &str) -> Result<()> {
                 let url_valid = matches!(get(s, "url"), Some(Value::Str(u)) if is_http_url(u));
                 if !url_valid {
                     return value("invalid shop URL");
+                }
+                if !is_str(get(s, "name")) || !is_str(get(s, "platform")) {
+                    return value("invalid shop name or platform");
                 }
             }
         }

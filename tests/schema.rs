@@ -84,6 +84,16 @@ fn index_refusals_name_the_broken_field() {
             r#"{"sellers": [], "shops": [{"name": "Missing URL"}]}"#.into(),
             "invalid shop URL",
         ),
+        (
+            r#"{"sellers": [], "shops": [{"name": 5, "platform": "web", "url": "https://shop.example/"}]}"#
+                .into(),
+            "invalid shop name or platform",
+        ),
+        (
+            r#"{"sellers": [], "shops": [{"name": "No platform", "url": "https://shop.example/"}]}"#
+                .into(),
+            "invalid shop name or platform",
+        ),
     ];
     for (text, reason) in cases {
         assert_eq!(refusal(&text, "index.json"), reason, "{text}");
@@ -94,6 +104,14 @@ fn index_refusals_name_the_broken_field() {
         "file:///etc/passwd",
         "https://[bad/",
         "https://user:pass@shop.example/",
+        "https://user@shop.example/",
+        "https://",
+        "http:///x",
+        // The viewer's URL parser refuses these, so the shop would vanish there.
+        "http://shop example/",
+        "http://shop.example:99999/",
+        "http://shop.example:x/",
+        "http://shop^example/",
     ] {
         let text = format!(r#"{{"sellers": [], "shops": [{{"url": "{bad_url}"}}]}}"#);
         assert_eq!(
@@ -107,7 +125,8 @@ fn index_refusals_name_the_broken_field() {
         {"id": "two", "shard": "catalog/two.json", "album_ids": ["3"]}],
         "shops": [
             {"id": "s1", "platform": "weidian", "name": "S1", "url": "https://weidian.com/?userid=1", "preferred": true},
-            {"id": "s2", "platform": "web", "name": "S2", "url": "http://shop.example/"}]}"#;
+            {"id": "s2", "platform": "web", "name": "S2", "url": "http://shop.example/"},
+            {"id": "s3", "platform": "web", "name": "S3", "url": "http://[::1]:8080/x"}]}"#;
     validate_metadata(&json(selected), "index.json").unwrap();
 }
 

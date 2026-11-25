@@ -49,12 +49,14 @@ function selectOptions(select, values, wanted = select.value) {
   select.value = wanted;
 }
 
-function applyInheritedShortlist() {
+// A storage event from another tab inherits in memory only: two tabs whose
+// alias maps disagree would otherwise rewrite each other's shortlist forever.
+function applyInheritedShortlist(persist = true) {
   if (!state.shortlist || typeof inheritShortlistAliases !== "function") return false;
   const inherited = inheritShortlistAliases(state.shortlist, state.albumAliases);
   if (!inherited.changed) return false;
   state.shortlist = inherited.shortlist;
-  writeShortlist(window, state.shortlist);
+  if (persist) writeShortlist(window, state.shortlist);
   return true;
 }
 
@@ -115,7 +117,7 @@ window.addEventListener("storage", event => {
   }
   if (storageKey === null || storageKey === SHORTLIST_STORAGE_KEY) {
     state.shortlist = readShortlist(window);
-    applyInheritedShortlist();
+    applyInheritedShortlist(false);
     if (typeof updateShortlistCount === "function") updateShortlistCount();
     if (typeof syncAllShortlistCards === "function") syncAllShortlistCards();
     if (state.view.filters.shortlistOnly) applyFilters();

@@ -306,70 +306,36 @@ function resolveShortlistAlias(id, aliases) {
 
 /**
  * Carry shortlisted items forward from replaced duplicate IDs to their
- * canonical listing ID, resolving chains and guarding against cycles.
- * Explicit entries on an unaliased canonical ID win; when several older
- * listings resolve to the same target (or share a cycle with no unaliased
- * terminal target), the highest-ID entry is retained.
+ * canonical listing ID, resolving chains. Only a move into an absent target
+ * happens: when several older listings resolve to one target, the highest ID
+ * moves and the rest stay as they are, and entries on a cycle are left alone,
+ * so no size, colour or note is ever dropped.
  * @param {ShortlistMap} shortlist
  * @param {Record<string, string> | null | undefined} aliases
  * @returns {{shortlist: ShortlistMap, changed: boolean}}
  */
 function inheritShortlistAliases(shortlist, aliases) {
   if (!aliases || !shortlist.size) return { shortlist, changed: false };
-  /** @type {Map<string, {cycled: boolean, items: ShortlistItem[]}>} */
-  const groups = new Map();
   /** @type {Map<string, string>} */
-  const itemGroup = new Map();
-  for (const item of shortlist.values()) {
+  const moves = new Map();
+  const items = [...shortlist.values()].sort((a, b) => compareShortlistIdsDesc(a.id, b.id));
+  /** @type {Set<string>} */
+  const claimed = new Set();
+  for (const item of items) {
     const resolved = resolveShortlistAlias(item.id, aliases);
-    const key = resolved.cycled ? `cycle:${resolved.target}` : `id:${resolved.target}`;
-    itemGroup.set(item.id, key);
-    let group = groups.get(key);
-    if (!group) {
-      group = { cycled: resolved.cycled, items: [] };
-      groups.set(key, group);
-    }
-    group.items.push(item);
+    if (resolved.cycled || resolved.target === item.id ||
+        shortlist.has(resolved.target) || claimed.has(resolved.target)) continue;
+    claimed.add(resolved.target);
+    moves.set(item.id, resolved.target);
   }
-  /** @type {Map<string, ShortlistItem>} */
-  const winners = new Map();
-  for (const [key, group] of groups) {
-    if (group.cycled) {
-      const sorted = [...group.items].sort((a, b) => compareShortlistIdsDesc(a.id, b.id));
-      winners.set(key, sorted[0]);
-    } else {
-      const target = key.slice(3);
-      const explicit = group.items.find(item => item.id === target);
-      if (explicit) {
-        winners.set(key, explicit);
-      } else {
-        const sorted = [...group.items].sort((a, b) => compareShortlistIdsDesc(a.id, b.id));
-        winners.set(key, { ...sorted[0], id: target });
-      }
-    }
-  }
+  if (!moves.size) return { shortlist, changed: false };
   /** @type {ShortlistMap} */
   const next = new Map();
-  const emitted = new Set();
   for (const item of shortlist.values()) {
-    const key = /** @type {string} */ (itemGroup.get(item.id));
-    if (emitted.has(key)) continue;
-    emitted.add(key);
-    const winner = /** @type {ShortlistItem} */ (winners.get(key));
-    next.set(winner.id, winner);
+    const target = moves.get(item.id);
+    next.set(target || item.id, target ? { ...item, id: target } : item);
   }
-  let changed = next.size !== shortlist.size;
-  if (!changed) {
-    for (const [id, item] of next) {
-      const prev = shortlist.get(id);
-      if (!prev || prev.id !== item.id || prev.size !== item.size ||
-          prev.colour !== item.colour || prev.note !== item.note || prev.added_at !== item.added_at) {
-        changed = true;
-        break;
-      }
-    }
-  }
-  return { shortlist: changed ? next : shortlist, changed };
+  return { shortlist: next, changed: true };
 }
 
 /**
