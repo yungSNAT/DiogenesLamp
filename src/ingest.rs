@@ -448,9 +448,14 @@ pub(crate) fn parse_sources_table(path: &Path, data: &toml::Table) -> Result<Sou
         if !safe_id(&shop_id) {
             return value(format!("unsafe TOML id: {}", pystr::repr(&shop_id)));
         }
-        let Some(url) = entry.get("url") else {
-            return value(format!("[shops.{shop_id}] needs a url"));
+        let Some(toml::Value::String(url)) = entry.get("url") else {
+            return value(format!("[shops.{shop_id}] needs a url string"));
         };
+        if !crate::schema::is_http_url(url) {
+            return value(format!(
+                "[shops.{shop_id}] url must be an http or https URL without credentials"
+            ));
+        }
         sources.insert(
             format!("shop:{shop_id}"),
             Source {
@@ -460,7 +465,7 @@ pub(crate) fn parse_sources_table(path: &Path, data: &toml::Table) -> Result<Sou
                     .get("platform")
                     .map(toml_to_value)
                     .unwrap_or_else(|| "web".into()),
-                url: toml_to_value(url),
+                url: url.as_str().into(),
                 name: entry
                     .get("name")
                     .map(toml_to_value)

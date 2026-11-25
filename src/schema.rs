@@ -249,6 +249,27 @@ fn url_ok(url: &str) -> Result<bool> {
         && parsed.password().is_none_or(|p| p.is_empty()))
 }
 
+/// An http or https URL with a host and no credentials that the viewer's
+/// URL parser also accepts: a valid port, and no character a browser refuses
+/// in a host name (a bracketed IPv6 host is checked by `urlsplit`).
+pub fn is_http_url(url: &str) -> bool {
+    let Ok(parsed) = pyurl::urlsplit(url) else {
+        return false;
+    };
+    let bracketed = parsed.netloc.as_deref().is_some_and(|n| n.contains('['));
+    matches!(parsed.scheme.as_str(), "http" | "https")
+        && parsed.hostname().is_some_and(|h| {
+            !h.is_empty()
+                && (bracketed
+                    || !h
+                        .chars()
+                        .any(|c| c.is_control() || c == ' ' || r"#%/:<>?@[\]^|".contains(c)))
+        })
+        && parsed.port().is_ok()
+        && parsed.username().is_none_or(|u| u.is_empty())
+        && parsed.password().is_none_or(|p| p.is_empty())
+}
+
 fn price_ok(price: &Value) -> bool {
     match price {
         Value::Int(i) => *i >= 0,
@@ -315,6 +336,23 @@ pub fn validate_metadata(value_in: &Value, relative: &str) -> Result<()> {
                 indexed.extend(texts);
             } else if selected {
                 return value("selected index requires album IDs for every seller");
+            }
+        }
+        if let Some(shops) = map.get("shops") {
+            let Some(shops) = shops.as_array() else {
+                return value("index shops must be an array");
+            };
+            for shop in shops {
+                let Some(s) = shop.as_object() else {
+                    return value("invalid shop entry");
+                };
+                if get(s, "preferred").is_some_and(|v| !matches!(v, Value::Bool(_))) {
+                    return value("invalid shop preferred flag");
+                }
+                let url_valid = matches!(get(s, "url"), Some(Value::Str(u)) if is_http_url(u));
+                if !url_valid {
+                    return value("invalid shop URL");
+                }
             }
         }
         let aliases_ok = match map.get("album_aliases") {

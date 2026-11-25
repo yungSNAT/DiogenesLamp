@@ -20,8 +20,13 @@ let previewUnresolved = false;
 
 /** @param {string} text */
 function actionStatus(text) {
-  workEl("action-status").textContent = text;
-  workEl("action-status").hidden = !text;
+  const inPreview = preview.open;
+  const pageStatus = workEl("action-status");
+  pageStatus.textContent = inPreview ? "" : text;
+  pageStatus.hidden = inPreview || !text;
+  const previewStatus = workEl("preview-action-status");
+  previewStatus.textContent = inPreview ? text : "";
+  previewStatus.hidden = !inPreview || !text;
 }
 
 function saveFilterURL() {
@@ -44,8 +49,24 @@ function selectOptions(select, values, wanted = select.value) {
   select.value = wanted;
 }
 
+// A storage event from another tab inherits in memory only: two tabs whose
+// alias maps disagree would otherwise rewrite each other's shortlist forever.
+function applyInheritedShortlist(persist = true) {
+  if (!state.shortlist || typeof inheritShortlistAliases !== "function") return false;
+  const inherited = inheritShortlistAliases(state.shortlist, state.albumAliases);
+  if (!inherited.changed) return false;
+  state.shortlist = inherited.shortlist;
+  if (persist) writeShortlist(window, state.shortlist);
+  return true;
+}
+
 function refreshSavedState(render = true) {
   inheritDuplicateWork(userStore, state.albumAliases);
+  if (applyInheritedShortlist()) {
+    if (typeof updateShortlistCount === "function") updateShortlistCount();
+    if (typeof syncAllShortlistCards === "function") syncAllShortlistCards();
+    if (workEl("shortlist-dialog").open) renderShortlistDialog();
+  }
   const entries = userStore.load();
   /** @template {import("./user-store.js").UserKind} K @param {K} kind
    * @returns {Map<string, import("./user-store.js").UserValues[K]>} */
@@ -96,6 +117,7 @@ window.addEventListener("storage", event => {
   }
   if (storageKey === null || storageKey === SHORTLIST_STORAGE_KEY) {
     state.shortlist = readShortlist(window);
+    applyInheritedShortlist(false);
     if (typeof updateShortlistCount === "function") updateShortlistCount();
     if (typeof syncAllShortlistCards === "function") syncAllShortlistCards();
     if (state.view.filters.shortlistOnly) applyFilters();
@@ -125,16 +147,24 @@ els.exportFavs.addEventListener("click", () => {
   const entries = userStore.load();
   const ids = new Set(entries.filter(e => ["favorite", "note", "tags", "collection"].includes(e.kind))
     .map(e => e.id));
-  const albums = state.albums.filter(a => ids.has(a.id)).map(a => ({
+  for (const id of state.shortlist?.keys() || []) ids.add(id);
+  const canonicalId = /** @param {string} id */ id =>
+    typeof resolveShortlistAlias === "function" ? resolveShortlistAlias(id, state.albumAliases).target
+      : (state.albumAliases[id] || id);
+  const resolvedIds = new Set([...ids].map(canonicalId));
+  const albums = state.albums.filter(a => ids.has(a.id) || resolvedIds.has(a.id)).map(a => ({
     id: a.id, seller: a.seller, title: a.title, price: a.price, album_url: a.album_url,
     links: a.links, category: a.category, updated_at: a.updated_at,
   }));
   const present = new Set(albums.map(a => a.id));
-  const missingIds = [...ids].filter(id => !present.has(id));
+  const missingIds = [...ids].filter(id => !present.has(id) && !present.has(canonicalId(id)));
+  const shortlist = state.shortlist?.size ? serializeShortlist(state.shortlist) : undefined;
   const backup = {format: "diogeneslamp", version: 1, exported_at: new Date().toISOString(),
-    catalogue_status: catalogueAvailability(), entries, albums, unresolved_ids: missingIds};
+    catalogue_status: catalogueAvailability(), entries, albums, unresolved_ids: missingIds,
+    ...(shortlist ? {shortlist} : {})};
   downloadWork(JSON.stringify(backup, null, 2), "diogenes-saved-work.json", "application/json");
-  actionStatus(`Backed up ${entries.length} saved fields. ${missingIds.length} album IDs have no loaded metadata; their saved work is included.`);
+  const shortlistNote = shortlist ? ` and ${shortlist.items.length} shortlist items` : "";
+  actionStatus(`Backed up ${entries.length} saved fields${shortlistNote}. ${missingIds.length} album IDs have no loaded metadata; their saved work is included.`);
 });
 
 workEl("import-backup").addEventListener("change", async event => {
@@ -142,8 +172,21 @@ workEl("import-backup").addEventListener("change", async event => {
   if (!file) return;
   try {
     if (file.size > 20 * 1024 * 1024) throw new Error("Backup exceeds 20 MB.");
-    const count = importUserBackup(userStore, JSON.parse(await file.text()));
-    actionStatus(`Imported ${count} saved fields. Existing values were kept.`);
+    const parsed = JSON.parse(await file.text());
+    const count = importUserBackup(userStore, parsed);
+    let shortlistAdded = 0;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && parsed.shortlist !== undefined) {
+      const merged = mergeShortlistBackup(state.shortlist || new Map(), parsed.shortlist, state.albumAliases);
+      if (merged.added > 0) {
+        if (!writeShortlist(window, merged.shortlist)) throw new Error("Storage write failed.");
+        state.shortlist = merged.shortlist;
+        shortlistAdded = merged.added;
+        if (typeof updateShortlistCount === "function") updateShortlistCount();
+        if (typeof syncAllShortlistCards === "function") syncAllShortlistCards();
+      }
+    }
+    const shortlistNote = shortlistAdded ? ` and ${shortlistAdded} shortlist items` : "";
+    actionStatus(`Imported ${count} saved fields${shortlistNote}. Existing values were kept.`);
   } catch (error) { savedDataError(/** @type {Error} */ (error).message); }
   finally { refreshSavedState(); /** @type {HTMLInputElement | HTMLSelectElement} */ (event.target).value = ""; }
 });
@@ -198,7 +241,10 @@ workEl("mark-reviewed").addEventListener("click", () => {
 function previewAlbum() { return previewSnapshot; }
 /** @param {string} id */
 function resolvePreview(id) {
-  return state.albums.find(a => a.id === id) || state.albums.find(a => a.id === state.albumAliases[id]);
+  const target = typeof resolveShortlistAlias === "function"
+    ? resolveShortlistAlias(id, state.albumAliases).target
+    : state.albumAliases[id];
+  return state.albums.find(a => a.id === id) || state.albums.find(a => a.id === target);
 }
 /** @param {boolean} unresolved */
 function previewAvailability(unresolved) {
@@ -391,6 +437,8 @@ function showPreview(album = resolvePreview(previewIds[previewAt])) {
   };
   for (const [field, value] of /** @type {[keyof typeof previewInitial, string][]} */ (Object.entries(previewInitial))) workEl(/** @type {`preview-${keyof typeof previewInitial}`} */ ("preview-" + field)).value = value;
   workEl("preview-save-status").textContent = "";
+  workEl("preview-action-status").textContent = "";
+  workEl("preview-action-status").hidden = true;
   workEl("preview-similar").open = false;
   workEl("similar-results").replaceChildren();
   updatePreviewFavourite();
@@ -401,10 +449,11 @@ function showPreview(album = resolvePreview(previewIds[previewAt])) {
 
 /** @param {string} id */
 function openPreview(id) {
+  const targetId = resolvePreview(id)?.id || id;
   previewIds = state.filtered.map(a => a.id);
-  previewAt = previewIds.indexOf(id);
+  previewAt = previewIds.indexOf(targetId);
   if (previewAt < 0) return;
-  previewReturnId = id;
+  previewReturnId = targetId;
   if (!showPreview()) return;
   document.body.classList.add("preview-open");
   preview.showModal();
@@ -433,6 +482,8 @@ workEl("preview-close").addEventListener("click", () => { if (leavePreviewAllowe
 preview.addEventListener("cancel", event => { if (!leavePreviewAllowed()) event.preventDefault(); });
 preview.addEventListener("close", () => {
   document.body.classList.remove("preview-open");
+  workEl("preview-action-status").textContent = "";
+  workEl("preview-action-status").hidden = true;
   const at = state.filtered.findIndex(a => a.id === previewReturnId);
   if (at >= 0) moveCursor(at);
   else els.grid.focus({preventScroll: true});
@@ -716,11 +767,12 @@ function buildShortlistRowHead(record) {
   openBtn.textContent = record.title || `Album ${record.id}`;
   openBtn.addEventListener("click", () => {
     shortlistDialog.close();
-    if (!state.filtered.some(a => a.id === record.id)) {
+    const targetId = resolvePreview(record.id)?.id || record.id;
+    if (!state.filtered.some(a => a.id === targetId)) {
       useFilters({ ...defaultFilters(), shortlistOnly: true });
       saveFilterURL();
     }
-    openPreview(record.id);
+    openPreview(targetId);
   });
   head.appendChild(openBtn);
   return head;
@@ -762,7 +814,7 @@ function buildShortlistRow(record) {
   removeBtn.textContent = "Remove";
   removeBtn.setAttribute("aria-label", `Remove ${record.title || `Album ${record.id}`} from shortlist`);
   removeBtn.addEventListener("click", () => {
-    const next = removeShortlistItem(state.shortlist, record.id);
+    const next = removeShortlistItem(state.shortlist, record.id, state.albumAliases);
     if (!writeShortlist(window, next)) {
       savedDataError("Shortlist could not be saved. Browser storage may be full or blocked.");
       return;
