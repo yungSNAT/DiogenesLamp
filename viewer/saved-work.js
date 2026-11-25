@@ -49,17 +49,21 @@ function selectOptions(select, values, wanted = select.value) {
   select.value = wanted;
 }
 
+function applyInheritedShortlist() {
+  if (!state.shortlist || typeof inheritShortlistAliases !== "function") return false;
+  const inherited = inheritShortlistAliases(state.shortlist, state.albumAliases);
+  if (!inherited.changed) return false;
+  state.shortlist = inherited.shortlist;
+  writeShortlist(window, state.shortlist);
+  return true;
+}
+
 function refreshSavedState(render = true) {
   inheritDuplicateWork(userStore, state.albumAliases);
-  if (state.shortlist && typeof inheritShortlistAliases === "function") {
-    const inherited = inheritShortlistAliases(state.shortlist, state.albumAliases);
-    if (inherited.changed) {
-      state.shortlist = inherited.shortlist;
-      writeShortlist(window, state.shortlist);
-      if (typeof updateShortlistCount === "function") updateShortlistCount();
-      if (typeof syncAllShortlistCards === "function") syncAllShortlistCards();
-      if (workEl("shortlist-dialog").open) renderShortlistDialog();
-    }
+  if (applyInheritedShortlist()) {
+    if (typeof updateShortlistCount === "function") updateShortlistCount();
+    if (typeof syncAllShortlistCards === "function") syncAllShortlistCards();
+    if (workEl("shortlist-dialog").open) renderShortlistDialog();
   }
   const entries = userStore.load();
   /** @template {import("./user-store.js").UserKind} K @param {K} kind
@@ -111,6 +115,7 @@ window.addEventListener("storage", event => {
   }
   if (storageKey === null || storageKey === SHORTLIST_STORAGE_KEY) {
     state.shortlist = readShortlist(window);
+    applyInheritedShortlist();
     if (typeof updateShortlistCount === "function") updateShortlistCount();
     if (typeof syncAllShortlistCards === "function") syncAllShortlistCards();
     if (state.view.filters.shortlistOnly) applyFilters();
@@ -141,13 +146,16 @@ els.exportFavs.addEventListener("click", () => {
   const ids = new Set(entries.filter(e => ["favorite", "note", "tags", "collection"].includes(e.kind))
     .map(e => e.id));
   for (const id of state.shortlist?.keys() || []) ids.add(id);
-  const resolvedIds = new Set([...ids].map(id => state.albumAliases[id] || id));
+  const canonicalId = /** @param {string} id */ id =>
+    typeof resolveShortlistAlias === "function" ? resolveShortlistAlias(id, state.albumAliases).target
+      : (state.albumAliases[id] || id);
+  const resolvedIds = new Set([...ids].map(canonicalId));
   const albums = state.albums.filter(a => ids.has(a.id) || resolvedIds.has(a.id)).map(a => ({
     id: a.id, seller: a.seller, title: a.title, price: a.price, album_url: a.album_url,
     links: a.links, category: a.category, updated_at: a.updated_at,
   }));
   const present = new Set(albums.map(a => a.id));
-  const missingIds = [...ids].filter(id => !present.has(id) && !present.has(state.albumAliases[id] || ""));
+  const missingIds = [...ids].filter(id => !present.has(id) && !present.has(canonicalId(id)));
   const shortlist = state.shortlist?.size ? serializeShortlist(state.shortlist) : undefined;
   const backup = {format: "diogeneslamp", version: 1, exported_at: new Date().toISOString(),
     catalogue_status: catalogueAvailability(), entries, albums, unresolved_ids: missingIds,
@@ -166,7 +174,7 @@ workEl("import-backup").addEventListener("change", async event => {
     const count = importUserBackup(userStore, parsed);
     let shortlistAdded = 0;
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && parsed.shortlist !== undefined) {
-      const merged = mergeShortlistBackup(state.shortlist || new Map(), parsed.shortlist);
+      const merged = mergeShortlistBackup(state.shortlist || new Map(), parsed.shortlist, state.albumAliases);
       if (merged.added > 0) {
         if (!writeShortlist(window, merged.shortlist)) throw new Error("Storage write failed.");
         state.shortlist = merged.shortlist;
@@ -231,7 +239,10 @@ workEl("mark-reviewed").addEventListener("click", () => {
 function previewAlbum() { return previewSnapshot; }
 /** @param {string} id */
 function resolvePreview(id) {
-  return state.albums.find(a => a.id === id) || state.albums.find(a => a.id === state.albumAliases[id]);
+  const target = typeof resolveShortlistAlias === "function"
+    ? resolveShortlistAlias(id, state.albumAliases).target
+    : state.albumAliases[id];
+  return state.albums.find(a => a.id === id) || state.albums.find(a => a.id === target);
 }
 /** @param {boolean} unresolved */
 function previewAvailability(unresolved) {

@@ -84,29 +84,23 @@ fn index_refusals_name_the_broken_field() {
             r#"{"sellers": [], "shops": [{"name": "Missing URL"}]}"#.into(),
             "invalid shop URL",
         ),
-        (
-            r#"{"sellers": [], "shops": [{"url": "javascript:alert(1)"}]}"#.into(),
-            "invalid shop URL",
-        ),
-        (
-            r#"{"sellers": [], "shops": [{"url": "data:text/html,<h1>x</h1>"}]}"#.into(),
-            "invalid shop URL",
-        ),
-        (
-            r#"{"sellers": [], "shops": [{"url": "file:///etc/passwd"}]}"#.into(),
-            "invalid shop URL",
-        ),
-        (
-            r#"{"sellers": [], "shops": [{"url": "https://[bad/"}]}"#.into(),
-            "invalid shop URL",
-        ),
-        (
-            r#"{"sellers": [], "shops": [{"url": "https://user:pass@shop.example/"}]}"#.into(),
-            "invalid shop URL",
-        ),
     ];
     for (text, reason) in cases {
         assert_eq!(refusal(&text, "index.json"), reason, "{text}");
+    }
+    for bad_url in [
+        "javascript:alert(1)",
+        "data:text/html,<h1>x</h1>",
+        "file:///etc/passwd",
+        "https://[bad/",
+        "https://user:pass@shop.example/",
+    ] {
+        let text = format!(r#"{{"sellers": [], "shops": [{{"url": "{bad_url}"}}]}}"#);
+        assert_eq!(
+            refusal(&text, "index.json"),
+            "invalid shop URL",
+            "{bad_url}"
+        );
     }
     let selected = r#"{"selection_version": 1, "sellers": [
         {"id": "one", "shard": "catalog/one.json", "album_ids": ["1", "2"]},

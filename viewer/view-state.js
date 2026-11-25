@@ -115,8 +115,15 @@ function selectCatalogue(view, catalogue, now = Date.now()) {
       shortlistedIds = new Set();
       for (const id of catalogue.shortlist.keys()) {
         shortlistedIds.add(id);
-        const aliased = catalogue.albumAliases?.[id];
-        if (aliased) shortlistedIds.add(aliased);
+        let cur = id;
+        const seen = new Set([cur]);
+        while (catalogue.albumAliases && Object.hasOwn(catalogue.albumAliases, cur)) {
+          const next = catalogue.albumAliases[cur];
+          if (typeof next !== "string" || seen.has(next)) break;
+          shortlistedIds.add(next);
+          seen.add(next);
+          cur = next;
+        }
       }
     }
     // An album deleted on Yupoo leads to a dead page, so it drops out of

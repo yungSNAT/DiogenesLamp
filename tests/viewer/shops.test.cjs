@@ -33,6 +33,7 @@ test("shop groups are headed in platform-name order and omit non-HTTP(S) URLs", 
     { platform: "taobao", name: "A", url: "http://a.example" },
     { platform: "1688", name: "C", url: "https://c.example" },
     { platform: "1688", name: "BadJS", url: "javascript:alert(1)" },
+    { platform: "1688", name: "BadCreds", url: "https://user:pass@shop.example/" },
     { platform: "evil-only", name: "BadData", url: "data:text/html,<h1>x</h1>" },
     { platform: "evil-file", name: "BadFile", url: "file:///etc/passwd" },
   ]);

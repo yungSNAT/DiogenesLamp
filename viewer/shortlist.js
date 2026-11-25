@@ -106,7 +106,7 @@ function cleanShortlistText(value, maxLen, allowNewlines = false) {
 }
 
 /**
- * Allow only explicit http: and https: URLs.
+ * Allow only explicit http: and https: URLs without embedded credentials.
  * @param {unknown} value
  * @returns {string}
  */
@@ -116,7 +116,8 @@ function safeHttpUrl(value) {
   if (!trimmed) return "";
   try {
     const parsed = new URL(trimmed);
-    if (parsed.protocol === "http:" || parsed.protocol === "https:") return parsed.href;
+    if ((parsed.protocol === "http:" || parsed.protocol === "https:") &&
+        !parsed.username && !parsed.password) return parsed.href;
   } catch {
     return "";
   }
@@ -268,69 +269,133 @@ function removeShortlistItem(shortlist, albumId) {
   return next;
 }
 
+/** @param {string} a @param {string} b */
+function compareShortlistIdsDesc(a, b) {
+  const aNum = /^[0-9]{1,24}$/.test(a);
+  const bNum = /^[0-9]{1,24}$/.test(b);
+  if (aNum && bNum) return BigInt(a) > BigInt(b) ? -1 : a === b ? 0 : 1;
+  return a < b ? 1 : a > b ? -1 : 0;
+}
+
+/**
+ * Follow an alias chain using own properties only, guarding against cycles.
+ * @param {string} id
+ * @param {Record<string, string> | null | undefined} aliases
+ * @returns {{target: string, cycled: boolean}}
+ */
+function resolveShortlistAlias(id, aliases) {
+  if (!aliases) return { target: id, cycled: false };
+  let cur = id;
+  /** @type {string[]} */
+  const path = [cur];
+  const visited = new Set(path);
+  while (Object.hasOwn(aliases, cur)) {
+    const next = aliases[cur];
+    if (typeof next !== "string" || !/^[0-9]{1,24}$/.test(next) || next === cur) break;
+    if (visited.has(next)) {
+      const cycleNodes = path.slice(path.indexOf(next));
+      cycleNodes.sort(compareShortlistIdsDesc);
+      return { target: cycleNodes[0], cycled: true };
+    }
+    cur = next;
+    path.push(cur);
+    visited.add(cur);
+  }
+  return { target: cur, cycled: false };
+}
+
 /**
  * Carry shortlisted items forward from replaced duplicate IDs to their
- * canonical listing ID. Explicit entries on the canonical ID win; when several
- * older listings alias to the same canonical ID, the higher numeric ID wins.
+ * canonical listing ID, resolving chains and guarding against cycles.
+ * Explicit entries on an unaliased canonical ID win; when several older
+ * listings resolve to the same target (or share a cycle with no unaliased
+ * terminal target), the highest-ID entry is retained.
  * @param {ShortlistMap} shortlist
  * @param {Record<string, string> | null | undefined} aliases
  * @returns {{shortlist: ShortlistMap, changed: boolean}}
  */
 function inheritShortlistAliases(shortlist, aliases) {
   if (!aliases || !shortlist.size) return { shortlist, changed: false };
-  /** @type {ShortlistItem[]} */
-  const aliased = [];
+  /** @type {Map<string, {cycled: boolean, items: ShortlistItem[]}>} */
+  const groups = new Map();
+  /** @type {Map<string, string>} */
+  const itemGroup = new Map();
   for (const item of shortlist.values()) {
-    const target = aliases[item.id];
-    if (typeof target === "string" && /^[0-9]{1,24}$/.test(target) && target !== item.id) {
-      aliased.push(item);
+    const resolved = resolveShortlistAlias(item.id, aliases);
+    const key = resolved.cycled ? `cycle:${resolved.target}` : `id:${resolved.target}`;
+    itemGroup.set(item.id, key);
+    let group = groups.get(key);
+    if (!group) {
+      group = { cycled: resolved.cycled, items: [] };
+      groups.set(key, group);
     }
+    group.items.push(item);
   }
-  if (!aliased.length) return { shortlist, changed: false };
-  aliased.sort((a, b) => {
-    const aNum = /^[0-9]{1,24}$/.test(a.id);
-    const bNum = /^[0-9]{1,24}$/.test(b.id);
-    if (aNum && bNum) return BigInt(a.id) > BigInt(b.id) ? -1 : a.id === b.id ? 0 : 1;
-    return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
-  });
   /** @type {Map<string, ShortlistItem>} */
   const winners = new Map();
-  for (const item of aliased) {
-    const target = aliases[item.id];
-    if (!shortlist.has(target) && !winners.has(target)) {
-      winners.set(target, { ...item, id: target });
+  for (const [key, group] of groups) {
+    if (group.cycled) {
+      const sorted = [...group.items].sort((a, b) => compareShortlistIdsDesc(a.id, b.id));
+      winners.set(key, sorted[0]);
+    } else {
+      const target = key.slice(3);
+      const explicit = group.items.find(item => item.id === target);
+      if (explicit) {
+        winners.set(key, explicit);
+      } else {
+        const sorted = [...group.items].sort((a, b) => compareShortlistIdsDesc(a.id, b.id));
+        winners.set(key, { ...sorted[0], id: target });
+      }
     }
   }
   /** @type {ShortlistMap} */
   const next = new Map();
+  const emitted = new Set();
   for (const item of shortlist.values()) {
-    const target = aliases[item.id];
-    if (typeof target === "string" && /^[0-9]{1,24}$/.test(target) && target !== item.id) {
-      const promoted = winners.get(target);
-      if (promoted && !next.has(target)) {
-        next.set(target, promoted);
-        winners.delete(target);
-      }
-      continue;
-    }
-    next.set(item.id, item);
+    const key = /** @type {string} */ (itemGroup.get(item.id));
+    if (emitted.has(key)) continue;
+    emitted.add(key);
+    const winner = /** @type {ShortlistItem} */ (winners.get(key));
+    next.set(winner.id, winner);
   }
-  return { shortlist: next, changed: true };
+  let changed = next.size !== shortlist.size;
+  if (!changed) {
+    for (const [id, item] of next) {
+      const prev = shortlist.get(id);
+      if (!prev || prev.id !== item.id || prev.size !== item.size ||
+          prev.colour !== item.colour || prev.note !== item.note || prev.added_at !== item.added_at) {
+        changed = true;
+        break;
+      }
+    }
+  }
+  return { shortlist: changed ? next : shortlist, changed };
 }
 
 /**
- * Merge shortlist items from a saved-work backup without overwriting existing entries.
+ * Merge shortlist items from a saved-work backup without overwriting existing
+ * entries, resolving aliases before counting additions or capacity.
  * @param {ShortlistMap} existing
  * @param {unknown} rawShortlist
+ * @param {Record<string, string> | null | undefined} [aliases]
  * @returns {{shortlist: ShortlistMap, added: number}}
  */
-function mergeShortlistBackup(existing, rawShortlist) {
-  const incoming = normalizeShortlist(rawShortlist);
+function mergeShortlistBackup(existing, rawShortlist, aliases = null) {
+  let incoming = normalizeShortlist(rawShortlist);
   if (!incoming.size) return { shortlist: existing, added: 0 };
+  if (aliases) incoming = inheritShortlistAliases(incoming, aliases).shortlist;
   const next = new Map(existing);
+  /** @type {Set<string>} */
+  const existingTargets = new Set();
+  if (aliases) {
+    for (const id of existing.keys()) {
+      const resolved = resolveShortlistAlias(id, aliases);
+      if (!resolved.cycled) existingTargets.add(resolved.target);
+    }
+  }
   let added = 0;
   for (const [id, item] of incoming) {
-    if (next.has(id) || next.size >= SHORTLIST_LIMITS.maxItems) continue;
+    if (next.has(id) || existingTargets.has(id) || next.size >= SHORTLIST_LIMITS.maxItems) continue;
     next.set(id, item);
     added += 1;
   }
@@ -561,6 +626,7 @@ if (typeof module !== "undefined") {
     toggleShortlistItem,
     updateShortlistItem,
     removeShortlistItem,
+    resolveShortlistAlias,
     inheritShortlistAliases,
     mergeShortlistBackup,
     primaryPurchaseUrl,
