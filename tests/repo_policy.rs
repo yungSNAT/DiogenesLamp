@@ -104,6 +104,30 @@ jobs:
           retention-days: 1
       - run: cargo build --locked --release
 
+  # Linux releases are statically linked against musl (with mimalloc), so run
+  # the test suite on musl in CI to catch libc differences before a tag.
+  test-musl:
+    name: test (ubuntu-musl)
+    if: github.event_name != 'schedule'
+    timeout-minutes: 30
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@<pin>
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@<pin>
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - uses: Swatinem/rust-cache@<pin>
+        with:
+          key: musl
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Install the musl C toolchain
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends musl-tools
+      - run: rustup target add x86_64-unknown-linux-musl
+      - run: cargo test --locked --target x86_64-unknown-linux-musl
+
   # Catch RustSec advisories before the release gate, using the same pinned
   # prebuilt tool installer as the test job.
   audit:

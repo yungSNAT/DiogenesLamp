@@ -20,6 +20,8 @@ const {
   toggleShortlistItem,
   updateShortlistItem,
   removeShortlistItem,
+  inheritShortlistAliases,
+  mergeShortlistBackup,
   primaryAgentUrl,
   shortlistToJson,
   escapeMarkdownCell,
@@ -463,4 +465,222 @@ test("app.js toggleShortlist reports capacity limit without writing storage or a
   assert.equal(statuses.length, 1);
   assert.match(statuses[0], /Shortlist is full/);
   assert.doesNotMatch(statuses[0], /Removed from shortlist/);
+});
+
+test("aliased shortlist entries resolve in filter, inheritance, preview click, backup/restore and modal status", async () => {
+  // 1. inheritShortlistAliases prefers higher older numeric ID and preserves explicit canonical entries.
+  let list = new Map();
+  list = updateShortlistItem(list, "100", { size: "M", colour: "Navy", note: "Earlier" }, "2026-11-20T00:00:00Z");
+  list = updateShortlistItem(list, "150", { size: "L", colour: "Black", note: "Later" }, "2026-11-21T00:00:00Z");
+  list = updateShortlistItem(list, "500", { size: "42", colour: "White", note: "Unchanged" }, "2026-11-22T00:00:00Z");
+  const inherited = inheritShortlistAliases(list, { 100: "200", 150: "200" });
+  assert.equal(inherited.changed, true);
+  assert.deepEqual([...inherited.shortlist.keys()], ["200", "500"]);
+  assert.equal(inherited.shortlist.get("200").note, "Later");
+  assert.equal(inheritShortlistAliases(inherited.shortlist, { 100: "200" }).changed, false);
+
+  const explicitWins = inheritShortlistAliases(
+    updateShortlistItem(list, "200", { size: "XL", colour: "Grey", note: "Explicit" }),
+    { 100: "200", 150: "200" },
+  );
+  assert.equal(explicitWins.shortlist.get("200").note, "Explicit");
+  assert.deepEqual([...explicitWins.shortlist.keys()], ["500", "200"]);
+
+  // 2. selectCatalogue shortlistOnly matches canonical album via albumAliases.
+  const aliasedShortlist = new Map([["100", { id: "100", size: "L", colour: "", note: "", added_at: "" }]]);
+  const catalogue = {
+    albums: [
+      { id: "200", seller: "one", title: "Canonical Coat", published_ms: 2 },
+      { id: "300", seller: "one", title: "Other Tee", published_ms: 1 },
+    ],
+    favorites: new Set(),
+    shortlist: aliasedShortlist,
+    albumAliases: { 100: "200" },
+    bannedKeys: new Set(),
+  };
+  assert.deepEqual(
+    selectCatalogue(createViewState({ shortlistOnly: true }), catalogue).filtered.map(a => a.id),
+    ["200"],
+  );
+
+  // 3. mergeShortlistBackup preserves existing entries and adds missing ones.
+  const merged = mergeShortlistBackup(aliasedShortlist, {
+    version: 1,
+    items: [
+      { id: "100", size: "S", colour: "Red", note: "Old backup" },
+      { id: "300", size: "M", colour: "Blue", note: "Restored" },
+    ],
+  });
+  assert.equal(merged.added, 1);
+  assert.equal(merged.shortlist.get("100").size, "L");
+  assert.equal(merged.shortlist.get("300").note, "Restored");
+
+  // 4. Controller integration: clicking an aliased shortlist row opens preview without resetting filters,
+  // backup/restore preserves shortlist, and actionStatus renders inside open preview dialog.
+  class Element {
+    constructor(tag = "div") {
+      this.tagName = tag.toUpperCase();
+      this.value = "";
+      this.textContent = "";
+      this.hidden = false;
+      this.open = false;
+      this.disabled = false;
+      this.checked = false;
+      this.children = [];
+      this.events = {};
+      this.attrs = {};
+      this.options = [{ value: "", cloneNode() { return this; } }];
+    }
+    addEventListener(name, cb) { (this.events[name] ||= []).push(cb); }
+    fire(name, extra = {}) {
+      for (const cb of this.events[name] || []) {
+        cb({ target: this, currentTarget: this, preventDefault() {}, ...extra });
+      }
+    }
+    setAttribute(k, v) { this.attrs[k] = String(v); }
+    removeAttribute(k) { delete this.attrs[k]; }
+    appendChild(child) { this.children.push(child); return child; }
+    append(...children) { this.children.push(...children); }
+    replaceChildren(...children) { this.children = children; }
+    add(option) { this.options.push(option); }
+    querySelector() { return this; }
+    closest() { return null; }
+    contains() { return false; }
+    focus() {}
+    showModal() { this.open = true; }
+    close() { this.open = false; this.fire("close"); }
+  }
+  const elements = new Map();
+  const data = new Map();
+  const downloads = [];
+  const el = id => {
+    if (!elements.has(id)) elements.set(id, new Element());
+    return elements.get(id);
+  };
+  const win = {
+    localStorage: {
+      get length() { return data.size; },
+      key: i => [...data.keys()][i] ?? null,
+      getItem: k => data.get(k) ?? null,
+      setItem: (k, v) => data.set(k, String(v)),
+    },
+    addEventListener() {},
+    confirm: () => true,
+    scrollTo() {},
+  };
+  let applyCount = 0;
+  const context = {
+    window: win,
+    navigator: {},
+    HTMLElement: Element,
+    document: {
+      activeElement: null,
+      getElementById: el,
+      createElement: tag => new Element(tag),
+      body: { classList: { add() {}, remove() {} } },
+    },
+    location: { href: "http://localhost/", search: "" },
+    history: { pushState() {}, replaceState() {} },
+    URL,
+    Blob,
+    setTimeout,
+    console,
+    Option: class { constructor(text, value) { this.text = text; this.value = value; } },
+    applyFilters() {
+      applyCount += 1;
+      context.state.filtered = context.selectCatalogue(context.state.view, context.state).filtered;
+    },
+    renderGrid() {},
+    thumbVersion: () => "1",
+    favLabel: v => v ? "Remove favourite" : "Add favourite",
+    toggleFavorite() {},
+    toggleShortlist() {},
+    updateShortlistCount() {},
+    syncAllShortlistCards() {},
+    moveCursor() {},
+    savedDataError(msg) { throw new Error(msg); },
+  };
+  for (const name of ["user-store", "discovery", "dedup", "filters", "prefs", "agents", "catalogue", "kinds", "view-state", "shortlist", "shortcuts"]) {
+    Object.assign(context, require(`../../viewer/${name}.js`));
+  }
+  context.userStore = context.createUserStore(win);
+  const canonical = {
+    id: "200",
+    seller: "one",
+    title: "Canonical Wool Jacket",
+    price: 300,
+    thumb: "",
+    album_url: "https://one.x.yupoo.com/albums/200",
+    links: [],
+    history: [],
+    published_ms: 2000,
+  };
+  context.state = {
+    albums: [canonical],
+    filtered: [canonical],
+    albumAliases: { 100: "200" },
+    listingAliases: {},
+    favorites: new Set(),
+    shortlist: new Map([["100", { id: "100", size: "L", colour: "Black", note: "Aliased", added_at: "2026-11-24T00:00:00Z" }]]),
+    view: context.createViewState({ search: "jacket" }),
+    prefs: context.normalizePrefs({}),
+    index: { sellers: [] },
+    loadedSellers: 0,
+    failedShards: [],
+    listingCopies: new Map(),
+    bannedKeys: new Set(),
+  };
+  context.els = {
+    collection: el("collection-filter"),
+    tag: el("tag-filter"),
+    seller: el("seller-filter"),
+    shortlistOnly: el("shortlist-only"),
+    search: el("search"),
+    exportFavs: el("export-favs"),
+    grid: el("grid"),
+  };
+  vm.createContext(context);
+  vm.runInContext(readFileSync(join(__dirname, "../../viewer/saved-work.js"), "utf8"), context);
+  context.downloadWork = text => downloads.push(JSON.parse(text));
+
+  // Initial refreshSavedState inherited 100 -> 200 cleanly.
+  assert.equal(context.state.shortlist.has("200"), true);
+  assert.equal(context.state.shortlist.has("100"), false);
+
+  // Even if state.shortlist holds an unmigrated alias (e.g. direct set or failed write),
+  // clicking its shortlist row opens canonical 200 without resetting the active search filter.
+  context.state.shortlist = new Map([["100", { id: "100", size: "L", colour: "Black", note: "Aliased", added_at: "" }]]);
+  el("shortlist-toggle").fire("click");
+  const titleBtn = el("shortlist-list").children[0].children[0].children[0];
+  const beforeApply = applyCount;
+  titleBtn.fire("click");
+  assert.equal(applyCount, beforeApply, "clicking visible aliased shortlist item must not reset filters");
+  assert.equal(el("album-preview").open, true);
+  assert.equal(el("preview-title").textContent, "Canonical Wool Jacket");
+
+  // Modal status: actionStatus while preview is open writes to #preview-action-status instead of behind backdrop.
+  context.actionStatus("Choose a shopping agent under Links and prices to open purchase links with 'a'.");
+  assert.equal(el("preview-action-status").hidden, false);
+  assert.match(el("preview-action-status").textContent, /Choose a shopping agent/);
+  assert.equal(el("action-status").hidden, true);
+  el("album-preview").close();
+  assert.equal(el("preview-action-status").hidden, true);
+
+  // Backup includes shortlist and resolves aliased metadata; restore re-imports shortlist entries.
+  el("export-favs").fire("click");
+  assert.equal(downloads.length, 1);
+  assert.equal(downloads[0].shortlist.items.length, 1);
+  assert.equal(downloads[0].shortlist.items[0].id, "100");
+  assert.deepEqual(downloads[0].unresolved_ids, []);
+  assert.equal(downloads[0].albums[0].id, "200");
+
+  context.state.shortlist = new Map();
+  const backupJson = JSON.stringify(downloads[0]);
+  const importInput = el("import-backup");
+  importInput.files = [{ size: backupJson.length, async text() { return backupJson; } }];
+  importInput.fire("change");
+  await new Promise(resolve => setImmediate(resolve));
+  // Restored 100 is immediately inherited to canonical 200 by refreshSavedState.
+  assert.equal(context.state.shortlist.has("200"), true);
+  assert.equal(context.state.shortlist.get("200").note, "Aliased");
 });

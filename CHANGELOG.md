@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- `[shops.*].url` in `sources.toml`, `index.json` shop entries and the viewer's shops panel now require explicit `http:` or `https:` URLs without embedded credentials, rejecting `javascript:`, `data:`, `file:` and other schemes.
+- `lamp serve` and `lamp demo` now reject requests with non-localhost, mismatched-port, duplicate or missing HTTP/1.1 `Host` headers to block DNS rebinding, and apply bounded read (10 s) and write (30 s) timeouts on accepted sockets.
+- Shortlist entries for aliased duplicates now inherit to their canonical listing ID, resolve cleanly in `shortlistOnly` filtering, preview opening and saved-work backup/restore, and open the canonical preview without resetting active filters.
+- The local viewer caches material chip counts across filter changes instead of rescanning loaded albums, prevents long seller names from clipping `PREF` badges, and shows shortcut hints inside the open preview modal instead of behind its backdrop.
 - On Linux musl builds, OSError messages now carry musl's own errno text (for example `[Errno 5] I/O error`), as Python built against musl prints, instead of glibc's wording.
 - `sources.toml` now supports `preferred = true` on seller and shop entries (prioritising preferred sellers in cross-seller duplicate clusters, default viewer sort, seller headers and a **Preferred** filter toggle) and `[blocklist]` `skip_sellers` (refusing blocked sellers during `lamp import` and `lamp scrape` with explicit reporting).
 - The local viewer adds 1-click material filter chips below the filter bar, reusing the existing garment and material gloss dictionary and staying in sync with the Material dropdown.

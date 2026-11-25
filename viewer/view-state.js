@@ -82,7 +82,8 @@ function nextViewState(view, event) {
 /**
  * @template {CatalogueAlbum} T
  * @param {ViewState} view
- * @param {{albums: T[], favorites: Set<string>, shortlist?: {has(id: string): boolean},
+ * @param {{albums: T[], favorites: Set<string>, shortlist?: {has(id: string): boolean, keys?: () => Iterable<string>},
+ * albumAliases?: Record<string, string>,
  * preferredSellers?: ReadonlySet<string>, bannedKeys: Set<string>,
  * notes?: Map<string, unknown>, collections?: Map<string, unknown>, tags?: Map<string, unknown>,
  * reviews?: Map<string, unknown>}} catalogue
@@ -108,6 +109,16 @@ function selectCatalogue(view, catalogue, now = Date.now()) {
     const traits = [filters.colour, filters.fit, filters.material].filter(Boolean);
     // The inclusive calendar cutoff is shared by every album in this pass.
     const oldestMs = maxDays ? VIEW_HELPERS.localDayMs(now) - maxDays * VIEW_HELPERS.DAY_MS : 0;
+    /** @type {Set<string> | null} */
+    let shortlistedIds = null;
+    if (filters.shortlistOnly && catalogue.shortlist && typeof catalogue.shortlist.keys === "function") {
+      shortlistedIds = new Set();
+      for (const id of catalogue.shortlist.keys()) {
+        shortlistedIds.add(id);
+        const aliased = catalogue.albumAliases?.[id];
+        if (aliased) shortlistedIds.add(aliased);
+      }
+    }
     // An album deleted on Yupoo leads to a dead page, so it drops out of
     // browsing. Saved filters and change history keep it available for reference.
     filtered = albums.filter(album =>
@@ -118,7 +129,7 @@ function selectCatalogue(view, catalogue, now = Date.now()) {
       traits.every(trait => album.traits?.includes(trait)) &&
       (!filters.newOnly || album.is_new) &&
       (!filters.favsOnly || favorites.has(album.id)) &&
-      (!filters.shortlistOnly || Boolean(catalogue.shortlist?.has(album.id))) &&
+      (!filters.shortlistOnly || Boolean(shortlistedIds ? shortlistedIds.has(album.id) : catalogue.shortlist?.has(album.id))) &&
       (!filters.preferredOnly || Boolean(catalogue.preferredSellers?.has(album.seller))) &&
       (!maxDays || album.published_ms >= oldestMs) &&
       priceMatches(album.price) &&

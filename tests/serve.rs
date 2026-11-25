@@ -664,3 +664,63 @@ fn a_reset_connection_is_dropped() {
     std::thread::sleep(Duration::from_millis(200));
     assert_eq!(get(server.port, "/").status, 200);
 }
+
+#[test]
+fn host_header_rejects_rebinding_and_allows_localhost_variants() {
+    let dir = common::tmp();
+    let (viewer, data) = layout(dir.path());
+    let server = start(Viewer::Dir(viewer), &data);
+    let port = server.port;
+    let other_port = if port == u16::MAX { port - 1 } else { port + 1 };
+
+    for allowed in [
+        "127.0.0.1".to_string(),
+        format!("127.0.0.1:{port}"),
+        "localhost".to_string(),
+        format!("LOCALHOST:{port}"),
+        "[::1]".to_string(),
+        format!("[::1]:{port}"),
+    ] {
+        let reply = request(port, "GET", "/data/index.json", &[("Host", &allowed)]);
+        assert_eq!(reply.status, 200, "{allowed}");
+    }
+
+    for forbidden in [
+        "attacker.example".to_string(),
+        format!("attacker.example:{port}"),
+        format!("localhost.attacker.example:{port}"),
+        format!("127.0.0.1:{other_port}"),
+        format!("[::1]:{other_port}"),
+        "[::1]junk".to_string(),
+        "".to_string(),
+    ] {
+        let reply = request(port, "GET", "/data/index.json", &[("Host", &forbidden)]);
+        assert_eq!(reply.status, 403, "{forbidden}");
+        assert!(!String::from_utf8_lossy(&reply.body).contains("generated_at"));
+    }
+
+    let dup_host = request(
+        port,
+        "GET",
+        "/data/index.json",
+        &[("Host", "localhost"), ("Host", "127.0.0.1")],
+    );
+    assert_eq!(dup_host.status, 400);
+
+    let missing_http11 = exchange(port, b"GET /data/index.json HTTP/1.1\r\n\r\n");
+    assert!(
+        String::from_utf8_lossy(&missing_http11).starts_with("HTTP/1.0 400 Bad Request\r\n"),
+        "{}",
+        String::from_utf8_lossy(&missing_http11)
+    );
+
+    let valid_http11 = exchange(
+        port,
+        format!("GET /data/index.json HTTP/1.1\r\nHost: localhost:{port}\r\n\r\n").as_bytes(),
+    );
+    assert!(
+        String::from_utf8_lossy(&valid_http11).starts_with("HTTP/1.0 200 OK\r\n"),
+        "{}",
+        String::from_utf8_lossy(&valid_http11)
+    );
+}

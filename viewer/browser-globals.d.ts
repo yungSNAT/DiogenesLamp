@@ -94,6 +94,8 @@ declare const writeShortlist: typeof import("./shortlist.js").writeShortlist;
 declare const toggleShortlistItem: typeof import("./shortlist.js").toggleShortlistItem;
 declare const updateShortlistItem: typeof import("./shortlist.js").updateShortlistItem;
 declare const removeShortlistItem: typeof import("./shortlist.js").removeShortlistItem;
+declare const inheritShortlistAliases: typeof import("./shortlist.js").inheritShortlistAliases;
+declare const mergeShortlistBackup: typeof import("./shortlist.js").mergeShortlistBackup;
 declare const primaryPurchaseUrl: typeof import("./shortlist.js").primaryPurchaseUrl;
 declare const primaryAgentUrl: typeof import("./shortlist.js").primaryAgentUrl;
 declare const buildShortlistExportRecords: typeof import("./shortlist.js").buildShortlistExportRecords;

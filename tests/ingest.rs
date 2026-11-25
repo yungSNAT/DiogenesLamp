@@ -531,6 +531,23 @@ fn malformed_sources_files_are_refused_with_the_reason() {
             "unsafe TOML id: 'a b'",
         ),
         ("[shops.s]\nname = \"s\"\n", "[shops.s] needs a url"),
+        ("[shops.s]\nurl = 1\n", "[shops.s] needs a url string"),
+        (
+            "[shops.s]\nurl = \"javascript:alert(1)\"\n",
+            "[shops.s] url must be an http or https URL",
+        ),
+        (
+            "[shops.s]\nurl = \"data:text/html,<h1>x</h1>\"\n",
+            "[shops.s] url must be an http or https URL",
+        ),
+        (
+            "[shops.s]\nurl = \"file:///etc/passwd\"\n",
+            "[shops.s] url must be an http or https URL",
+        ),
+        (
+            "[shops.s]\nurl = \"https://user:pass@shop.example/\"\n",
+            "[shops.s] url must be an http or https URL",
+        ),
     ];
     for (text, reason) in cases {
         common::write(&path, text);

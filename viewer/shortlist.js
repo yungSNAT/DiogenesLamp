@@ -269,6 +269,75 @@ function removeShortlistItem(shortlist, albumId) {
 }
 
 /**
+ * Carry shortlisted items forward from replaced duplicate IDs to their
+ * canonical listing ID. Explicit entries on the canonical ID win; when several
+ * older listings alias to the same canonical ID, the higher numeric ID wins.
+ * @param {ShortlistMap} shortlist
+ * @param {Record<string, string> | null | undefined} aliases
+ * @returns {{shortlist: ShortlistMap, changed: boolean}}
+ */
+function inheritShortlistAliases(shortlist, aliases) {
+  if (!aliases || !shortlist.size) return { shortlist, changed: false };
+  /** @type {ShortlistItem[]} */
+  const aliased = [];
+  for (const item of shortlist.values()) {
+    const target = aliases[item.id];
+    if (typeof target === "string" && /^[0-9]{1,24}$/.test(target) && target !== item.id) {
+      aliased.push(item);
+    }
+  }
+  if (!aliased.length) return { shortlist, changed: false };
+  aliased.sort((a, b) => {
+    const aNum = /^[0-9]{1,24}$/.test(a.id);
+    const bNum = /^[0-9]{1,24}$/.test(b.id);
+    if (aNum && bNum) return BigInt(a.id) > BigInt(b.id) ? -1 : a.id === b.id ? 0 : 1;
+    return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
+  });
+  /** @type {Map<string, ShortlistItem>} */
+  const winners = new Map();
+  for (const item of aliased) {
+    const target = aliases[item.id];
+    if (!shortlist.has(target) && !winners.has(target)) {
+      winners.set(target, { ...item, id: target });
+    }
+  }
+  /** @type {ShortlistMap} */
+  const next = new Map();
+  for (const item of shortlist.values()) {
+    const target = aliases[item.id];
+    if (typeof target === "string" && /^[0-9]{1,24}$/.test(target) && target !== item.id) {
+      const promoted = winners.get(target);
+      if (promoted && !next.has(target)) {
+        next.set(target, promoted);
+        winners.delete(target);
+      }
+      continue;
+    }
+    next.set(item.id, item);
+  }
+  return { shortlist: next, changed: true };
+}
+
+/**
+ * Merge shortlist items from a saved-work backup without overwriting existing entries.
+ * @param {ShortlistMap} existing
+ * @param {unknown} rawShortlist
+ * @returns {{shortlist: ShortlistMap, added: number}}
+ */
+function mergeShortlistBackup(existing, rawShortlist) {
+  const incoming = normalizeShortlist(rawShortlist);
+  if (!incoming.size) return { shortlist: existing, added: 0 };
+  const next = new Map(existing);
+  let added = 0;
+  for (const [id, item] of incoming) {
+    if (next.has(id) || next.size >= SHORTLIST_LIMITS.maxItems) continue;
+    next.set(id, item);
+    added += 1;
+  }
+  return { shortlist: added ? next : existing, added };
+}
+
+/**
  * First safe HTTP(S) purchase link on an album.
  * @param {ShortlistAlbum | null | undefined} album
  * @returns {string}
@@ -492,6 +561,8 @@ if (typeof module !== "undefined") {
     toggleShortlistItem,
     updateShortlistItem,
     removeShortlistItem,
+    inheritShortlistAliases,
+    mergeShortlistBackup,
     primaryPurchaseUrl,
     primaryAgentUrl,
     buildShortlistExportRecords,

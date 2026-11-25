@@ -185,16 +185,23 @@ function initMaterialChips() {
     els.materialChips.appendChild(btn);
   }
 }
+/** @type {import("./controller-types.js").ViewerAlbum[] | null} */
+let cachedMaterialAlbums = null;
+/** @type {Map<string, number>} */
+let cachedMaterialCounts = new Map();
 function syncMaterialChips() {
   const active = state.view.filters.material;
-  const counts = countMaterials(state.albums, MATERIAL_CHIP_IDS);
+  if (cachedMaterialAlbums !== state.albums) {
+    cachedMaterialAlbums = state.albums;
+    cachedMaterialCounts = countMaterials(state.albums, MATERIAL_CHIP_IDS);
+  }
   for (const chip of MATERIAL_CHIPS) {
     const btn = materialChipButtons.get(chip.id);
     if (!btn) continue;
     const pressed = active === chip.id;
     btn.setAttribute("aria-pressed", String(pressed));
     const countEl = /** @type {HTMLElement} */ (btn.querySelector(".chip-count"));
-    const n = counts.get(chip.id) || 0;
+    const n = cachedMaterialCounts.get(chip.id) || 0;
     countEl.textContent = n > 0 ? n.toLocaleString() : "";
     countEl.hidden = n === 0;
   }
@@ -791,7 +798,7 @@ function makeCard(album) {
     `<span${album.gloss?.length ? ` data-gloss="${escapeAttr(album.gloss.slice(0, CARD_GLOSS_WORDS).join(" · "))}"` : ""}>` +
     `</span></button>` +
     `<div class="card-meta">` +
-    `<span class="seller-tag">${escapeHtml(album.seller)}${isPreferred ? ` <span class="badge-preferred" title="Preferred seller">PREF</span>` : ""}</span>` +
+    `<span class="seller-tag"><span class="seller-name">${escapeHtml(album.seller)}</span>${isPreferred ? `<span class="badge-preferred" title="Preferred seller">PREF</span>` : ""}</span>` +
     `<span class="card-links">${links}</span>` +
     `<button class="shortlist-btn" type="button" aria-pressed="${isShortlisted}" ` +
     `aria-label="${shortlistLabel(isShortlisted)}" title="${shortlistLabel(isShortlisted)}"></button>` +
@@ -1250,8 +1257,10 @@ function renderShops(shops) {
   /** @type {Map<string, import("./controller-types.js").Shop[]>} */
   const groups = new Map();
   for (const shop of shops) {
+    const url = safeHttpUrl(shop.url);
+    if (!url) continue;
     if (!groups.has(shop.platform)) groups.set(shop.platform, []);
-    /** @type {import("./controller-types.js").Shop[]} */ (groups.get(shop.platform)).push(shop);
+    /** @type {import("./controller-types.js").Shop[]} */ (groups.get(shop.platform)).push({ ...shop, url });
   }
   els.shopsPanel.replaceChildren();
   // A slide-over that covers the grid needs a way out that is not the
