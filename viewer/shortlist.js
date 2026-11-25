@@ -106,7 +106,7 @@ function cleanShortlistText(value, maxLen, allowNewlines = false) {
 }
 
 /**
- * Allow only explicit http: and https: URLs.
+ * Allow only explicit http: and https: URLs without embedded credentials.
  * @param {unknown} value
  * @returns {string}
  */
@@ -116,7 +116,8 @@ function safeHttpUrl(value) {
   if (!trimmed) return "";
   try {
     const parsed = new URL(trimmed);
-    if (parsed.protocol === "http:" || parsed.protocol === "https:") return parsed.href;
+    if ((parsed.protocol === "http:" || parsed.protocol === "https:") &&
+        !parsed.username && !parsed.password) return parsed.href;
   } catch {
     return "";
   }
@@ -204,15 +205,15 @@ function writeShortlist(host, shortlist) {
  * @param {string} albumId
  * @param {ShortlistFields} [fields]
  * @param {string} [nowIso]
+ * @param {Record<string, string> | null} [aliases]
  * @returns {{shortlist: ShortlistMap, added: boolean, full: boolean}}
  */
-function toggleShortlistItem(shortlist, albumId, fields = EMPTY_FIELDS, nowIso = new Date().toISOString()) {
+function toggleShortlistItem(shortlist, albumId, fields = EMPTY_FIELDS, nowIso = new Date().toISOString(), aliases = null) {
   const id = cleanShortlistText(albumId, SHORTLIST_LIMITS.maxId);
   const next = new Map(shortlist);
   if (!id) return { shortlist: next, added: false, full: false };
   if (next.has(id)) {
-    next.delete(id);
-    return { shortlist: next, added: false, full: false };
+    return { shortlist: removeShortlistItem(next, id, aliases), added: false, full: false };
   }
   if (next.size >= SHORTLIST_LIMITS.maxItems) {
     return { shortlist: next, added: false, full: true };
@@ -258,14 +259,122 @@ function updateShortlistItem(shortlist, albumId, fields, nowIso = new Date().toI
 }
 
 /**
+ * Remove an album and every older entry whose alias resolves to it, which
+ * inheritance would otherwise move back in on the next refresh.
  * @param {ShortlistMap} shortlist
  * @param {string} albumId
+ * @param {Record<string, string> | null} [aliases]
  * @returns {ShortlistMap}
  */
-function removeShortlistItem(shortlist, albumId) {
+function removeShortlistItem(shortlist, albumId, aliases = null) {
   const next = new Map(shortlist);
   next.delete(albumId);
+  if (aliases) {
+    for (const id of shortlist.keys()) {
+      const resolved = resolveShortlistAlias(id, aliases);
+      if (!resolved.cycled && resolved.target === albumId) next.delete(id);
+    }
+  }
   return next;
+}
+
+/** @param {string} a @param {string} b */
+function compareShortlistIdsDesc(a, b) {
+  const aNum = /^[0-9]{1,24}$/.test(a);
+  const bNum = /^[0-9]{1,24}$/.test(b);
+  if (aNum && bNum) return BigInt(a) > BigInt(b) ? -1 : a === b ? 0 : 1;
+  return a < b ? 1 : a > b ? -1 : 0;
+}
+
+/**
+ * Follow an alias chain using own properties only, guarding against cycles.
+ * @param {string} id
+ * @param {Record<string, string> | null | undefined} aliases
+ * @returns {{target: string, cycled: boolean}}
+ */
+function resolveShortlistAlias(id, aliases) {
+  if (!aliases) return { target: id, cycled: false };
+  let cur = id;
+  /** @type {string[]} */
+  const path = [cur];
+  const visited = new Set(path);
+  while (Object.hasOwn(aliases, cur)) {
+    const next = aliases[cur];
+    if (typeof next !== "string" || !/^[0-9]{1,24}$/.test(next) || next === cur) break;
+    if (visited.has(next)) {
+      const cycleNodes = path.slice(path.indexOf(next));
+      cycleNodes.sort(compareShortlistIdsDesc);
+      return { target: cycleNodes[0], cycled: true };
+    }
+    cur = next;
+    path.push(cur);
+    visited.add(cur);
+  }
+  return { target: cur, cycled: false };
+}
+
+/**
+ * Carry shortlisted items forward from replaced duplicate IDs to their
+ * canonical listing ID, resolving chains. Only a move into an absent target
+ * happens: when several older listings resolve to one target, the highest ID
+ * moves and the rest stay as they are, and entries on a cycle are left alone,
+ * so no size, colour or note is ever dropped.
+ * @param {ShortlistMap} shortlist
+ * @param {Record<string, string> | null | undefined} aliases
+ * @returns {{shortlist: ShortlistMap, changed: boolean}}
+ */
+function inheritShortlistAliases(shortlist, aliases) {
+  if (!aliases || !shortlist.size) return { shortlist, changed: false };
+  /** @type {Map<string, string>} */
+  const moves = new Map();
+  const items = [...shortlist.values()].sort((a, b) => compareShortlistIdsDesc(a.id, b.id));
+  /** @type {Set<string>} */
+  const claimed = new Set();
+  for (const item of items) {
+    const resolved = resolveShortlistAlias(item.id, aliases);
+    if (resolved.cycled || resolved.target === item.id ||
+        shortlist.has(resolved.target) || claimed.has(resolved.target)) continue;
+    claimed.add(resolved.target);
+    moves.set(item.id, resolved.target);
+  }
+  if (!moves.size) return { shortlist, changed: false };
+  /** @type {ShortlistMap} */
+  const next = new Map();
+  for (const item of shortlist.values()) {
+    const target = moves.get(item.id);
+    next.set(target || item.id, target ? { ...item, id: target } : item);
+  }
+  return { shortlist: next, changed: true };
+}
+
+/**
+ * Merge shortlist items from a saved-work backup without overwriting existing
+ * entries, resolving aliases before counting additions or capacity.
+ * @param {ShortlistMap} existing
+ * @param {unknown} rawShortlist
+ * @param {Record<string, string> | null | undefined} [aliases]
+ * @returns {{shortlist: ShortlistMap, added: number}}
+ */
+function mergeShortlistBackup(existing, rawShortlist, aliases = null) {
+  let incoming = normalizeShortlist(rawShortlist);
+  if (!incoming.size) return { shortlist: existing, added: 0 };
+  if (aliases) incoming = inheritShortlistAliases(incoming, aliases).shortlist;
+  const next = new Map(existing);
+  /** @type {Set<string>} */
+  const existingTargets = new Set();
+  if (aliases) {
+    for (const id of existing.keys()) {
+      const resolved = resolveShortlistAlias(id, aliases);
+      if (!resolved.cycled) existingTargets.add(resolved.target);
+    }
+  }
+  let added = 0;
+  for (const [id, item] of incoming) {
+    if (next.has(id) || existingTargets.has(id) || next.size >= SHORTLIST_LIMITS.maxItems) continue;
+    next.set(id, item);
+    added += 1;
+  }
+  return { shortlist: added ? next : existing, added };
 }
 
 /**
@@ -492,6 +601,9 @@ if (typeof module !== "undefined") {
     toggleShortlistItem,
     updateShortlistItem,
     removeShortlistItem,
+    resolveShortlistAlias,
+    inheritShortlistAliases,
+    mergeShortlistBackup,
     primaryPurchaseUrl,
     primaryAgentUrl,
     buildShortlistExportRecords,

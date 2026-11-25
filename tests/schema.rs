@@ -67,13 +67,56 @@ fn index_refusals_name_the_broken_field() {
             format!(r#"{{"selection_version": 1, "sellers": [{SELLER}]}}"#),
             "selected index requires album IDs for every seller",
         ),
+        (
+            r#"{"sellers": [], "shops": {}}"#.into(),
+            "index shops must be an array",
+        ),
+        (
+            r#"{"sellers": [], "shops": [1]}"#.into(),
+            "invalid shop entry",
+        ),
+        (
+            r#"{"sellers": [], "shops": [{"url": "https://shop.example/", "preferred": "yes"}]}"#
+                .into(),
+            "invalid shop preferred flag",
+        ),
+        (
+            r#"{"sellers": [], "shops": [{"name": "Missing URL"}]}"#.into(),
+            "invalid shop URL",
+        ),
     ];
     for (text, reason) in cases {
         assert_eq!(refusal(&text, "index.json"), reason, "{text}");
     }
+    for bad_url in [
+        "javascript:alert(1)",
+        "data:text/html,<h1>x</h1>",
+        "file:///etc/passwd",
+        "https://[bad/",
+        "https://user:pass@shop.example/",
+        "https://user@shop.example/",
+        "https://",
+        "http:///x",
+        // The viewer's URL parser refuses these, so the shop would vanish there.
+        "http://shop example/",
+        "http://shop.example:99999/",
+        "http://shop.example:x/",
+        "http://shop^example/",
+    ] {
+        let text = format!(r#"{{"sellers": [], "shops": [{{"url": "{bad_url}"}}]}}"#);
+        assert_eq!(
+            refusal(&text, "index.json"),
+            "invalid shop URL",
+            "{bad_url}"
+        );
+    }
     let selected = r#"{"selection_version": 1, "sellers": [
         {"id": "one", "shard": "catalog/one.json", "album_ids": ["1", "2"]},
-        {"id": "two", "shard": "catalog/two.json", "album_ids": ["3"]}]}"#;
+        {"id": "two", "shard": "catalog/two.json", "album_ids": ["3"]}],
+        "shops": [
+            {"id": "s1", "platform": "weidian", "name": "S1", "url": "https://weidian.com/?userid=1", "preferred": true},
+            {"id": "s2", "platform": "web", "name": "S2", "url": "http://shop.example/"},
+            {"id": "s3", "platform": "web", "name": "S3", "url": "http://[::1]:8080/x"}]}"#;
     validate_metadata(&json(selected), "index.json").unwrap();
 }
 

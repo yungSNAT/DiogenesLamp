@@ -111,7 +111,7 @@ export interface ViewerElements {
   'preview-shortlist': HTMLButtonElement; 'preview-shortlist-fields': HTMLDivElement;
   'preview-shortlist-size': HTMLInputElement; 'preview-shortlist-colour': HTMLInputElement;
   'preview-shortlist-note': HTMLInputElement; 'preview-shortlist-save': HTMLButtonElement;
-  'preview-shortlist-status': HTMLElement;
+  'preview-shortlist-status': HTMLElement; 'preview-action-status': HTMLElement;
 }
 
 declare global {

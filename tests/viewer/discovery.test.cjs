@@ -20,6 +20,29 @@ test("catalogue index accepts legacy data and validates selections before saved 
   }
   assert.equal(validCatalogueIndex({...index, sellers: [seller, seller]}), false);
   assert.equal(validCatalogueIndex(null), false);
+  assert.equal(validCatalogueIndex({
+    ...index,
+    shops: [
+      {name: "Good HTTPS", platform: "weidian", url: "https://weidian.com/?userid=1", preferred: true},
+      {name: "Good HTTP", platform: "web", url: "http://shop.example/"},
+    ],
+  }), true);
+  for (const badShop of [
+    null,
+    [],
+    {name: "JS", platform: "web", url: "javascript:alert(1)"},
+    {name: "Data", platform: "web", url: "data:text/html,<h1>x</h1>"},
+    {name: "File", platform: "web", url: "file:///etc/passwd"},
+    {name: "Creds", platform: "web", url: "https://user:pass@shop.example/"},
+    {name: "BadPref", platform: "web", url: "https://shop.example/", preferred: "yes"},
+    {name: "NoPlatform", url: "https://shop.example/"},
+    {name: 5, platform: "web", url: "https://shop.example/"},
+    {name: "Space", platform: "web", url: "http://shop example/"},
+  ]) {
+    // One bad shop entry must not cost the whole catalogue: renderShops drops it.
+    assert.equal(validCatalogueIndex({...index, shops: [badShop]}), true, JSON.stringify(badShop));
+  }
+  assert.equal(validCatalogueIndex({...index, shops: {}}), false);
 });
 const {prepareAlbumSearch, compileCatalogueSearch, catalogueCsv, similarCovers, validCatalogueShard} = require("../../viewer/discovery.js");
 const {filtersToURL, filtersFromURL} = require("../../viewer/filters.js");
