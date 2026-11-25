@@ -6,7 +6,7 @@
 
 use std::ffi::OsString;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 
 mod check;
@@ -41,18 +41,42 @@ fn git(args: &[&str], quiet: bool) -> String {
 /// stays silent when the source or the remote branch is unknown.
 fn warn_if_stale() {
     let Some(source) = SOURCE else { return };
-    let status = Command::new("git")
-        .args(["diff", "--quiet", source, "origin/HEAD", "--"])
-        .args(RULE_FILES)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-    if status.is_ok_and(|s| s.code() == Some(1)) {
+    if let Some(remote) = stale_against(Path::new("."), source) {
         eprintln!(
-            "commit-msg: warning: the installed guard (source {source}) differs from the rules on origin/HEAD; reinstall it as the header of .githooks/commit-msg says."
+            "commit-msg: warning: the installed guard (source {source}) differs from the rules on {remote}; reinstall it as the header of .githooks/commit-msg says."
         );
     }
+}
+
+/// The remote default branch (`origin/HEAD`, else `origin/main` for a remote
+/// added by hand) when its rule files differ from `source`.
+fn stale_against(dir: &Path, source: &str) -> Option<&'static str> {
+    let run = |args: &[&str]| {
+        Command::new("git")
+            .current_dir(dir)
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .ok()
+            .and_then(|s| s.code())
+    };
+    let remote = ["origin/HEAD", "origin/main"].into_iter().find(|r| {
+        run(&[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("{r}^{{commit}}"),
+        ]) == Some(0)
+    })?;
+    // diff-tree is plumbing: no diff driver or user diff setting applies.
+    let differs = [
+        &["diff-tree", "-r", "--quiet", source, remote, "--"][..],
+        &RULE_FILES,
+    ]
+    .concat();
+    (run(&differs) == Some(1)).then_some(remote)
 }
 
 /// The files that decide what the guard refuses.
@@ -120,4 +144,89 @@ fn main() -> ExitCode {
     };
     let _ = std::io::stderr().write_all(report.as_bytes());
     ExitCode::FAILURE
+}
+
+#[cfg(test)]
+mod tests {
+    use super::stale_against;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+
+    /// Run git in `dir` with no inherited Git state or user config.
+    fn git(dir: &Path, args: &[&str]) -> String {
+        let mut command = Command::new("git");
+        for (key, _) in std::env::vars_os() {
+            if key.to_string_lossy().starts_with("GIT_") {
+                command.env_remove(key);
+            }
+        }
+        let null = if cfg!(windows) { "nul" } else { "/dev/null" };
+        let out = command
+            .current_dir(dir)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", null)
+            .env("GIT_AUTHOR_NAME", "Jane Doe")
+            .env("GIT_AUTHOR_EMAIL", "jane@example.com")
+            .env("GIT_COMMITTER_NAME", "Jane Doe")
+            .env("GIT_COMMITTER_EMAIL", "jane@example.com")
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}");
+        String::from_utf8(out.stdout).unwrap().trim().to_owned()
+    }
+
+    fn commit(dir: &Path, file: &str, text: &str) -> String {
+        let path = dir.join(file);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+        git(dir, &["add", "."]);
+        git(dir, &["commit", "-q", "-m", file]);
+        git(dir, &["rev-parse", "HEAD"])
+    }
+
+    fn repo(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("commit-msg-guard-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        git(&dir, &["init", "-q", "."]);
+        dir
+    }
+
+    #[test]
+    fn a_rule_change_on_the_remote_is_reported() {
+        let dir = repo("stale");
+        let old = commit(&dir, "tools/commit-msg/src/check.rs", "old\n");
+        let new = commit(&dir, "tools/commit-msg/src/check.rs", "new\n");
+        // A remote added by hand has origin/main but no origin/HEAD.
+        git(&dir, &["update-ref", "refs/remotes/origin/main", &new]);
+        assert_eq!(stale_against(&dir, &old), Some("origin/main"));
+        assert_eq!(stale_against(&dir, &new), None);
+        // A clone's origin/HEAD names the default branch and is preferred.
+        let other = commit(&dir, ".githooks/commit-msg", "shim\n");
+        git(&dir, &["update-ref", "refs/remotes/origin/trunk", &other]);
+        git(
+            &dir,
+            &[
+                "symbolic-ref",
+                "refs/remotes/origin/HEAD",
+                "refs/remotes/origin/trunk",
+            ],
+        );
+        assert_eq!(stale_against(&dir, &new), Some("origin/HEAD"));
+        // A change outside the rule files is not a stale guard, even beside them.
+        let sibling = commit(&dir, "src/serve.rs", "server\n");
+        git(&dir, &["update-ref", "refs/remotes/origin/trunk", &sibling]);
+        assert_eq!(stale_against(&dir, &other), None);
+        let docs = commit(&dir, "README.md", "docs\n");
+        git(&dir, &["update-ref", "refs/remotes/origin/trunk", &docs]);
+        assert_eq!(stale_against(&dir, &other), None);
+        // An unknown source stays silent.
+        assert_eq!(
+            stale_against(&dir, "0000000000000000000000000000000000000000"),
+            None
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
