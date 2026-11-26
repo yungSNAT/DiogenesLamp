@@ -41,6 +41,10 @@ test("shop groups are headed in platform-name order and omit non-HTTP(S) URLs", 
     // A hand-edited non-string name or platform is shown as text.
     { platform: 7, name: "Numbered", url: "https://p.example" },
     { platform: "web", name: 5, url: "https://n.example", preferred: "yes" },
+    // An object, array or empty name shows the shop's address; an object platform files under web.
+    { platform: { bad: 1 }, name: { first: "x" }, url: "https://o.example" },
+    { platform: "web", name: ["a"], url: "https://q.example" },
+    { platform: "web", name: "", url: "https://r.example" },
     null,
     [],
   ]);
@@ -53,7 +57,10 @@ test("shop groups are headed in platform-name order and omit non-HTTP(S) URLs", 
     ["A", "http://a.example/"],
     ["B", "https://b.example/"],
     ["5", "https://n.example/"],
+    ["https://o.example/", "https://o.example/"],
+    ["https://q.example/", "https://q.example/"],
+    ["https://r.example/", "https://r.example/"],
   ]);
   // Only a boolean true earns the badge.
-  assert.equal(links.at(-1).children.length, 0);
+  assert.equal(links.find(l => l.textContent === "5").children.length, 0);
 });

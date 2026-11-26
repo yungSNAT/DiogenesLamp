@@ -678,3 +678,75 @@ test("aliased shortlist entries resolve chains, cycles, filters, backup/restore 
   assert.equal(context.state.shortlist.get("200").note, "Aliased");
   assert.match(el("action-status").textContent, /1 shortlist items/);
 });
+
+test("a card is shortlisted when an older aliased entry resolves to it, and its toggle removes that entry", () => {
+  const { shortlistHolds } = require("../../viewer/shortlist.js");
+  const aliases = { 100: "200", 300: "400", 400: "300" };
+  const older = new Map([["100", { id: "100", size: "L", colour: "", note: "Old ID", added_at: "" }]]);
+  assert.equal(shortlistHolds(older, "200", aliases), true);
+  assert.equal(shortlistHolds(older, "100", aliases), true);
+  assert.equal(shortlistHolds(older, "200", null), false);
+  assert.equal(shortlistHolds(older, "999", aliases), false);
+  // A cycle stays as it is, so it is not read as held by another ID.
+  const cycled = new Map([["300", { id: "300", size: "", colour: "", note: "", added_at: "" }]]);
+  assert.equal(shortlistHolds(cycled, "400", aliases), false);
+
+  // Pressing the canonical card removes the older entry instead of adding a second one.
+  const toggled = toggleShortlistItem(older, "200", undefined, undefined, aliases);
+  assert.equal(toggled.added, false);
+  assert.equal(toggled.full, false);
+  assert.deepEqual([...toggled.shortlist.keys()], []);
+
+  // The card's button reads the same state.
+  const appSource = readFileSync(join(__dirname, "../../viewer/app.js"), "utf8");
+  const match = appSource.match(/\nfunction syncCardShortlist\([\s\S]*?\n\}/);
+  assert.ok(match, "app.js no longer declares syncCardShortlist");
+  const attrs = {};
+  const button = { getAttribute: k => attrs[k] ?? null, setAttribute(k, v) { attrs[k] = String(v); } };
+  const context = {
+    shortlistHolds,
+    state: { shortlist: older, albumAliases: aliases },
+    setIfChanged(target, k, v) { target.setAttribute(k, v); },
+    shortlistLabel: v => v ? "Remove from shortlist" : "Add to shortlist",
+  };
+  vm.createContext(context);
+  vm.runInContext(match[0], context);
+  context.syncCardShortlist({ querySelector: () => button }, "200");
+  assert.equal(attrs["aria-pressed"], "true");
+  assert.equal(attrs["aria-label"], "Remove from shortlist");
+  const cardSource = appSource.match(/\nfunction makeCard\([\s\S]*?\n\}/)[0];
+  assert.match(cardSource, /shortlistHolds\(state\.shortlist, album\.id, state\.albumAliases\)/);
+});
+
+test("a backup merged at the 5,000 cap reports how many items it skipped, and the import says so", async () => {
+  const full = new Map();
+  for (let i = 1; i < SHORTLIST_LIMITS.maxItems; i += 1) {
+    full.set(String(i), { id: String(i), size: "", colour: "", note: "", added_at: "" });
+  }
+  const items = [{ id: "90001" }, { id: "90002" }, { id: "90003" }, { id: "1" }];
+  const merged = mergeShortlistBackup(full, { version: 1, items });
+  assert.equal(merged.added, 1);
+  assert.equal(merged.skipped, 2);
+  assert.equal(mergeShortlistBackup(new Map(), { version: 1, items }).skipped, 0);
+  assert.equal(mergeShortlistBackup(full, null).skipped, 0);
+
+  const { context, el } = createSavedWorkHarness({ shortlist: full });
+  const text = JSON.stringify({ format: "diogeneslamp", version: 1, entries: [], albums: [], shortlist: { version: 1, items } });
+  const input = el("import-backup");
+  input.files = [{ size: text.length, async text() { return text; } }];
+  input.fire("change");
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(context.state.shortlist.size, SHORTLIST_LIMITS.maxItems);
+  assert.match(el("action-status").textContent, /2 shortlist items were not added: the shortlist is full \(5,000 items\)/);
+
+  // A shortlist that cannot be saved after the saved fields were imported says both.
+  const errors = [];
+  const failing = createSavedWorkHarness({ onSavedDataError: msg => errors.push(msg) });
+  failing.context.writeShortlist = () => false;
+  const failInput = failing.el("import-backup");
+  failInput.files = [{ size: text.length, async text() { return text; } }];
+  failInput.fire("change");
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /^Imported 0 saved fields, but the shortlist could not be saved/);
+});
