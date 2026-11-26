@@ -1168,17 +1168,8 @@ mod tests {
         let (server, mut client) = connected_pair();
         configure_stream(&server);
         let port = server.local_addr().unwrap().port();
-        client
-            .write_all(
-                format!(
-                    "GET /nope HTTP/1.0
-Host: 127.0.0.1:{port}
-
-"
-                )
-                .as_bytes(),
-            )
-            .unwrap();
+        let request = format!("GET /nope HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\n\r\n");
+        client.write_all(request.as_bytes()).unwrap();
         handle(&server, &Viewer::Embedded, Path::new("."), port);
         let timeout = server.write_timeout().unwrap().unwrap();
         assert!(timeout < SOCKET_WRITE_TIMEOUT, "{timeout:?}");
