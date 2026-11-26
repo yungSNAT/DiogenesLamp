@@ -725,8 +725,8 @@ function previewLabel(album) {
   return `Preview: ${album.title}` + (album.gloss?.length ? `. Read from the title: ${album.gloss.join(", ")}` : "");
 }
 
-/** @param {import("./controller-types.js").ViewerAlbum} album */
-function makeCard(album) {
+/** @param {import("./controller-types.js").ViewerAlbum} album @param {boolean} isShortlisted */
+function makeCard(album, isShortlisted) {
   const card = document.createElement("div");
   card.className = "card";
   const isNew = album.is_new;
@@ -734,7 +734,6 @@ function makeCard(album) {
   const isPreferred = state.preferredSellers.has(album.seller);
   if (isPreferred) card.classList.add("is-preferred");
   const isFav = state.favorites.has(album.id);
-  const isShortlisted = shortlistHolds(state.shortlist, album.id, state.albumAliases);
   // Everything interpolated below reaches us from scraped remote HTML. The
   // scraper constrains platform to a known set and builds URLs itself, so
   // nothing hostile is expected - but escaping is a line of code and the
@@ -869,11 +868,10 @@ function shortlistLabel(inShortlist) {
   return inShortlist ? "Remove from shortlist" : "Add to shortlist";
 }
 
-/** @param {HTMLDivElement} card @param {string} albumId */
-function syncCardShortlist(card, albumId) {
+/** @param {HTMLDivElement} card @param {boolean} active */
+function syncCardShortlist(card, active) {
   const btn = card.querySelector(".shortlist-btn");
   if (!btn) return;
-  const active = shortlistHolds(state.shortlist, albumId, state.albumAliases);
   setIfChanged(btn, "aria-pressed", String(active));
   setIfChanged(btn, "aria-label", shortlistLabel(active));
   setIfChanged(btn, "title", shortlistLabel(active));
@@ -886,9 +884,10 @@ function updateShortlistCount() {
 }
 
 function syncAllShortlistCards() {
+  const held = shortlistIds(state.shortlist, state.albumAliases);
   for (const [entryKey, card] of cardCache) {
     const split = entryKey.indexOf("\u0000");
-    if (split >= 0) syncCardShortlist(card, entryKey.slice(split + 1));
+    if (split >= 0) syncCardShortlist(card, held.has(entryKey.slice(split + 1)));
   }
 }
 
@@ -1017,8 +1016,10 @@ function renderGrid(force = false) {
   const next = new Map();
   const startIdx = firstRow * cols;
   const endIdx = Math.min(state.filtered.length, lastRow * cols);
+  const held = shortlistIds(state.shortlist, state.albumAliases);
   for (let i = startIdx; i < endIdx; i += 1) {
     const album = state.filtered[i];
+    const isShortlisted = held.has(album.id);
     const key = cardKey(album);
     /** @type {HTMLDivElement | null | undefined} */
     let card = cardCache.get(key);
@@ -1036,13 +1037,13 @@ function renderGrid(force = false) {
       if (card) refreshCardTitle(card, album, markQuery);
     }
     if (!card) {
-      card = makeCard(album);
+      card = makeCard(album, isShortlisted);
       els.grid.appendChild(card);
     }
     const fav = /** @type {HTMLButtonElement} */ (card.querySelector(".fav-btn"));
     setIfChanged(fav, "aria-pressed", String(state.favorites.has(album.id)));
     setIfChanged(fav, "aria-label", favLabel(state.favorites.has(album.id)));
-    syncCardShortlist(card, album.id);
+    syncCardShortlist(card, isShortlisted);
     const transform = placeCard(i, cols);
     if (card.style.transform !== transform) card.style.transform = transform;
     // Only a window of rows exists in the DOM, so role=list would otherwise
