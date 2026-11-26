@@ -680,8 +680,8 @@ test("aliased shortlist entries resolve chains, cycles, filters, backup/restore 
 });
 
 test("a card is shortlisted when an older aliased entry resolves to it, and its toggle removes that entry", () => {
-  const { shortlistHolds } = require("../../viewer/shortlist.js");
-  const aliases = { 100: "200", 300: "400", 400: "300" };
+  const { shortlistHolds, shortlistIds } = require("../../viewer/shortlist.js");
+  const aliases = { 100: "150", 150: "200", 300: "400", 400: "300" };
   const older = new Map([["100", { id: "100", size: "L", colour: "", note: "Old ID", added_at: "" }]]);
   assert.equal(shortlistHolds(older, "200", aliases), true);
   assert.equal(shortlistHolds(older, "100", aliases), true);
@@ -690,6 +690,10 @@ test("a card is shortlisted when an older aliased entry resolves to it, and its 
   // A cycle stays as it is, so it is not read as held by another ID.
   const cycled = new Map([["300", { id: "300", size: "", colour: "", note: "", added_at: "" }]]);
   assert.equal(shortlistHolds(cycled, "400", aliases), false);
+  const held = shortlistIds(older, aliases);
+  assert.deepEqual([...held].sort(), ["100", "200"]);
+  assert.deepEqual([...shortlistIds(cycled, aliases)], ["300"]);
+  assert.deepEqual([...shortlistIds(older, null)], ["100"]);
 
   // Pressing the canonical card removes the older entry instead of adding a second one.
   const toggled = toggleShortlistItem(older, "200", undefined, undefined, aliases);
@@ -704,18 +708,47 @@ test("a card is shortlisted when an older aliased entry resolves to it, and its 
   const attrs = {};
   const button = { getAttribute: k => attrs[k] ?? null, setAttribute(k, v) { attrs[k] = String(v); } };
   const context = {
-    shortlistHolds,
-    state: { shortlist: older, albumAliases: aliases },
     setIfChanged(target, k, v) { target.setAttribute(k, v); },
     shortlistLabel: v => v ? "Remove from shortlist" : "Add to shortlist",
   };
   vm.createContext(context);
   vm.runInContext(match[0], context);
-  context.syncCardShortlist({ querySelector: () => button }, "200");
+  const card = { querySelector: () => button };
+  context.syncCardShortlist(card, held.has("200"));
   assert.equal(attrs["aria-pressed"], "true");
   assert.equal(attrs["aria-label"], "Remove from shortlist");
-  const cardSource = appSource.match(/\nfunction makeCard\([\s\S]*?\n\}/)[0];
-  assert.match(cardSource, /shortlistHolds\(state\.shortlist, album\.id, state\.albumAliases\)/);
+  context.syncCardShortlist(card, held.has("999"));
+  assert.equal(attrs["aria-pressed"], "false");
+  assert.equal(attrs["aria-label"], "Add to shortlist");
+});
+
+test("refreshing cached cards walks shortlist keys independently of the card count", () => {
+  const source = readFileSync(join(__dirname, "../../viewer/app.js"), "utf8");
+  const { shortlistHolds, shortlistIds } = require("../../viewer/shortlist.js");
+  let walks = 0;
+  class CountedMap extends Map {
+    keys() { walks++; return super.keys(); }
+  }
+  const shortlist = new CountedMap([["100", {}]]);
+  const cardCache = new Map();
+  for (let i = 200; i < 232; i++) {
+    const attributes = {};
+    const button = { attributes };
+    cardCache.set("shop\u0000" + i, { querySelector: () => button });
+  }
+  const context = vm.createContext({
+    shortlistHolds, shortlistIds, state: { shortlist, albumAliases: { 100: "200" } }, cardCache,
+    setIfChanged(button, key, value) { button.attributes[key] = value; },
+  });
+  for (const name of ["shortlistLabel", "syncCardShortlist", "syncAllShortlistCards"]) {
+    const match = source.match(new RegExp("\\nfunction " + name + "\\([\\s\\S]*?\\n\\}"));
+    assert.ok(match, name);
+    vm.runInContext(match[0], context);
+  }
+  context.syncAllShortlistCards();
+  assert.equal(cardCache.get("shop\u0000200").querySelector().attributes["aria-pressed"], "true");
+  assert.equal(cardCache.get("shop\u0000201").querySelector().attributes["aria-pressed"], "false");
+  assert.ok(walks <= 2, `shortlist keys traversed ${walks} times for ${cardCache.size} cards`);
 });
 
 test("a backup merged at the 5,000 cap reports how many items it skipped, and the import says so", async () => {

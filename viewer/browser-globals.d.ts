@@ -95,6 +95,7 @@ declare const toggleShortlistItem: typeof import("./shortlist.js").toggleShortli
 declare const updateShortlistItem: typeof import("./shortlist.js").updateShortlistItem;
 declare const removeShortlistItem: typeof import("./shortlist.js").removeShortlistItem;
 declare const shortlistHolds: typeof import("./shortlist.js").shortlistHolds;
+declare const shortlistIds: typeof import("./shortlist.js").shortlistIds;
 declare const resolveShortlistAlias: typeof import("./shortlist.js").resolveShortlistAlias;
 declare const inheritShortlistAliases: typeof import("./shortlist.js").inheritShortlistAliases;
 declare const mergeShortlistBackup: typeof import("./shortlist.js").mergeShortlistBackup;
