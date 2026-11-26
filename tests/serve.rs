@@ -752,3 +752,69 @@ fn host_header_rejects_rebinding_and_allows_localhost_variants() {
         String::from_utf8_lossy(&valid_http11)
     );
 }
+
+#[test]
+fn a_client_trickling_its_request_is_dropped_at_the_request_deadline() {
+    use std::io::ErrorKind;
+    use std::time::{Duration, Instant};
+    // Only the server can reset or abort the connection or break the pipe;
+    // the client never sets a timeout of its own.
+    fn closed_by_peer(kind: ErrorKind) -> bool {
+        matches!(
+            kind,
+            ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted | ErrorKind::BrokenPipe
+        )
+    }
+    let dir = common::tmp();
+    let (viewer, data) = layout(dir.path());
+    let server = start(Viewer::Dir(viewer), &data);
+    let port = server.port;
+    // Timed from before connecting, so the server's deadline cannot start
+    // earlier than this clock.
+    let started = Instant::now();
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    stream
+        .write_all(
+            format!("GET /data/index.json HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nX-Slow: ")
+                .as_bytes(),
+        )
+        .unwrap();
+    let mut reader = stream.try_clone().unwrap();
+    let closed = std::thread::spawn(move || {
+        let mut sink = Vec::new();
+        let read = reader
+            .read_to_end(&mut sink)
+            .map(|_| ())
+            .map_err(|e| e.kind());
+        (started.elapsed(), read, sink)
+    });
+    // One header byte every 200 ms: each read succeeds well inside the 10 s
+    // read timeout, so only a deadline on the whole request ends it. The loop
+    // ends when the reader sees the connection end or a write fails, or, on a
+    // server without the deadline, when the client gives up at 20 s.
+    let mut ended_by_server = false;
+    while started.elapsed() < Duration::from_secs(20) {
+        let write_failed = stream.write_all(b"a").err().map(|e| e.kind());
+        if closed.is_finished() || write_failed.is_some() {
+            ended_by_server = write_failed.is_none_or(closed_by_peer);
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    let _ = stream.shutdown(std::net::Shutdown::Both);
+    let (held, read, sink) = closed.join().unwrap();
+    assert!(
+        ended_by_server && read.map_or_else(closed_by_peer, |()| true),
+        "the server did not close a trickling client (after {held:?}: {read:?})"
+    );
+    assert!(
+        held >= Duration::from_millis(9500) && held < Duration::from_secs(13),
+        "a trickling client was dropped after {held:?}, not at the 10 s deadline"
+    );
+    assert!(
+        sink.is_empty(),
+        "the server replied to an unfinished request"
+    );
+    // A normal request on the same server still succeeds.
+    assert_eq!(get(port, "/data/index.json").status, 200);
+}
