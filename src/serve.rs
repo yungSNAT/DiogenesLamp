@@ -1031,10 +1031,7 @@ mod tests {
         ] {
             assert!(!valid_host_header(invalid, 8080), "{invalid}");
         }
-        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let addr = listener.local_addr().unwrap();
-        let client = TcpStream::connect(addr).unwrap();
-        let (server_stream, _) = listener.accept().unwrap();
+        let (server_stream, client) = connected_pair();
         configure_stream(&server_stream);
         assert_eq!(
             server_stream.read_timeout().unwrap(),
@@ -1141,5 +1138,47 @@ mod tests {
         let mut got = Vec::new();
         client.read_to_end(&mut got).unwrap();
         assert!(got.is_empty(), "{got:?}");
+    }
+
+    // A client that stops reading is still dropped after the old 30 s of no
+    // progress, however long the whole response may take.
+    #[test]
+    fn each_write_call_still_stalls_out_at_the_socket_timeout() {
+        let (server, _client) = connected_pair();
+        Deadline {
+            stream: &server,
+            deadline: Instant::now() + Duration::from_secs(3600),
+        }
+        .write_all(b"ok")
+        .unwrap();
+        let timeout = server.write_timeout().unwrap().unwrap();
+        assert!(timeout <= SOCKET_WRITE_TIMEOUT, "{timeout:?}");
+    }
+
+    // Responses go through the deadline: it replaces the accepted socket's
+    // fixed 30 s with what is left of the response's own allowance.
+    #[test]
+    fn responses_are_written_by_the_deadline() {
+        let (server, mut client) = connected_pair();
+        configure_stream(&server);
+        let port = server.local_addr().unwrap().port();
+        client
+            .write_all(
+                format!(
+                    "GET /nope HTTP/1.0
+Host: 127.0.0.1:{port}
+
+"
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+        handle(&server, &Viewer::Embedded, Path::new("."), port);
+        let timeout = server.write_timeout().unwrap().unwrap();
+        assert!(timeout < SOCKET_WRITE_TIMEOUT, "{timeout:?}");
+        drop(server);
+        let mut reply = String::new();
+        client.read_to_string(&mut reply).unwrap();
+        assert!(reply.starts_with("HTTP/1.0 404"), "{reply}");
     }
 }
