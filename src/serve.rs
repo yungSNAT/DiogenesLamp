@@ -115,7 +115,10 @@ impl Read for Deadline<'_> {
 
 impl Write for Deadline<'_> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.stream.set_write_timeout(Some(self.left()?))?;
+        // Still no longer than the old per-call limit, so a reader that
+        // stops altogether is dropped as soon as before.
+        self.stream
+            .set_write_timeout(Some(self.left()?.min(SOCKET_WRITE_TIMEOUT)))?;
         let mut stream = self.stream;
         stream.write(buf)
     }
@@ -378,6 +381,8 @@ struct Handler<'a> {
     status: u16,
     shard_etag: Option<String>,
     buffer: Vec<u8>,
+    /// A failed header write leaves the socket unusable, so no body follows.
+    write_failed: bool,
 }
 
 impl Handler<'_> {
@@ -427,7 +432,7 @@ impl Handler<'_> {
         if self.request_version != "HTTP/0.9" {
             self.buffer.extend_from_slice(b"\r\n");
             let data = std::mem::take(&mut self.buffer);
-            let _ = write_by_deadline(self.stream, &data);
+            self.write_failed = write_by_deadline(self.stream, &data).is_err();
         }
     }
 
@@ -488,7 +493,7 @@ impl Handler<'_> {
     }
 
     fn write_body(&mut self, body: &[u8]) {
-        if self.command != "HEAD" {
+        if self.command != "HEAD" && !self.write_failed {
             let _ = write_by_deadline(self.stream, body);
         }
     }
@@ -675,6 +680,7 @@ fn handle(stream: &TcpStream, viewer: &Viewer, data_dir: &Path, port: u16) {
         status: 0,
         shard_etag: None,
         buffer: Vec::new(),
+        write_failed: false,
     };
     // Python's end_headers override reads self.path, which is unset until
     // the request line parses: those error replies die before a byte is
