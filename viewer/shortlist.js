@@ -212,7 +212,7 @@ function toggleShortlistItem(shortlist, albumId, fields = EMPTY_FIELDS, nowIso =
   const id = cleanShortlistText(albumId, SHORTLIST_LIMITS.maxId);
   const next = new Map(shortlist);
   if (!id) return { shortlist: next, added: false, full: false };
-  if (next.has(id)) {
+  if (shortlistHolds(next, id, aliases)) {
     return { shortlist: removeShortlistItem(next, id, aliases), added: false, full: false };
   }
   if (next.size >= SHORTLIST_LIMITS.maxItems) {
@@ -276,6 +276,24 @@ function removeShortlistItem(shortlist, albumId, aliases = null) {
     }
   }
   return next;
+}
+
+/**
+ * Whether an album is on the shortlist under its own ID or under an older ID
+ * whose alias resolves to it, so its card and its toggle agree with removal.
+ * @param {ShortlistMap} shortlist
+ * @param {string} albumId
+ * @param {Record<string, string> | null} [aliases]
+ * @returns {boolean}
+ */
+function shortlistHolds(shortlist, albumId, aliases = null) {
+  if (shortlist.has(albumId)) return true;
+  if (!aliases) return false;
+  for (const id of shortlist.keys()) {
+    const resolved = resolveShortlistAlias(id, aliases);
+    if (!resolved.cycled && resolved.target === albumId) return true;
+  }
+  return false;
 }
 
 /** @param {string} a @param {string} b */
@@ -349,15 +367,16 @@ function inheritShortlistAliases(shortlist, aliases) {
 
 /**
  * Merge shortlist items from a saved-work backup without overwriting existing
- * entries, resolving aliases before counting additions or capacity.
+ * entries, resolving aliases before counting additions or capacity. New
+ * items that do not fit under the cap are counted in `skipped`.
  * @param {ShortlistMap} existing
  * @param {unknown} rawShortlist
  * @param {Record<string, string> | null | undefined} [aliases]
- * @returns {{shortlist: ShortlistMap, added: number}}
+ * @returns {{shortlist: ShortlistMap, added: number, skipped: number}}
  */
 function mergeShortlistBackup(existing, rawShortlist, aliases = null) {
   let incoming = normalizeShortlist(rawShortlist);
-  if (!incoming.size) return { shortlist: existing, added: 0 };
+  if (!incoming.size) return { shortlist: existing, added: 0, skipped: 0 };
   if (aliases) incoming = inheritShortlistAliases(incoming, aliases).shortlist;
   const next = new Map(existing);
   /** @type {Set<string>} */
@@ -369,12 +388,17 @@ function mergeShortlistBackup(existing, rawShortlist, aliases = null) {
     }
   }
   let added = 0;
+  let skipped = 0;
   for (const [id, item] of incoming) {
-    if (next.has(id) || existingTargets.has(id) || next.size >= SHORTLIST_LIMITS.maxItems) continue;
+    if (next.has(id) || existingTargets.has(id)) continue;
+    if (next.size >= SHORTLIST_LIMITS.maxItems) {
+      skipped += 1;
+      continue;
+    }
     next.set(id, item);
     added += 1;
   }
-  return { shortlist: added ? next : existing, added };
+  return { shortlist: added ? next : existing, added, skipped };
 }
 
 /**
@@ -601,6 +625,7 @@ if (typeof module !== "undefined") {
     toggleShortlistItem,
     updateShortlistItem,
     removeShortlistItem,
+    shortlistHolds,
     resolveShortlistAlias,
     inheritShortlistAliases,
     mergeShortlistBackup,

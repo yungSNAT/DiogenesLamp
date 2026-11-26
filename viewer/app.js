@@ -734,7 +734,7 @@ function makeCard(album) {
   const isPreferred = state.preferredSellers.has(album.seller);
   if (isPreferred) card.classList.add("is-preferred");
   const isFav = state.favorites.has(album.id);
-  const isShortlisted = state.shortlist.has(album.id);
+  const isShortlisted = shortlistHolds(state.shortlist, album.id, state.albumAliases);
   // Everything interpolated below reaches us from scraped remote HTML. The
   // scraper constrains platform to a known set and builds URLs itself, so
   // nothing hostile is expected - but escaping is a line of code and the
@@ -873,7 +873,7 @@ function shortlistLabel(inShortlist) {
 function syncCardShortlist(card, albumId) {
   const btn = card.querySelector(".shortlist-btn");
   if (!btn) return;
-  const active = state.shortlist.has(albumId);
+  const active = shortlistHolds(state.shortlist, albumId, state.albumAliases);
   setIfChanged(btn, "aria-pressed", String(active));
   setIfChanged(btn, "aria-label", shortlistLabel(active));
   setIfChanged(btn, "title", shortlistLabel(active));
@@ -1258,16 +1258,20 @@ function renderShops(shops) {
   const groups = new Map();
   // Each entry is checked here rather than in validCatalogueIndex, so one
   // malformed shop is dropped instead of refusing the whole catalogue. lamp
-  // keeps a hand-edited non-string name or platform as written, so both are
-  // shown as text.
+  // keeps a hand-edited non-string name or platform as written: a number or
+  // boolean is shown as text, and anything else falls back to the shop's
+  // address or to 'web'.
+  /** @param {unknown} value */
+  const shopText = value => typeof value === "string" ? value
+    : typeof value === "number" || typeof value === "boolean" ? String(value) : "";
   for (const shop of shops) {
     if (!shop || typeof shop !== "object") continue;
     const url = safeHttpUrl(shop.url);
     if (!url) continue;
-    const platform = String(shop.platform ?? "web");
+    const platform = shopText(shop.platform) || "web";
     if (!groups.has(platform)) groups.set(platform, []);
     /** @type {import("./controller-types.js").Shop[]} */ (groups.get(platform)).push({
-      platform, url, name: String(shop.name ?? ""), preferred: shop.preferred === true,
+      platform, url, name: shopText(shop.name) || url, preferred: shop.preferred === true,
     });
   }
   els.shopsPanel.replaceChildren();
