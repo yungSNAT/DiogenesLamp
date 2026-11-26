@@ -296,6 +296,22 @@ function shortlistHolds(shortlist, albumId, aliases = null) {
   return false;
 }
 
+/** Direct and resolved IDs for a pass over several cards.
+ * @param {ShortlistMap} shortlist
+ * @param {Record<string, string> | null} aliases
+ * @returns {Set<string>}
+ */
+function shortlistIds(shortlist, aliases) {
+  const ids = new Set();
+  for (const id of shortlist.keys()) {
+    ids.add(id);
+    if (!aliases || !Object.hasOwn(aliases, id)) continue;
+    const resolved = resolveShortlistAlias(id, aliases);
+    if (!resolved.cycled) ids.add(resolved.target);
+  }
+  return ids;
+}
+
 /** @param {string} a @param {string} b */
 function compareShortlistIdsDesc(a, b) {
   const aNum = /^[0-9]{1,24}$/.test(a);
@@ -626,6 +642,7 @@ if (typeof module !== "undefined") {
     updateShortlistItem,
     removeShortlistItem,
     shortlistHolds,
+    shortlistIds,
     resolveShortlistAlias,
     inheritShortlistAliases,
     mergeShortlistBackup,
