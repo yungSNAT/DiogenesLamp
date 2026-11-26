@@ -10,7 +10,7 @@ use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use sha2::{Digest, Sha256};
 
@@ -83,6 +83,26 @@ const STATUS_TEXT: [(u16, &str, &str); 8] = [
 
 const SOCKET_READ_TIMEOUT: Duration = Duration::from_secs(10);
 const SOCKET_WRITE_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Reads with each read bounded by what is left of one deadline for the
+/// whole request, so a client trickling bytes cannot hold its thread past it.
+struct DeadlineReader<'a> {
+    stream: &'a TcpStream,
+    deadline: Instant,
+}
+
+impl Read for DeadlineReader<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let left = self
+            .deadline
+            .checked_duration_since(Instant::now())
+            .filter(|left| !left.is_zero())
+            .ok_or(std::io::ErrorKind::TimedOut)?;
+        self.stream.set_read_timeout(Some(left))?;
+        let mut stream = self.stream;
+        stream.read(buf)
+    }
+}
 
 fn configure_stream(stream: &TcpStream) {
     let _ = stream.set_nonblocking(false);
@@ -595,7 +615,12 @@ fn latin1(b: u8) -> u8 {
 }
 
 fn handle(stream: &TcpStream, viewer: &Viewer, data_dir: &Path, port: u16) {
-    let mut reader = BufReader::new(stream);
+    // The request line and headers share one deadline: the per-read timeout
+    // alone restarts on every byte.
+    let mut reader = BufReader::new(DeadlineReader {
+        stream,
+        deadline: Instant::now() + SOCKET_READ_TIMEOUT,
+    });
     let mut raw = Vec::new();
     if reader
         .by_ref()
