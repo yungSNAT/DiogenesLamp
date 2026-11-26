@@ -12,6 +12,12 @@
   `.githooks/commit-msg` now says why it refuses, and also refuses with
   untracked files (which `cargo install` could build) and when `core.hooksPath`
   is set, where Git would never run the installed hook.
+- The viewer marks a card as shortlisted when an older listing ID that now
+  points to it is on the shortlist, and pressing it removes that entry instead
+  of adding a second one. Restoring a backup into a full shortlist says how
+  many items did not fit, and a shortlist that cannot be saved after the saved
+  fields were imported says both. A shop whose hand-edited name is not text
+  shows its address instead of `[object Object]`.
 
 ## 0.1.3 (2026-11-24)
 
