@@ -84,24 +84,58 @@ const STATUS_TEXT: [(u16, &str, &str); 8] = [
 const SOCKET_READ_TIMEOUT: Duration = Duration::from_secs(10);
 const SOCKET_WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Reads with each read bounded by what is left of one deadline for the
-/// whole request, so a client trickling bytes cannot hold its thread past it.
-struct DeadlineReader<'a> {
+/// After its first `SOCKET_WRITE_TIMEOUT`, a response must keep this average
+/// rate in bytes a second: a reader taking a little at a time cannot hold
+/// its thread, and a large catalogue shard still has time to arrive.
+const MIN_WRITE_RATE: u64 = 64 * 1024;
+
+/// Reads or writes with each call bounded by what is left of one deadline,
+/// so a client trickling bytes cannot hold its thread past it.
+struct Deadline<'a> {
     stream: &'a TcpStream,
     deadline: Instant,
 }
 
-impl Read for DeadlineReader<'_> {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let left = self
-            .deadline
+impl Deadline<'_> {
+    fn left(&self) -> std::io::Result<Duration> {
+        self.deadline
             .checked_duration_since(Instant::now())
             .filter(|left| !left.is_zero())
-            .ok_or(std::io::ErrorKind::TimedOut)?;
-        self.stream.set_read_timeout(Some(left))?;
+            .ok_or_else(|| std::io::ErrorKind::TimedOut.into())
+    }
+}
+
+impl Read for Deadline<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.stream.set_read_timeout(Some(self.left()?))?;
         let mut stream = self.stream;
         stream.read(buf)
     }
+}
+
+impl Write for Deadline<'_> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.stream.set_write_timeout(Some(self.left()?))?;
+        let mut stream = self.stream;
+        stream.write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        let mut stream = self.stream;
+        stream.flush()
+    }
+}
+
+/// The time a response of `len` bytes has to be written.
+fn write_allowance(len: usize) -> Duration {
+    SOCKET_WRITE_TIMEOUT + Duration::from_secs(len as u64 / MIN_WRITE_RATE)
+}
+
+fn write_by_deadline(stream: &TcpStream, data: &[u8]) -> std::io::Result<()> {
+    let deadline = Instant::now() + write_allowance(data.len());
+    let mut writer = Deadline { stream, deadline };
+    writer.write_all(data)?;
+    writer.flush()
 }
 
 fn configure_stream(stream: &TcpStream) {
@@ -393,7 +427,7 @@ impl Handler<'_> {
         if self.request_version != "HTTP/0.9" {
             self.buffer.extend_from_slice(b"\r\n");
             let data = std::mem::take(&mut self.buffer);
-            let _ = self.stream.write_all(&data);
+            let _ = write_by_deadline(self.stream, &data);
         }
     }
 
@@ -455,7 +489,7 @@ impl Handler<'_> {
 
     fn write_body(&mut self, body: &[u8]) {
         if self.command != "HEAD" {
-            let _ = self.stream.write_all(body);
+            let _ = write_by_deadline(self.stream, body);
         }
     }
 
@@ -617,7 +651,7 @@ fn latin1(b: u8) -> u8 {
 fn handle(stream: &TcpStream, viewer: &Viewer, data_dir: &Path, port: u16) {
     // The request line and headers share one deadline: the per-read timeout
     // alone restarts on every byte.
-    let mut reader = BufReader::new(DeadlineReader {
+    let mut reader = BufReader::new(Deadline {
         stream,
         deadline: Instant::now() + SOCKET_READ_TIMEOUT,
     });
@@ -1011,5 +1045,101 @@ mod tests {
             Some(SOCKET_WRITE_TIMEOUT)
         );
         drop(client);
+    }
+
+    fn connected_pair() -> (TcpStream, TcpStream) {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (server, _) = listener.accept().unwrap();
+        (server, client)
+    }
+
+    #[test]
+    fn a_response_gets_time_in_proportion_to_its_size() {
+        let rate = MIN_WRITE_RATE as usize;
+        assert_eq!(write_allowance(0), SOCKET_WRITE_TIMEOUT);
+        assert_eq!(write_allowance(rate - 1), SOCKET_WRITE_TIMEOUT);
+        assert_eq!(
+            write_allowance(rate * 10 + 1),
+            SOCKET_WRITE_TIMEOUT + Duration::from_secs(10)
+        );
+        // A shard at the 256 MiB snapshot limit has over an hour.
+        assert_eq!(
+            write_allowance(256 << 20),
+            SOCKET_WRITE_TIMEOUT + Duration::from_secs(4096)
+        );
+    }
+
+    #[test]
+    fn a_reader_trickling_a_response_is_cut_off_at_the_deadline() {
+        let (server, mut client) = connected_pair();
+        let done = Arc::new(AtomicBool::new(false));
+        let reading = Arc::clone(&done);
+        // Slow but steady: every read makes room for more, so each write call
+        // progresses and only a deadline on the whole response stops it.
+        let reader = std::thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            let started = Instant::now();
+            while !reading.load(Ordering::SeqCst) && started.elapsed() < Duration::from_secs(8) {
+                if matches!(client.read(&mut buf), Ok(0) | Err(_)) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        });
+        let started = Instant::now();
+        let written = Deadline {
+            stream: &server,
+            deadline: started + Duration::from_secs(1),
+        }
+        .write_all(&vec![0u8; 64 << 20]);
+        let held = started.elapsed();
+        done.store(true, Ordering::SeqCst);
+        drop(server);
+        reader.join().unwrap();
+        let kind = written.unwrap_err().kind();
+        assert!(
+            matches!(
+                kind,
+                std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+            ),
+            "{kind:?}"
+        );
+        assert!(
+            held >= Duration::from_millis(900) && held < Duration::from_secs(4),
+            "the write was stopped after {held:?}, not at the 1 s deadline"
+        );
+    }
+
+    #[test]
+    fn a_reader_keeping_up_gets_the_whole_response() {
+        let (server, mut client) = connected_pair();
+        let data: Vec<u8> = (0..8u32 << 20).map(|i| i as u8).collect();
+        let reader = std::thread::spawn(move || {
+            let mut got = Vec::new();
+            client.read_to_end(&mut got).unwrap();
+            got
+        });
+        write_by_deadline(&server, &data).unwrap();
+        drop(server);
+        assert!(
+            reader.join().unwrap() == data,
+            "the response arrived changed"
+        );
+    }
+
+    #[test]
+    fn a_passed_deadline_writes_nothing() {
+        let (server, mut client) = connected_pair();
+        let written = Deadline {
+            stream: &server,
+            deadline: Instant::now(),
+        }
+        .write(b"late");
+        assert_eq!(written.unwrap_err().kind(), std::io::ErrorKind::TimedOut);
+        drop(server);
+        let mut got = Vec::new();
+        client.read_to_end(&mut got).unwrap();
+        assert!(got.is_empty(), "{got:?}");
     }
 }
