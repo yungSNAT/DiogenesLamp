@@ -1161,18 +1161,20 @@ mod tests {
         assert!(timeout <= SOCKET_WRITE_TIMEOUT, "{timeout:?}");
     }
 
-    // Responses go through the deadline: it replaces the accepted socket's
-    // fixed 30 s with what is left of the response's own allowance.
+    // Responses go through the deadline: it replaces whatever write timeout
+    // the socket had with at most the per-call 30 s.
     #[test]
     fn responses_are_written_by_the_deadline() {
         let (server, mut client) = connected_pair();
-        configure_stream(&server);
+        server
+            .set_write_timeout(Some(Duration::from_secs(3600)))
+            .unwrap();
         let port = server.local_addr().unwrap().port();
         let request = format!("GET /nope HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\n\r\n");
         client.write_all(request.as_bytes()).unwrap();
         handle(&server, &Viewer::Embedded, Path::new("."), port);
         let timeout = server.write_timeout().unwrap().unwrap();
-        assert!(timeout < SOCKET_WRITE_TIMEOUT, "{timeout:?}");
+        assert!(timeout <= SOCKET_WRITE_TIMEOUT, "{timeout:?}");
         drop(server);
         let mut reply = String::new();
         client.read_to_string(&mut reply).unwrap();
