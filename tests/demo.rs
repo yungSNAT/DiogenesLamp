@@ -162,8 +162,10 @@ fn demo_serves_synthetic_data_and_writes_nowhere_near_named_data() {
 #[test]
 fn demo_on_a_busy_port_writes_nothing() {
     let dirs = dirs();
-    let port = free_port();
-    let _busy = TcpListener::bind(("127.0.0.1", port.parse::<u16>().unwrap())).unwrap();
+    // Hold the port from the first bind: a port freed and bound again can be
+    // taken in between as another test's outgoing local port.
+    let busy = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = busy.local_addr().unwrap().port().to_string();
     let output = demo(&dirs, &port).output().unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert_eq!(output.status.code(), Some(1), "{stderr}");
