@@ -1083,10 +1083,12 @@ mod tests {
         let reader = std::thread::spawn(move || {
             let mut buf = [0u8; 4096];
             let started = Instant::now();
-            while !reading.load(Ordering::SeqCst) && started.elapsed() < Duration::from_secs(8) {
-                if matches!(client.read(&mut buf), Ok(0) | Err(_)) {
-                    break;
-                }
+            let mut open = true;
+            while open
+                && !reading.load(Ordering::SeqCst)
+                && started.elapsed() < Duration::from_secs(8)
+            {
+                open = !matches!(client.read(&mut buf), Ok(0) | Err(_));
                 std::thread::sleep(Duration::from_millis(50));
             }
         });
@@ -1105,11 +1107,9 @@ mod tests {
         // thread is free by then.
         assert!(cfg!(windows) || written.is_err(), "{written:?}");
         if let Err(error) = written {
+            let kind = error.kind();
             assert!(
-                matches!(
-                    error.kind(),
-                    std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
-                ),
+                kind == std::io::ErrorKind::TimedOut || kind == std::io::ErrorKind::WouldBlock,
                 "{error:?}"
             );
             assert!(held >= Duration::from_millis(900), "stopped after {held:?}");
