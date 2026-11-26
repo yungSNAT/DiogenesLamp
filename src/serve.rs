@@ -1103,6 +1103,7 @@ mod tests {
         // Windows' send can take the whole buffer at once, so nothing waits;
         // elsewhere the write is stopped at the deadline. Either way the
         // thread is free by then.
+        assert!(cfg!(windows) || written.is_err(), "{written:?}");
         if let Err(error) = written {
             assert!(
                 matches!(
