@@ -175,10 +175,14 @@ workEl("import-backup").addEventListener("change", async event => {
     const parsed = JSON.parse(await file.text());
     const count = importUserBackup(userStore, parsed);
     let shortlistAdded = 0;
+    let shortlistSkipped = 0;
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && parsed.shortlist !== undefined) {
       const merged = mergeShortlistBackup(state.shortlist || new Map(), parsed.shortlist, state.albumAliases);
+      shortlistSkipped = merged.skipped;
       if (merged.added > 0) {
-        if (!writeShortlist(window, merged.shortlist)) throw new Error("Storage write failed.");
+        if (!writeShortlist(window, merged.shortlist)) {
+          throw new Error(`Imported ${count} saved fields, but the shortlist could not be saved. Browser storage may be full or blocked.`);
+        }
         state.shortlist = merged.shortlist;
         shortlistAdded = merged.added;
         if (typeof updateShortlistCount === "function") updateShortlistCount();
@@ -186,7 +190,10 @@ workEl("import-backup").addEventListener("change", async event => {
       }
     }
     const shortlistNote = shortlistAdded ? ` and ${shortlistAdded} shortlist items` : "";
-    actionStatus(`Imported ${count} saved fields${shortlistNote}. Existing values were kept.`);
+    const skippedNote = shortlistSkipped
+      ? ` ${shortlistSkipped} shortlist items were not added: the shortlist is full (${SHORTLIST_LIMITS.maxItems.toLocaleString()} items).`
+      : "";
+    actionStatus(`Imported ${count} saved fields${shortlistNote}. Existing values were kept.${skippedNote}`);
   } catch (error) { savedDataError(/** @type {Error} */ (error).message); }
   finally { refreshSavedState(); /** @type {HTMLInputElement | HTMLSelectElement} */ (event.target).value = ""; }
 });
