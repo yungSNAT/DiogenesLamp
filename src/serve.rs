@@ -1100,17 +1100,22 @@ mod tests {
         done.store(true, Ordering::SeqCst);
         drop(server);
         reader.join().unwrap();
-        let kind = written.unwrap_err().kind();
+        // Windows' send can take the whole buffer at once, so nothing waits;
+        // elsewhere the write is stopped at the deadline. Either way the
+        // thread is free by then.
+        if let Err(error) = written {
+            assert!(
+                matches!(
+                    error.kind(),
+                    std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+                ),
+                "{error:?}"
+            );
+            assert!(held >= Duration::from_millis(900), "stopped after {held:?}");
+        }
         assert!(
-            matches!(
-                kind,
-                std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
-            ),
-            "{kind:?}"
-        );
-        assert!(
-            held >= Duration::from_millis(900) && held < Duration::from_secs(4),
-            "the write was stopped after {held:?}, not at the 1 s deadline"
+            held < Duration::from_secs(4),
+            "the write held its thread for {held:?}, past the 1 s deadline"
         );
     }
 
