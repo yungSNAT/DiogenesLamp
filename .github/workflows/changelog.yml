@@ -15,6 +15,7 @@ jobs:
   changelog:
     name: Changelog line
     if: >-
+      github.event.pull_request.state == 'open' &&
       !contains(github.event.pull_request.labels.*.name, 'skip-changelog') &&
       github.event.pull_request.user.login != 'dependabot[bot]'
     timeout-minutes: 5
