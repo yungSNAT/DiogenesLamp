@@ -772,21 +772,33 @@ fn a_client_trickling_its_request_is_dropped_at_the_request_deadline() {
         let mut reader = reader;
         let mut sink = Vec::new();
         let _ = reader.read_to_end(&mut sink);
-        started.elapsed()
+        (started.elapsed(), sink)
     });
     // One header byte every 200 ms: each read succeeds well inside the 10 s
-    // read timeout, so only a deadline on the whole request ends it.
-    while !closed.is_finished() && started.elapsed() < std::time::Duration::from_secs(20) {
-        if stream.write_all(b"a").is_err() {
+    // read timeout, so only a deadline on the whole request ends it. The loop
+    // ends when the server closes (the reader sees the end, or a write fails)
+    // or, on a server without the deadline, when the client gives up at 20 s.
+    let mut server_closed = false;
+    while started.elapsed() < std::time::Duration::from_secs(20) {
+        if closed.is_finished() || stream.write_all(b"a").is_err() {
+            server_closed = true;
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(200));
     }
     let _ = stream.shutdown(std::net::Shutdown::Both);
-    let held = closed.join().unwrap();
+    let (held, sink) = closed.join().unwrap();
     assert!(
-        held < std::time::Duration::from_secs(13),
-        "a trickling client held its thread for {held:?}"
+        server_closed,
+        "the server kept a trickling client for 20 s (closed after {held:?})"
+    );
+    assert!(
+        held >= std::time::Duration::from_millis(9500) && held < std::time::Duration::from_secs(13),
+        "a trickling client was dropped after {held:?}, not at the 10 s deadline"
+    );
+    assert!(
+        sink.is_empty(),
+        "the server replied to an unfinished request"
     );
     // A normal request on the same server still succeeds.
     assert_eq!(get(port, "/data/index.json").status, 200);
