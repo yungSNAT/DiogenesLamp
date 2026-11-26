@@ -752,3 +752,42 @@ fn host_header_rejects_rebinding_and_allows_localhost_variants() {
         String::from_utf8_lossy(&valid_http11)
     );
 }
+
+#[test]
+fn a_client_trickling_its_request_is_dropped_at_the_request_deadline() {
+    let dir = common::tmp();
+    let (viewer, data) = layout(dir.path());
+    let server = start(Viewer::Dir(viewer), &data);
+    let port = server.port;
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    stream
+        .write_all(
+            format!("GET /data/index.json HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nX-Slow: ")
+                .as_bytes(),
+        )
+        .unwrap();
+    let reader = stream.try_clone().unwrap();
+    let started = std::time::Instant::now();
+    let closed = std::thread::spawn(move || {
+        let mut reader = reader;
+        let mut sink = Vec::new();
+        let _ = reader.read_to_end(&mut sink);
+        started.elapsed()
+    });
+    // One header byte every 200 ms: each read succeeds well inside the 10 s
+    // read timeout, so only a deadline on the whole request ends it.
+    while !closed.is_finished() && started.elapsed() < std::time::Duration::from_secs(20) {
+        if stream.write_all(b"a").is_err() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+    let _ = stream.shutdown(std::net::Shutdown::Both);
+    let held = closed.join().unwrap();
+    assert!(
+        held < std::time::Duration::from_secs(13),
+        "a trickling client held its thread for {held:?}"
+    );
+    // A normal request on the same server still succeeds.
+    assert_eq!(get(port, "/data/index.json").status, 200);
+}
