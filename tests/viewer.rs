@@ -186,7 +186,7 @@ fn the_render_loop_refreshes_the_title_of_every_card_it_reuses() {
         reuse[1].contains("refreshCardTitle("),
         "renderGrid reuses a card without refreshing its title"
     );
-    let maker = Regex::new(r"(?s)\nfunction makeCard\(album\) \{\n(.*?)\n\}\n")
+    let maker = Regex::new(r"(?s)\nfunction makeCard\([^)]*\) \{\n(.*?)\n\}\n")
         .unwrap()
         .captures(&source)
         .expect("app.js no longer declares makeCard");
