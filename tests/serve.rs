@@ -755,10 +755,23 @@ fn host_header_rejects_rebinding_and_allows_localhost_variants() {
 
 #[test]
 fn a_client_trickling_its_request_is_dropped_at_the_request_deadline() {
+    use std::io::ErrorKind;
+    use std::time::{Duration, Instant};
+    // Only the server can reset or abort the connection or break the pipe;
+    // the client never sets a timeout of its own.
+    fn closed_by_peer(kind: ErrorKind) -> bool {
+        matches!(
+            kind,
+            ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted | ErrorKind::BrokenPipe
+        )
+    }
     let dir = common::tmp();
     let (viewer, data) = layout(dir.path());
     let server = start(Viewer::Dir(viewer), &data);
     let port = server.port;
+    // Timed from before connecting, so the server's deadline cannot start
+    // earlier than this clock.
+    let started = Instant::now();
     let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
     stream
         .write_all(
@@ -766,34 +779,36 @@ fn a_client_trickling_its_request_is_dropped_at_the_request_deadline() {
                 .as_bytes(),
         )
         .unwrap();
-    let reader = stream.try_clone().unwrap();
-    let started = std::time::Instant::now();
+    let mut reader = stream.try_clone().unwrap();
     let closed = std::thread::spawn(move || {
-        let mut reader = reader;
         let mut sink = Vec::new();
-        let _ = reader.read_to_end(&mut sink);
-        (started.elapsed(), sink)
+        let read = reader
+            .read_to_end(&mut sink)
+            .map(|_| ())
+            .map_err(|e| e.kind());
+        (started.elapsed(), read, sink)
     });
     // One header byte every 200 ms: each read succeeds well inside the 10 s
     // read timeout, so only a deadline on the whole request ends it. The loop
-    // ends when the server closes (the reader sees the end, or a write fails)
-    // or, on a server without the deadline, when the client gives up at 20 s.
-    let mut server_closed = false;
-    while started.elapsed() < std::time::Duration::from_secs(20) {
-        if closed.is_finished() || stream.write_all(b"a").is_err() {
-            server_closed = true;
+    // ends when the reader sees the connection end or a write fails, or, on a
+    // server without the deadline, when the client gives up at 20 s.
+    let mut ended_by_server = false;
+    while started.elapsed() < Duration::from_secs(20) {
+        let write_failed = stream.write_all(b"a").err().map(|e| e.kind());
+        if closed.is_finished() || write_failed.is_some() {
+            ended_by_server = write_failed.is_none_or(closed_by_peer);
             break;
         }
-        std::thread::sleep(std::time::Duration::from_millis(200));
+        std::thread::sleep(Duration::from_millis(200));
     }
     let _ = stream.shutdown(std::net::Shutdown::Both);
-    let (held, sink) = closed.join().unwrap();
+    let (held, read, sink) = closed.join().unwrap();
     assert!(
-        server_closed,
-        "the server kept a trickling client for 20 s (closed after {held:?})"
+        ended_by_server && read.map_or_else(closed_by_peer, |()| true),
+        "the server did not close a trickling client (after {held:?}: {read:?})"
     );
     assert!(
-        held >= std::time::Duration::from_millis(9500) && held < std::time::Duration::from_secs(13),
+        held >= Duration::from_millis(9500) && held < Duration::from_secs(13),
         "a trickling client was dropped after {held:?}, not at the 10 s deadline"
     );
     assert!(
