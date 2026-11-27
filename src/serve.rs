@@ -10,7 +10,7 @@ use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use sha2::{Digest, Sha256};
 
@@ -83,6 +83,63 @@ const STATUS_TEXT: [(u16, &str, &str); 8] = [
 
 const SOCKET_READ_TIMEOUT: Duration = Duration::from_secs(10);
 const SOCKET_WRITE_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// After its first `SOCKET_WRITE_TIMEOUT`, a response must keep this average
+/// rate in bytes a second: a reader taking a little at a time cannot hold
+/// its thread, and a large catalogue shard still has time to arrive.
+const MIN_WRITE_RATE: u64 = 64 * 1024;
+
+/// Reads or writes with each call bounded by what is left of one deadline,
+/// so a client trickling bytes cannot hold its thread past it.
+struct Deadline<'a> {
+    stream: &'a TcpStream,
+    deadline: Instant,
+}
+
+impl Deadline<'_> {
+    fn left(&self) -> std::io::Result<Duration> {
+        self.deadline
+            .checked_duration_since(Instant::now())
+            .filter(|left| !left.is_zero())
+            .ok_or_else(|| std::io::ErrorKind::TimedOut.into())
+    }
+}
+
+impl Read for Deadline<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.stream.set_read_timeout(Some(self.left()?))?;
+        let mut stream = self.stream;
+        stream.read(buf)
+    }
+}
+
+impl Write for Deadline<'_> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        // Still no longer than the old per-call limit, so a reader that
+        // stops altogether is dropped as soon as before.
+        self.stream
+            .set_write_timeout(Some(self.left()?.min(SOCKET_WRITE_TIMEOUT)))?;
+        let mut stream = self.stream;
+        stream.write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        let mut stream = self.stream;
+        stream.flush()
+    }
+}
+
+/// The time a response of `len` bytes has to be written.
+fn write_allowance(len: usize) -> Duration {
+    SOCKET_WRITE_TIMEOUT + Duration::from_secs(len as u64 / MIN_WRITE_RATE)
+}
+
+fn write_by_deadline(stream: &TcpStream, data: &[u8]) -> std::io::Result<()> {
+    let deadline = Instant::now() + write_allowance(data.len());
+    let mut writer = Deadline { stream, deadline };
+    writer.write_all(data)?;
+    writer.flush()
+}
 
 fn configure_stream(stream: &TcpStream) {
     let _ = stream.set_nonblocking(false);
@@ -324,6 +381,8 @@ struct Handler<'a> {
     status: u16,
     shard_etag: Option<String>,
     buffer: Vec<u8>,
+    /// A failed header write leaves the socket unusable, so no body follows.
+    write_failed: bool,
 }
 
 impl Handler<'_> {
@@ -373,7 +432,7 @@ impl Handler<'_> {
         if self.request_version != "HTTP/0.9" {
             self.buffer.extend_from_slice(b"\r\n");
             let data = std::mem::take(&mut self.buffer);
-            let _ = self.stream.write_all(&data);
+            self.write_failed = write_by_deadline(self.stream, &data).is_err();
         }
     }
 
@@ -434,8 +493,8 @@ impl Handler<'_> {
     }
 
     fn write_body(&mut self, body: &[u8]) {
-        if self.command != "HEAD" {
-            let _ = self.stream.write_all(body);
+        if self.command != "HEAD" && !self.write_failed {
+            let _ = write_by_deadline(self.stream, body);
         }
     }
 
@@ -595,7 +654,12 @@ fn latin1(b: u8) -> u8 {
 }
 
 fn handle(stream: &TcpStream, viewer: &Viewer, data_dir: &Path, port: u16) {
-    let mut reader = BufReader::new(stream);
+    // The request line and headers share one deadline: the per-read timeout
+    // alone restarts on every byte.
+    let mut reader = BufReader::new(Deadline {
+        stream,
+        deadline: Instant::now() + SOCKET_READ_TIMEOUT,
+    });
     let mut raw = Vec::new();
     if reader
         .by_ref()
@@ -616,6 +680,7 @@ fn handle(stream: &TcpStream, viewer: &Viewer, data_dir: &Path, port: u16) {
         status: 0,
         shard_etag: None,
         buffer: Vec::new(),
+        write_failed: false,
     };
     // Python's end_headers override reads self.path, which is unset until
     // the request line parses: those error replies die before a byte is
@@ -972,10 +1037,7 @@ mod tests {
         ] {
             assert!(!valid_host_header(invalid, 8080), "{invalid}");
         }
-        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let addr = listener.local_addr().unwrap();
-        let client = TcpStream::connect(addr).unwrap();
-        let (server_stream, _) = listener.accept().unwrap();
+        let (server_stream, client) = connected_pair();
         configure_stream(&server_stream);
         assert_eq!(
             server_stream.read_timeout().unwrap(),
@@ -986,5 +1048,142 @@ mod tests {
             Some(SOCKET_WRITE_TIMEOUT)
         );
         drop(client);
+    }
+
+    fn connected_pair() -> (TcpStream, TcpStream) {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (server, _) = listener.accept().unwrap();
+        (server, client)
+    }
+
+    #[test]
+    fn a_response_gets_time_in_proportion_to_its_size() {
+        let rate = MIN_WRITE_RATE as usize;
+        assert_eq!(write_allowance(0), SOCKET_WRITE_TIMEOUT);
+        assert_eq!(write_allowance(rate - 1), SOCKET_WRITE_TIMEOUT);
+        assert_eq!(
+            write_allowance(rate * 10 + 1),
+            SOCKET_WRITE_TIMEOUT + Duration::from_secs(10)
+        );
+        // A shard at the 256 MiB snapshot limit has over an hour.
+        assert_eq!(
+            write_allowance(256 << 20),
+            SOCKET_WRITE_TIMEOUT + Duration::from_secs(4096)
+        );
+    }
+
+    #[test]
+    fn a_reader_trickling_a_response_is_cut_off_at_the_deadline() {
+        let (server, mut client) = connected_pair();
+        let done = Arc::new(AtomicBool::new(false));
+        let reading = Arc::clone(&done);
+        // Slow but steady: every read makes room for more, so each write call
+        // progresses and only a deadline on the whole response stops it.
+        let reader = std::thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            let started = Instant::now();
+            let mut open = true;
+            while open
+                && !reading.load(Ordering::SeqCst)
+                && started.elapsed() < Duration::from_secs(8)
+            {
+                open = !matches!(client.read(&mut buf), Ok(0) | Err(_));
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        });
+        let started = Instant::now();
+        let written = Deadline {
+            stream: &server,
+            deadline: started + Duration::from_secs(1),
+        }
+        .write_all(&vec![0u8; 64 << 20]);
+        let held = started.elapsed();
+        done.store(true, Ordering::SeqCst);
+        drop(server);
+        reader.join().unwrap();
+        // Windows' send can take the whole buffer at once, so nothing waits;
+        // elsewhere the write is stopped at the deadline. Either way the
+        // thread is free by then.
+        assert!(cfg!(windows) || written.is_err(), "{written:?}");
+        if let Err(error) = written {
+            let kind = error.kind();
+            assert!(
+                kind == std::io::ErrorKind::TimedOut || kind == std::io::ErrorKind::WouldBlock,
+                "{error:?}"
+            );
+            assert!(held >= Duration::from_millis(900), "stopped after {held:?}");
+        }
+        assert!(
+            held < Duration::from_secs(4),
+            "the write held its thread for {held:?}, past the 1 s deadline"
+        );
+    }
+
+    #[test]
+    fn a_reader_keeping_up_gets_the_whole_response() {
+        let (server, mut client) = connected_pair();
+        let data: Vec<u8> = (0..8u32 << 20).map(|i| i as u8).collect();
+        let reader = std::thread::spawn(move || {
+            let mut got = Vec::new();
+            client.read_to_end(&mut got).unwrap();
+            got
+        });
+        write_by_deadline(&server, &data).unwrap();
+        drop(server);
+        assert!(
+            reader.join().unwrap() == data,
+            "the response arrived changed"
+        );
+    }
+
+    #[test]
+    fn a_passed_deadline_writes_nothing() {
+        let (server, mut client) = connected_pair();
+        let written = Deadline {
+            stream: &server,
+            deadline: Instant::now(),
+        }
+        .write(b"late");
+        assert_eq!(written.unwrap_err().kind(), std::io::ErrorKind::TimedOut);
+        drop(server);
+        let mut got = Vec::new();
+        client.read_to_end(&mut got).unwrap();
+        assert!(got.is_empty(), "{got:?}");
+    }
+
+    // A client that stops reading is still dropped after the old 30 s of no
+    // progress, however long the whole response may take.
+    #[test]
+    fn each_write_call_still_stalls_out_at_the_socket_timeout() {
+        let (server, _client) = connected_pair();
+        Deadline {
+            stream: &server,
+            deadline: Instant::now() + Duration::from_secs(3600),
+        }
+        .write_all(b"ok")
+        .unwrap();
+        let timeout = server.write_timeout().unwrap().unwrap();
+        assert!(timeout <= SOCKET_WRITE_TIMEOUT, "{timeout:?}");
+    }
+
+    // Responses go through the deadline: it replaces whatever write timeout
+    // the socket had with at most the per-call 30 s.
+    #[test]
+    fn responses_are_written_by_the_deadline() {
+        let (server, mut client) = connected_pair();
+        server
+            .set_write_timeout(Some(Duration::from_secs(3600)))
+            .unwrap();
+        let port = server.local_addr().unwrap().port();
+        let request = format!("GET /nope HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\n\r\n");
+        client.write_all(request.as_bytes()).unwrap();
+        handle(&server, &Viewer::Embedded, Path::new("."), port);
+        let timeout = server.write_timeout().unwrap().unwrap();
+        assert!(timeout <= SOCKET_WRITE_TIMEOUT, "{timeout:?}");
+        drop(server);
+        let mut reply = String::new();
+        client.read_to_string(&mut reply).unwrap();
+        assert!(reply.starts_with("HTTP/1.0 404"), "{reply}");
     }
 }
