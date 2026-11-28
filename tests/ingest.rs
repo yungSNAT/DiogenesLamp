@@ -1,4 +1,4 @@
-// Copyright 2026 Ryan Duguid
+// Copyright 2026 yungSNAT
 // SPDX-License-Identifier: Apache-2.0
 
 //! Ported from tests/test_classify.py and tests/test_ingest.py.

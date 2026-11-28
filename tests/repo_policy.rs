@@ -1,4 +1,4 @@
-// Copyright 2026 Ryan Duguid
+// Copyright 2026 yungSNAT
 // SPDX-License-Identifier: Apache-2.0
 
 //! Ported from tests/test_workflow_security.py: fail-closed contracts for
@@ -493,6 +493,15 @@ fn toolchain_is_pinned() {
         &read("rust-toolchain.toml"),
         EXPECTED_TOOLCHAIN,
         "rust-toolchain.toml",
+    );
+}
+
+#[test]
+fn codeowners_is_exact() {
+    assert_exact(
+        &read(".github/CODEOWNERS"),
+        "* @yungSNAT\n",
+        ".github/CODEOWNERS",
     );
 }
 

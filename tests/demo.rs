@@ -1,4 +1,4 @@
-// Copyright 2026 Ryan Duguid
+// Copyright 2026 yungSNAT
 // SPDX-License-Identifier: Apache-2.0
 
 //! `lamp demo`: synthetic data in its own temporary directory, never beside a

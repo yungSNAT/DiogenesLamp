@@ -1,4 +1,4 @@
-// Copyright 2026 Ryan Duguid
+// Copyright 2026 yungSNAT
 // SPDX-License-Identifier: Apache-2.0
 
 //! `lamp find-photo`: albums whose cover fingerprint is near an image's.

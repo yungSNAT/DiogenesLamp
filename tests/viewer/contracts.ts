@@ -1,4 +1,4 @@
-// Copyright 2026 Ryan Duguid
+// Copyright 2026 yungSNAT
 // SPDX-License-Identifier: Apache-2.0
 
 // Compile only. Runtime behaviour is covered by the adjacent .test.cjs files.
