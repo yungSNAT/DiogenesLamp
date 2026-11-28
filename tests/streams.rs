@@ -18,10 +18,34 @@ const CLOSED_PIPE: &str = if cfg!(windows) {
     "BrokenPipeError: [Errno 32] Broken pipe"
 };
 
+/// A pipe write end whose read end is closed everywhere.
+///
+/// On Unix, a sibling test thread's concurrent `Command::spawn` (`fork` or
+/// `clone`) can inherit `reader` before `drop(reader)` runs and hold it open
+/// until `execve` closes `O_CLOEXEC` descriptors, so the child under test
+/// writes to a live pipe instead of failing with `BrokenPipe`. A 1-byte probe
+/// fails with `BrokenPipe` only once no reader remains anywhere; an anonymous
+/// pipe with no reader can never gain another.
 fn closed_pipe() -> Stdio {
-    let (reader, writer) = std::io::pipe().unwrap();
-    drop(reader);
-    writer.into()
+    closed_pipe_from(|| {
+        let (reader, writer) = std::io::pipe().unwrap();
+        drop(reader);
+        writer
+    })
+    .into()
+}
+
+fn closed_pipe_from(mut make: impl FnMut() -> std::io::PipeWriter) -> std::io::PipeWriter {
+    use std::io::{ErrorKind, Write};
+    for _ in 0..1000 {
+        let mut writer = make();
+        match writer.write_all(&[0]) {
+            Err(e) if e.kind() == ErrorKind::BrokenPipe => return writer,
+            Ok(()) => std::thread::yield_now(),
+            Err(e) => panic!("closed pipe probe failed unexpectedly: {e}"),
+        }
+    }
+    panic!("closed pipe still had a reader after 1000 attempts");
 }
 
 /// Exit code and the text on the stream that still works.
@@ -101,11 +125,12 @@ fn unbuffered_stdout_fails_at_the_print() {
 fn a_scrape_report_line_fails_at_once() {
     let dir = workspace();
     let scrape = ["--sources", "offline.toml", "scrape"];
-    let (code, stderr) = run(dir.path(), &scrape, true, false);
-    assert_eq!(code, 120);
     assert_eq!(
-        stderr,
-        format!("{CLOSED_PIPE}\nException ignored while flushing sys.stdout:\n{CLOSED_PIPE}\n")
+        run(dir.path(), &scrape, true, false),
+        (
+            120,
+            format!("{CLOSED_PIPE}\nException ignored while flushing sys.stdout:\n{CLOSED_PIPE}\n")
+        )
     );
     assert_eq!(
         run(dir.path(), &scrape, true, true),
@@ -113,6 +138,29 @@ fn a_scrape_report_line_fails_at_once() {
     );
     // The run stopped before the index was written.
     assert!(!dir.path().join("data").join("index.json").exists());
+}
+
+/// A pipe whose read end is still held (as by a sibling test's concurrent
+/// spawn on Unix) is discarded rather than handed to a child expecting EPIPE.
+#[test]
+fn closed_pipe_discards_a_pipe_with_a_live_reader() {
+    use std::io::{ErrorKind, Write};
+    let (_held_reader, live_writer) = std::io::pipe().unwrap();
+    let mut leaked = Some(live_writer);
+    let mut calls = 0;
+    let mut writer = closed_pipe_from(|| {
+        calls += 1;
+        leaked.take().unwrap_or_else(|| {
+            let (reader, writer) = std::io::pipe().unwrap();
+            drop(reader);
+            writer
+        })
+    });
+    assert!(calls >= 2);
+    assert_eq!(
+        writer.write_all(&[0]).unwrap_err().kind(),
+        ErrorKind::BrokenPipe
+    );
 }
 
 /// A stdout opened without write access fails as a bad file descriptor on
