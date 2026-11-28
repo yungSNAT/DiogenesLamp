@@ -496,6 +496,15 @@ fn toolchain_is_pinned() {
     );
 }
 
+#[test]
+fn codeowners_is_exact() {
+    assert_exact(
+        &read(".github/CODEOWNERS"),
+        "* @yungSNAT\n",
+        ".github/CODEOWNERS",
+    );
+}
+
 /// Releases are built from the committed lock file only.
 #[test]
 fn cargo_lock_is_tracked() {
