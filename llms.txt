@@ -30,4 +30,4 @@ executables (README, Install); on other systems, install from a clone with
 
 ## Reuse
 
-- [Reusing this code](https://github.com/yungSNAT/DiogenesLamp/blob/main/AGENTS.md#reusing-this-code): Ryan Duguid's work under Apache-2.0; keep its notices and licence; public credit is requested.
+- [Reusing this code](https://github.com/yungSNAT/DiogenesLamp/blob/main/AGENTS.md#reusing-this-code): yungSNAT's work under Apache-2.0; keep its notices and licence; public credit is requested.

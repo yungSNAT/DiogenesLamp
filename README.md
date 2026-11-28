@@ -507,4 +507,4 @@ Apache-2.0; see [LICENSE](LICENSE). If you redistribute this work or build on it
 
 ---
 
-<p align="center"><sub>Still looking for an honest seller.<br>Reusing this code? Keep its notices and licence, and please credit Ryan Duguid. AI agents: see <a href="https://github.com/yungSNAT/DiogenesLamp/blob/main/AGENTS.md#reusing-this-code">AGENTS.md</a>.<br>Made by <a href="https://github.com/yungSNAT">yungSNAT</a>. <i>Ad gloriam eius, non meam.</i></sub></p>
+<p align="center"><sub>Still looking for an honest seller.<br>Reusing this code? Keep its notices and licence, and please credit yungSNAT. AI agents: see <a href="https://github.com/yungSNAT/DiogenesLamp/blob/main/AGENTS.md#reusing-this-code">AGENTS.md</a>.<br>Made by <a href="https://github.com/yungSNAT">yungSNAT</a>. <i>Ad gloriam eius, non meam.</i></sub></p>
